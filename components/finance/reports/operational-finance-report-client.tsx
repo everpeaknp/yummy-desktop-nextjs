@@ -1,25 +1,31 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
-import { endOfDay, endOfMonth, format, startOfDay, startOfMonth, subDays } from "date-fns";
+import { useRouter } from "next/navigation";
+import {
+  endOfDay,
+  endOfMonth,
+  format,
+  startOfDay,
+  startOfMonth,
+  subDays,
+} from "date-fns";
 import {
   BadgeDollarSign,
+  Download,
   FileText,
   Loader2,
   ReceiptText,
-  RefreshCw,
   RotateCcw,
-  Search,
 } from "lucide-react";
 import type { DateRange } from "react-day-picker";
 import { toast } from "sonner";
 
 import apiClient from "@/lib/api-client";
 import { FinanceReportApis } from "@/lib/api/endpoints";
+import { financeSalesApi } from "@/lib/api/finance-sales-api";
 import { hasPermission } from "@/lib/role-permissions";
-import { cn } from "@/lib/utils";
+import { formatCurrency, formatDate, formatDateTime } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -30,6 +36,13 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Table,
   TableBody,
   TableCell,
@@ -37,7 +50,16 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { FinanceSectionTabs } from "@/components/finance/finance-section-tabs";
+import { SalesDocumentDetailSheet } from "@/components/finance/transaction-detail/sales-document-detail-sheet";
+import { FinanceWorkspaceNav } from "@/components/finance/workspace/finance-workspace-nav";
+import { AppPage } from "@/components/patterns/page/app-page";
+import { PageHeader } from "@/components/patterns/page/page-header";
+import { ReportFilters } from "@/components/reports/report-filters";
+import { DataList, ListRow } from "@/components/patterns/data/data-list";
+import {
+  TransactionDetailSheet,
+  type TransactionDetailModel,
+} from "@/components/finance/transaction-detail/transaction-detail-sheet";
 import type {
   FinanceReportTotals,
   InvoiceReportResponse,
@@ -51,6 +73,7 @@ import type {
   VatSalesReportResponse,
   VatSalesRow,
 } from "@/types/finance-reports";
+import type { FinanceSalesDocument } from "@/types/finance-sales";
 
 type BaseResponse<T> = {
   status?: string;
@@ -58,7 +81,8 @@ type BaseResponse<T> = {
   message?: string;
 };
 
-type ReportMode = "sales-book" | "invoices" | "payments" | "refunds" | "vat-sales";
+type ReportMode =
+  "sales-book" | "invoices" | "payments" | "refunds" | "vat-sales";
 
 type ReportResponse =
   | SalesBookReportResponse
@@ -69,36 +93,35 @@ type ReportResponse =
 
 type OperationalFinanceReportClientProps = {
   mode: ReportMode;
+  workspace?: "sales";
+  showHeader?: boolean;
 };
-
-const reportLinks: Array<{ href: string; label: string; mode: ReportMode }> = [
-  { href: "/finance/reports/sales-book", label: "Sales Book", mode: "sales-book" },
-  { href: "/finance/reports/invoices", label: "Invoices", mode: "invoices" },
-  { href: "/finance/reports/payments", label: "Payments", mode: "payments" },
-  { href: "/finance/reports/refunds", label: "Refunds", mode: "refunds" },
-  { href: "/finance/reports/vat-sales", label: "VAT Sales", mode: "vat-sales" },
-];
 
 const reportMeta: Record<ReportMode, { title: string; description: string }> = {
   "sales-book": {
-    title: "Sales Book",
-    description: "Completed bills with sales, discount, tax, service charge, settlement, and balance.",
+    title: "Sales report",
+    description:
+      "Date-filtered sales, tax, discount, settlement, and balance for review or export.",
   },
   invoices: {
     title: "Invoices",
-    description: "Invoice-level view for bill lookup, customer settlement, and receivable checks.",
+    description:
+      "Invoice-level view for bill lookup, customer settlement, and receivable checks.",
   },
   payments: {
     title: "Payments",
-    description: "Successful payment collections by business date, method, instrument, and invoice.",
+    description:
+      "Successful payment collections by business date, method, instrument, and invoice.",
   },
   refunds: {
-    title: "Refunds",
-    description: "Refund and reversal payments by refund date, method, customer, and invoice.",
+    title: "Sales returns & refunds",
+    description:
+      "Refunds created from completed orders, with the original invoice and settlement method.",
   },
   "vat-sales": {
     title: "VAT Sales",
-    description: "Taxable sales and VAT amounts for sales materialized reporting.",
+    description:
+      "Taxable sales and VAT amounts for sales materialized reporting.",
   },
 };
 
@@ -120,46 +143,57 @@ function presetToRange(preset: DateRangePreset): DateRange {
     const day = subDays(now, 1);
     return { from: startOfDay(day), to: endOfDay(day) };
   }
-  if (preset === "last7") return { from: startOfDay(subDays(now, 7)), to: endOfDay(now) };
-  if (preset === "last30") return { from: startOfDay(subDays(now, 30)), to: endOfDay(now) };
+  if (preset === "last7")
+    return { from: startOfDay(subDays(now, 7)), to: endOfDay(now) };
+  if (preset === "last30")
+    return { from: startOfDay(subDays(now, 30)), to: endOfDay(now) };
   return { from: startOfMonth(now), to: endOfMonth(now) };
 }
 
-function formatMoney(value: number | null | undefined) {
-  return `Rs. ${Number(value || 0).toLocaleString(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
-}
+const formatMoney = formatCurrency;
 
-function formatDateTime(value: string | null | undefined) {
-  if (!value) return "-";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+function humanizeEnum(value: string | null | undefined) {
+  const normalized = String(value || "")
+    .trim()
+    .replaceAll("_", " ")
+    .toLowerCase();
+  return normalized
+    ? normalized.charAt(0).toUpperCase() + normalized.slice(1)
+    : "Not specified";
 }
 
 function settlementLabel(row: SalesBookRow | InvoiceRow) {
-  return row.settlement_status.replace(/_/g, " ");
+  const labels: Record<string, string> = {
+    customer_credit: "Customer credit",
+    paid: "Paid",
+    partially_paid: "Partially paid",
+    pending: "Pending",
+    returned: "Returned",
+    unpaid: "Unpaid",
+  };
+  return labels[row.settlement_status.toLowerCase()] || "Recorded";
 }
 
-function isPaymentReport(data: ReportResponse | null): data is PaymentReportResponse {
-  return !!data && "paid_amount" in data.totals && !("grand_total" in data.totals);
+function isPaymentReport(
+  data: ReportResponse | null,
+): data is PaymentReportResponse {
+  return (
+    !!data && "paid_amount" in data.totals && !("grand_total" in data.totals)
+  );
 }
 
-function isRefundReport(data: ReportResponse | null): data is RefundReportResponse {
-  return !!data && "refund_amount" in data.totals && !("grand_total" in data.totals);
+function isRefundReport(
+  data: ReportResponse | null,
+): data is RefundReportResponse {
+  return (
+    !!data && "refund_amount" in data.totals && !("grand_total" in data.totals)
+  );
 }
 
 function isSalesLikeReport(
-  data: ReportResponse | null
-): data is SalesBookReportResponse | InvoiceReportResponse | VatSalesReportResponse {
+  data: ReportResponse | null,
+): data is
+  SalesBookReportResponse | InvoiceReportResponse | VatSalesReportResponse {
   return !!data && "grand_total" in data.totals;
 }
 
@@ -182,88 +216,182 @@ function reportBalanceDue(data: ReportResponse | null) {
   return isSalesLikeReport(data) ? data.totals.balance_due : 0;
 }
 
-function SummaryStrip({ data, mode }: { data: ReportResponse | null; mode: ReportMode }) {
-  const amountLabel = mode === "payments" ? "Collected" : mode === "refunds" ? "Refunded" : "Grand Total";
+function SummaryStrip({
+  data,
+  mode,
+}: {
+  data: ReportResponse | null;
+  mode: ReportMode;
+}) {
+  if (mode === "payments" || mode === "refunds") {
+    const isPayments = mode === "payments";
+    const count = Number(data?.total ?? 0);
+    return (
+      <section className="border-y border-border py-3 sm:px-1 sm:py-4">
+        <div className="flex items-end justify-between gap-4">
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-muted-foreground">
+              {isPayments ? "Collected" : "Refunded"}
+            </p>
+            <p className="mt-1 truncate text-2xl font-semibold tracking-tight tabular-nums sm:text-3xl">
+              {formatMoney(reportTotalAmount(data))}
+            </p>
+          </div>
+          <p className="shrink-0 text-xs text-muted-foreground">
+            {count} {count === 1 ? "record" : "records"}
+          </p>
+        </div>
+      </section>
+    );
+  }
+
   const items = [
-    { label: "Rows", value: String(data?.total ?? 0) },
-    { label: amountLabel, value: formatMoney(reportTotalAmount(data)) },
+    { label: "Grand Total", value: formatMoney(reportTotalAmount(data)) },
     { label: "VAT", value: formatMoney(reportTaxAmount(data)) },
     { label: "Discount", value: formatMoney(reportDiscountAmount(data)) },
     { label: "Balance Due", value: formatMoney(reportBalanceDue(data)) },
   ];
 
   return (
-    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+    <dl className="grid grid-cols-2 overflow-hidden rounded-2xl border border-border bg-card lg:grid-cols-4">
       {items.map((item) => (
-        <div key={item.label} className="border border-border px-4 py-3">
-          <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{item.label}</div>
-          <div className="mt-1 font-mono text-lg font-semibold">{item.value}</div>
+        <div
+          key={item.label}
+          className="border-b border-r px-3 py-3 even:border-r-0 [&:nth-last-child(-n+2)]:border-b-0 lg:border-b-0 lg:even:border-r lg:last:border-r-0 lg:px-4"
+        >
+          <dt className="text-xs font-medium text-muted-foreground">
+            {item.label}
+          </dt>
+          <dd className="mt-1 truncate text-base font-semibold tabular-nums sm:text-lg">
+            {item.value}
+          </dd>
         </div>
       ))}
-    </div>
+    </dl>
   );
 }
 
 function SalesLikeTable({
   rows,
   mode,
+  onSelectSale,
 }: {
   rows: Array<SalesBookRow | InvoiceRow | VatSalesRow>;
   mode: ReportMode;
+  onSelectSale: (orderId: number) => void;
 }) {
   if (rows.length === 0) {
-    return <div className="p-8 text-center text-sm text-muted-foreground">No report rows found.</div>;
+    return (
+      <div className="p-8 text-center text-sm text-muted-foreground">
+        No report rows found.
+      </div>
+    );
   }
 
   const includeSettlement = mode !== "vat-sales";
 
   return (
-    <div className="overflow-x-auto">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead className="min-w-[150px]">Business Date</TableHead>
-            <TableHead className="min-w-[160px]">Invoice</TableHead>
-            <TableHead className="min-w-[190px]">Completed</TableHead>
-            <TableHead className="min-w-[190px]">Customer</TableHead>
-            <TableHead className="text-right">Taxable</TableHead>
-            <TableHead className="text-right">VAT</TableHead>
-            <TableHead className="text-right">Grand Total</TableHead>
-            {includeSettlement && <TableHead className="text-right">Paid</TableHead>}
-            {includeSettlement && <TableHead className="text-right">Balance</TableHead>}
-            {includeSettlement && <TableHead className="min-w-[130px]">Settlement</TableHead>}
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {rows.map((row) => (
-            <TableRow key={`${row.order_id}-${row.invoice_number}`}>
-              <TableCell>{row.business_date}</TableCell>
-              <TableCell>
-                <div className="font-medium">{row.invoice_number}</div>
-                <div className="font-mono text-xs text-muted-foreground">Order #{row.order_id}</div>
-              </TableCell>
-              <TableCell>{formatDateTime(row.completed_at)}</TableCell>
-              <TableCell>
-                <div>{row.customer_name ?? "Walk-in"}</div>
-                <div className="text-xs text-muted-foreground">Customer {row.customer_id ?? "-"}</div>
-              </TableCell>
-              <TableCell className="text-right font-mono">{formatMoney(row.taxable_sales)}</TableCell>
-              <TableCell className="text-right font-mono">{formatMoney(row.tax_amount)}</TableCell>
-              <TableCell className="text-right font-mono">{formatMoney(row.grand_total)}</TableCell>
-              {includeSettlement && "paid_amount" in row && (
-                <TableCell className="text-right font-mono">{formatMoney(row.paid_amount)}</TableCell>
+    <>
+      <DataList className="rounded-none border-x-0 border-y-0 lg:hidden">
+        {rows.map((row) => (
+          <ListRow
+            key={`${row.order_id}-${row.invoice_number}`}
+            leading={<FileText className="h-4 w-4 text-primary" />}
+            title={row.invoice_number}
+            description={`${row.customer_name ?? "Walk-in"} · ${formatDate(row.business_date)}${includeSettlement && "settlement_status" in row ? ` · ${settlementLabel(row)}` : ""}`}
+            meta={
+              <span className="font-semibold tabular-nums text-foreground">
+                {formatMoney(row.grand_total)}
+              </span>
+            }
+            interactive
+            role="button"
+            tabIndex={0}
+            onClick={() => onSelectSale(row.order_id)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                onSelectSale(row.order_id);
+              }
+            }}
+          />
+        ))}
+      </DataList>
+      <div className="hidden overflow-x-auto lg:block">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="min-w-[150px]">Business Date</TableHead>
+              <TableHead className="min-w-[160px]">Invoice</TableHead>
+              <TableHead className="min-w-[190px]">Completed</TableHead>
+              <TableHead className="min-w-[190px]">Customer</TableHead>
+              <TableHead className="text-right">Taxable</TableHead>
+              <TableHead className="text-right">VAT</TableHead>
+              <TableHead className="text-right">Grand Total</TableHead>
+              {includeSettlement && (
+                <TableHead className="text-right">Paid</TableHead>
               )}
-              {includeSettlement && "balance_due" in row && (
-                <TableCell className="text-right font-mono">{formatMoney(row.balance_due)}</TableCell>
+              {includeSettlement && (
+                <TableHead className="text-right">Balance</TableHead>
               )}
-              {includeSettlement && "settlement_status" in row && (
-                <TableCell className="capitalize">{settlementLabel(row)}</TableCell>
+              {includeSettlement && (
+                <TableHead className="min-w-[130px]">Settlement</TableHead>
               )}
             </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </div>
+          </TableHeader>
+          <TableBody>
+            {rows.map((row) => (
+              <TableRow
+                key={`${row.order_id}-${row.invoice_number}`}
+                role="button"
+                tabIndex={0}
+                onClick={() => onSelectSale(row.order_id)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    onSelectSale(row.order_id);
+                  }
+                }}
+                className="cursor-pointer focus-visible:bg-muted/40 focus-visible:outline-none"
+              >
+                <TableCell>{formatDate(row.business_date)}</TableCell>
+                <TableCell>
+                  <div className="font-medium">{row.invoice_number}</div>
+                </TableCell>
+                <TableCell>{formatDateTime(row.completed_at)}</TableCell>
+                <TableCell>
+                  <div>{row.customer_name ?? "Walk-in"}</div>
+                </TableCell>
+                <TableCell className="text-right font-mono">
+                  {formatMoney(row.taxable_sales)}
+                </TableCell>
+                <TableCell className="text-right font-mono">
+                  {formatMoney(row.tax_amount)}
+                </TableCell>
+                <TableCell className="text-right font-mono">
+                  {formatMoney(row.grand_total)}
+                </TableCell>
+                {includeSettlement && "paid_amount" in row && (
+                  <TableCell className="text-right font-mono">
+                    {formatMoney(row.paid_amount)}
+                  </TableCell>
+                )}
+                {includeSettlement && "balance_due" in row && (
+                  <TableCell className="text-right font-mono">
+                    {formatMoney(row.balance_due)}
+                  </TableCell>
+                )}
+                {includeSettlement && "settlement_status" in row && (
+                  <TableCell className="capitalize">
+                    {settlementLabel(row)}
+                  </TableCell>
+                )}
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    </>
   );
 }
 
@@ -274,69 +402,243 @@ function PaymentTable({
   rows: Array<PaymentReportRow | RefundReportRow>;
   mode: "payments" | "refunds";
 }) {
+  const [selected, setSelected] = useState<
+    PaymentReportRow | RefundReportRow | null
+  >(null);
   if (rows.length === 0) {
-    return <div className="p-8 text-center text-sm text-muted-foreground">No report rows found.</div>;
+    return (
+      <div className="p-8 text-center text-sm text-muted-foreground">
+        No report rows found.
+      </div>
+    );
   }
 
+  const selectedAt = selected
+    ? "paid_at" in selected
+      ? selected.paid_at
+      : selected.refunded_at
+    : null;
+  const selectedDetail: TransactionDetailModel | null = selected
+    ? {
+        eyebrow: mode === "payments" ? "Payment received" : "Refund paid",
+        title: selected.invoice_number,
+        reference: selected.reference || selected.invoice_number,
+        subtitle:
+          selected.customer_name ||
+          (mode === "payments"
+            ? "Walk-in customer payment"
+            : "Customer refund"),
+        occurredAt: selectedAt,
+        status: mode === "payments" ? "successful" : "refunded",
+        amount: selected.amount,
+        amountLabel:
+          mode === "payments" ? "Amount collected" : "Amount refunded",
+        amountTone: mode === "payments" ? "in" : "out",
+        badges: [
+          humanizeEnum(selected.payment_method),
+          selected.instrument_type
+            ? humanizeEnum(selected.instrument_type)
+            : null,
+        ].filter(Boolean) as string[],
+        sections: [
+          {
+            title: "Payment overview",
+            fields: [
+              { label: "Invoice", value: selected.invoice_number },
+              {
+                label: "Customer",
+                value: selected.customer_name || "Walk-in customer",
+              },
+              {
+                label: "Business date",
+                value: formatDate(selected.business_date),
+              },
+              {
+                label: mode === "payments" ? "Paid at" : "Refunded at",
+                value: formatDateTime(selectedAt),
+              },
+              {
+                label: "Reference",
+                value: selected.reference || "Not provided",
+                fullWidth: true,
+              },
+            ],
+          },
+          {
+            title: "Settlement",
+            fields: [
+              {
+                label: "Payment method",
+                value: humanizeEnum(selected.payment_method),
+              },
+              {
+                label: "Instrument type",
+                value: humanizeEnum(selected.instrument_type),
+              },
+              {
+                label: "Instrument",
+                value: selected.instrument_name || "Not specified",
+              },
+              { label: "Amount", value: formatMoney(selected.amount) },
+            ],
+          },
+        ],
+      }
+    : null;
+
   return (
-    <div className="overflow-x-auto">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead className="min-w-[150px]">Business Date</TableHead>
-            <TableHead className="min-w-[180px]">{mode === "payments" ? "Paid At" : "Refunded At"}</TableHead>
-            <TableHead className="min-w-[160px]">Invoice</TableHead>
-            <TableHead className="min-w-[150px]">Method</TableHead>
-            <TableHead className="min-w-[180px]">Instrument</TableHead>
-            <TableHead className="min-w-[180px]">Customer</TableHead>
-            <TableHead className="text-right">Amount</TableHead>
-            <TableHead className="min-w-[180px]">Reference</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {rows.map((row) => {
-            const happenedAt = "paid_at" in row ? row.paid_at : row.refunded_at;
-            return (
-              <TableRow key={`${row.payment_id}-${row.order_id}`}>
-                <TableCell>{row.business_date}</TableCell>
-                <TableCell>{formatDateTime(happenedAt)}</TableCell>
-                <TableCell>
-                  <div className="font-medium">{row.invoice_number}</div>
-                  <div className="font-mono text-xs text-muted-foreground">Order #{row.order_id}</div>
-                </TableCell>
-                <TableCell className="capitalize">{row.payment_method}</TableCell>
-                <TableCell>
-                  <div>{row.instrument_name ?? "-"}</div>
-                  <div className="text-xs text-muted-foreground">{row.instrument_type ?? "-"}</div>
-                </TableCell>
-                <TableCell>
-                  <div>{row.customer_name ?? "Walk-in"}</div>
-                  <div className="text-xs text-muted-foreground">Customer {row.customer_id ?? "-"}</div>
-                </TableCell>
-                <TableCell className="text-right font-mono">{formatMoney(row.amount)}</TableCell>
-                <TableCell className="font-mono text-xs">{row.reference ?? "-"}</TableCell>
-              </TableRow>
-            );
-          })}
-        </TableBody>
-      </Table>
-    </div>
+    <>
+      <DataList className="rounded-none border-x-0 border-y-0 lg:hidden">
+        {rows.map((row) => {
+          const happenedAt = "paid_at" in row ? row.paid_at : row.refunded_at;
+          return (
+            <ListRow
+              key={`${row.payment_id}-${row.order_id}`}
+              leading={<BadgeDollarSign className="h-4 w-4 text-primary" />}
+              title={row.invoice_number}
+              description={`${row.customer_name ?? "Walk-in"} · ${humanizeEnum(row.payment_method)} · ${formatDateTime(happenedAt)}`}
+              meta={
+                <span className="font-semibold tabular-nums text-foreground">
+                  {formatMoney(row.amount)}
+                </span>
+              }
+              interactive
+              role="button"
+              tabIndex={0}
+              onClick={() => setSelected(row)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  setSelected(row);
+                }
+              }}
+            />
+          );
+        })}
+      </DataList>
+      <div className="hidden overflow-x-auto lg:block">
+        <Table className="w-full table-fixed">
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-[112px] whitespace-nowrap">
+                Business Date
+              </TableHead>
+              <TableHead className="w-[154px] whitespace-nowrap">
+                {mode === "payments" ? "Paid At" : "Refunded At"}
+              </TableHead>
+              <TableHead className="w-[108px] whitespace-nowrap">
+                Invoice
+              </TableHead>
+              <TableHead className="w-[140px] whitespace-nowrap">
+                Method
+              </TableHead>
+              <TableHead className="w-[136px]">Instrument</TableHead>
+              <TableHead>Customer</TableHead>
+              <TableHead className="w-[124px] whitespace-nowrap text-right">
+                Amount
+              </TableHead>
+              <TableHead className="w-[122px]">Reference</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {rows.map((row) => {
+              const happenedAt =
+                "paid_at" in row ? row.paid_at : row.refunded_at;
+              return (
+                <TableRow
+                  key={`${row.payment_id}-${row.order_id}`}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => setSelected(row)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      setSelected(row);
+                    }
+                  }}
+                  className="cursor-pointer focus-visible:bg-muted/40 focus-visible:outline-none"
+                >
+                  <TableCell className="whitespace-nowrap">
+                    {formatDate(row.business_date)}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap">
+                    {formatDateTime(happenedAt)}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap">
+                    <div className="truncate font-medium">
+                      {row.invoice_number}
+                    </div>
+                  </TableCell>
+                  <TableCell className="min-w-0">
+                    <span className="block truncate whitespace-nowrap">
+                      {humanizeEnum(row.payment_method)}
+                    </span>
+                  </TableCell>
+                  <TableCell className="min-w-0">
+                    <div className="truncate">{row.instrument_name ?? "—"}</div>
+                    <div className="truncate text-xs text-muted-foreground">
+                      {row.instrument_type
+                        ? humanizeEnum(row.instrument_type)
+                        : "—"}
+                    </div>
+                  </TableCell>
+                  <TableCell className="min-w-0">
+                    <div className="truncate">
+                      {row.customer_name ?? "Walk-in"}
+                    </div>
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap text-right font-mono">
+                    {formatMoney(row.amount)}
+                  </TableCell>
+                  <TableCell className="min-w-0 font-mono text-xs">
+                    <span
+                      className="block truncate"
+                      title={row.reference ?? undefined}
+                    >
+                      {row.reference ?? "—"}
+                    </span>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
+      </div>
+      <TransactionDetailSheet
+        open={selected != null}
+        onOpenChange={(open) => !open && setSelected(null)}
+        detail={selectedDetail}
+        actionHref={selected ? `/orders/${selected.order_id}` : null}
+        actionLabel="Open invoice"
+      />
+    </>
   );
 }
 
-export function OperationalFinanceReportClient({ mode }: OperationalFinanceReportClientProps) {
+export function OperationalFinanceReportClient({
+  mode,
+  workspace,
+  showHeader = true,
+}: OperationalFinanceReportClientProps) {
   const user = useAuth((state) => state.user);
   const me = useAuth((state) => state.me);
   const router = useRouter();
-  const pathname = usePathname();
   const [dateFrom, setDateFrom] = useState(defaultStartDate);
   const [dateTo, setDateTo] = useState(() => yyyyMmDd(new Date()));
   const [datePreset, setDatePreset] = useState<DateRangePreset>("last30");
-  const [dateRange, setDateRange] = useState<DateRange | undefined>(() => presetToRange("last30"));
+  const [dateRange, setDateRange] = useState<DateRange | undefined>(() =>
+    presetToRange("last30"),
+  );
   const [billNumber, setBillNumber] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("");
+  const [availablePaymentMethods, setAvailablePaymentMethods] = useState<
+    string[]
+  >([]);
   const [loading, setLoading] = useState(false);
   const [report, setReport] = useState<ReportResponse | null>(null);
+  const [selectedSale, setSelectedSale] = useState<FinanceSalesDocument | null>(
+    null,
+  );
 
   const canView = hasPermission(user, "finance.income.view");
   const restaurantId = user?.restaurant_id;
@@ -344,7 +646,10 @@ export function OperationalFinanceReportClient({ mode }: OperationalFinanceRepor
 
   useEffect(() => {
     const checkAuth = async () => {
-      const token = typeof window !== "undefined" ? localStorage.getItem("accessToken") : null;
+      const token =
+        typeof window !== "undefined"
+          ? localStorage.getItem("accessToken")
+          : null;
       if (!user && token) await me();
       if (!user && !token) router.push("/");
     };
@@ -378,7 +683,7 @@ export function OperationalFinanceReportClient({ mode }: OperationalFinanceRepor
       limit: 100,
       offset: 0,
     }),
-    [restaurantId, dateFrom, dateTo, billNumber, paymentMethod]
+    [restaurantId, dateFrom, dateTo, billNumber, paymentMethod],
   );
 
   const loadReport = useCallback(async () => {
@@ -397,7 +702,18 @@ export function OperationalFinanceReportClient({ mode }: OperationalFinanceRepor
                 : FinanceReportApis.vatSales(reportParams);
 
       const res = await apiClient.get<BaseResponse<ReportResponse>>(endpoint);
-      setReport(res.data?.data ?? null);
+      const nextReport = res.data?.data ?? null;
+      setReport(nextReport);
+      if (nextReport && (mode === "payments" || mode === "refunds")) {
+        const methods = (
+          nextReport.rows as Array<PaymentReportRow | RefundReportRow>
+        )
+          .map((row) => String(row.payment_method || "").trim())
+          .filter(Boolean);
+        setAvailablePaymentMethods((current) =>
+          Array.from(new Set([...current, ...methods])).sort(),
+        );
+      }
     } catch (error) {
       console.error(`Failed to load ${mode} report`, error);
       toast.error(`Failed to load ${meta.title.toLowerCase()}`);
@@ -413,16 +729,36 @@ export function OperationalFinanceReportClient({ mode }: OperationalFinanceRepor
   const exportReport = async () => {
     if (!report || report.rows.length === 0) return;
     const XLSX = await import("xlsx");
-    const ws = XLSX.utils.json_to_sheet(report.rows as Array<Record<string, unknown>>);
+    const ws = XLSX.utils.json_to_sheet(
+      report.rows as Array<Record<string, unknown>>,
+    );
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, meta.title.slice(0, 31));
-    XLSX.writeFile(wb, `${meta.title.replace(/\s+/g, "_")}_${dateFrom}_${dateTo}.xlsx`);
+    XLSX.writeFile(
+      wb,
+      `${meta.title.replace(/\s+/g, "_")}_${dateFrom}_${dateTo}.xlsx`,
+    );
   };
 
   const clearFilters = () => {
     setBillNumber("");
     setPaymentMethod("");
   };
+
+  const openSaleDetail = useCallback(
+    async (orderId: number) => {
+      if (!restaurantId) return;
+      try {
+        setSelectedSale(
+          await financeSalesApi.getByOrder(Number(restaurantId), orderId),
+        );
+      } catch (error) {
+        console.error("Failed to load sale detail from report", error);
+        toast.error("Could not load this sale.");
+      }
+    },
+    [restaurantId],
+  );
 
   if (!user) {
     return (
@@ -434,150 +770,202 @@ export function OperationalFinanceReportClient({ mode }: OperationalFinanceRepor
 
   if (!canView) {
     return (
-      <div className="mx-auto flex max-w-3xl flex-col gap-3 p-6">
-        <h1 className="text-2xl font-bold">{meta.title}</h1>
+      <AppPage width="reading">
+        <PageHeader title={meta.title} description={meta.description} />
         <div className="border border-border p-6 text-sm text-muted-foreground">
           Your user does not have finance report access.
         </div>
-      </div>
+      </AppPage>
     );
   }
 
   return (
-    <div className="mx-auto flex max-w-[1600px] flex-col gap-6 p-6">
-      <div className="flex flex-col gap-4">
-        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">{meta.title}</h1>
-            <p className="text-sm text-muted-foreground">{meta.description}</p>
-          </div>
-          {mode === "payments" ? (
-            <BadgeDollarSign className="hidden h-6 w-6 text-muted-foreground md:block" />
-          ) : mode === "refunds" ? (
-            <RotateCcw className="hidden h-6 w-6 text-muted-foreground md:block" />
-          ) : mode === "vat-sales" ? (
-            <ReceiptText className="hidden h-6 w-6 text-muted-foreground md:block" />
-          ) : (
-            <FileText className="hidden h-6 w-6 text-muted-foreground md:block" />
-          )}
+    <AppPage width="report">
+      {showHeader || workspace === "sales" ? (
+        <div className="flex flex-col gap-4">
+          {showHeader ? (
+            <PageHeader
+              title={meta.title}
+              description={meta.description}
+              leading={
+                mode === "payments" ? (
+                  <BadgeDollarSign className="hidden h-6 w-6 text-muted-foreground md:block" />
+                ) : mode === "refunds" ? (
+                  <RotateCcw className="hidden h-6 w-6 text-muted-foreground md:block" />
+                ) : mode === "vat-sales" ? (
+                  <ReceiptText className="hidden h-6 w-6 text-muted-foreground md:block" />
+                ) : (
+                  <FileText className="hidden h-6 w-6 text-muted-foreground md:block" />
+                )
+              }
+            />
+          ) : null}
+          {workspace === "sales" ? (
+            <FinanceWorkspaceNav
+              links={[
+                { label: "Invoices", href: "/finance/sales" },
+                { label: "Sales returns", href: "/finance/sales/returns" },
+              ]}
+              action={
+                mode === "refunds"
+                  ? { label: "Select invoice", href: "/finance/sales" }
+                  : { label: "New sale", href: "/orders/new" }
+              }
+            />
+          ) : null}
         </div>
-        <FinanceSectionTabs />
-        <div className="overflow-x-auto">
-          <div className="flex min-w-max gap-2">
-            {reportLinks.map((link) => {
-              const active =
-                pathname === link.href ||
-                (link.href === "/finance/reports/sales-book" && pathname === "/finance/reports");
-              return (
-                <Link
-                  key={link.href}
-                  href={link.href}
-                  className={cn(
-                    "inline-flex h-9 items-center gap-2 rounded-md border px-3 text-sm font-medium transition-colors",
-                    active
-                      ? "border-primary bg-primary text-primary-foreground"
-                      : "border-border bg-background text-muted-foreground hover:bg-muted hover:text-foreground"
-                  )}
-                >
-                  {link.label}
-                </Link>
-              );
-            })}
-          </div>
-        </div>
-      </div>
+      ) : null}
 
-      <div className="flex flex-col gap-3 border-y border-border bg-muted/20 px-4 py-3 lg:flex-row lg:items-end lg:justify-between">
-        <div className="flex flex-wrap items-end gap-3">
-          <div className="grid gap-1.5">
-            <Label className="text-xs text-muted-foreground">
-              Date range
-            </Label>
-            <DateRangeDropdown
-              activeRange={datePreset}
-              setActiveRange={setDatePreset}
-              date={dateRange}
-              setDate={(value) => {
-                setDatePreset("custom");
-                setDateRange(value);
-                const from = value?.from;
-                const to = value?.to;
-                if (from) {
-                  setDateFrom(format(from, "yyyy-MM-dd"));
-                }
-                if (to) {
-                  setDateTo(format(to, "yyyy-MM-dd"));
-                } else if (from) {
-                  setDateTo(format(from, "yyyy-MM-dd"));
-                }
-              }}
-            />
+      <ReportFilters
+        title="Report filters"
+        responsiveAt="lg"
+        activeCount={
+          Number(Boolean(billNumber)) + Number(Boolean(paymentMethod))
+        }
+      >
+        <div className="flex w-full flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+          <div className="grid min-w-0 flex-1 gap-3 md:flex md:flex-wrap md:items-end">
+            <div className="grid gap-1.5">
+              <Label className="text-xs text-muted-foreground">
+                Date range
+              </Label>
+              <DateRangeDropdown
+                activeRange={datePreset}
+                setActiveRange={setDatePreset}
+                date={dateRange}
+                className="h-11 w-full rounded-xl md:w-auto"
+                setDate={(value) => {
+                  setDatePreset("custom");
+                  setDateRange(value);
+                  const from = value?.from;
+                  const to = value?.to;
+                  if (from) {
+                    setDateFrom(format(from, "yyyy-MM-dd"));
+                  }
+                  if (to) {
+                    setDateTo(format(to, "yyyy-MM-dd"));
+                  } else if (from) {
+                    setDateTo(format(from, "yyyy-MM-dd"));
+                  }
+                }}
+              />
+            </div>
+            <div className="grid gap-1.5">
+              <Label
+                htmlFor="report-bill-number"
+                className="text-xs text-muted-foreground"
+              >
+                Bill
+              </Label>
+              <Input
+                id="report-bill-number"
+                value={billNumber}
+                onChange={(event) => setBillNumber(event.target.value)}
+                placeholder="Bill number"
+                className="h-11 w-full rounded-xl md:w-[170px]"
+              />
+            </div>
+            {mode === "payments" || mode === "refunds" ? (
+              <div className="grid gap-1.5">
+                <Label
+                  htmlFor="report-payment-method"
+                  className="text-xs text-muted-foreground"
+                >
+                  Method
+                </Label>
+                <Select
+                  value={paymentMethod || "all"}
+                  onValueChange={(value) =>
+                    setPaymentMethod(value === "all" ? "" : value)
+                  }
+                >
+                  <SelectTrigger
+                    id="report-payment-method"
+                    className="h-11 w-full rounded-xl md:w-[170px]"
+                  >
+                    <SelectValue placeholder="All methods" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All methods</SelectItem>
+                    {availablePaymentMethods.map((method) => (
+                      <SelectItem
+                        key={method}
+                        value={method}
+                        className="capitalize"
+                      >
+                        {method.replaceAll("_", " ")}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : null}
           </div>
-          <div className="grid gap-1.5">
-            <Label htmlFor="report-bill-number" className="text-xs text-muted-foreground">
-              Bill
-            </Label>
-            <Input
-              id="report-bill-number"
-              value={billNumber}
-              onChange={(event) => setBillNumber(event.target.value)}
-              placeholder="Bill number"
-              className="h-9 w-[170px]"
-            />
-          </div>
-          <div className="grid gap-1.5">
-            <Label htmlFor="report-payment-method" className="text-xs text-muted-foreground">
-              Method
-            </Label>
-            <Input
-              id="report-payment-method"
-              value={paymentMethod}
-              onChange={(event) => setPaymentMethod(event.target.value)}
-              placeholder="cash, card, credit"
-              className="h-9 w-[170px]"
-            />
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="outline"
+              className="h-11 rounded-xl"
+              onClick={clearFilters}
+            >
+              Clear
+            </Button>
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button variant="outline" size="sm" onClick={clearFilters}>
-            Clear
-          </Button>
-          <Button variant="outline" size="sm" onClick={loadReport} disabled={loading}>
-            <RefreshCw className={loading ? "mr-2 h-4 w-4 animate-spin" : "mr-2 h-4 w-4"} />
-            Refresh
-          </Button>
-          <Button variant="outline" size="sm" onClick={exportReport} disabled={!report || report.rows.length === 0}>
-            <Search className="mr-2 h-4 w-4" />
-            Export
-          </Button>
-        </div>
-      </div>
+      </ReportFilters>
 
       <SummaryStrip data={report} mode={mode} />
 
       <Card className="overflow-hidden">
         <CardHeader className="border-b border-border p-4">
-          <CardTitle className="text-base">{meta.title}</CardTitle>
+          <div className="flex items-center justify-between gap-3">
+            <CardTitle className="text-base">{meta.title}</CardTitle>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-9 gap-2"
+              onClick={exportReport}
+              disabled={!report || report.rows.length === 0}
+            >
+              <Download className="h-4 w-4" />
+              <span className="hidden sm:inline">Export</span>
+            </Button>
+          </div>
         </CardHeader>
         <CardContent className="p-0">
           {loading ? (
-            <div className="p-8 text-center text-sm text-muted-foreground">Loading {meta.title.toLowerCase()}...</div>
+            <div className="p-8 text-center text-sm text-muted-foreground">
+              Loading {meta.title.toLowerCase()}...
+            </div>
           ) : mode === "payments" && report ? (
-            <PaymentTable rows={(report as PaymentReportResponse).rows} mode="payments" />
+            <PaymentTable
+              rows={(report as PaymentReportResponse).rows}
+              mode="payments"
+            />
           ) : mode === "refunds" && report ? (
-            <PaymentTable rows={(report as RefundReportResponse).rows} mode="refunds" />
+            <PaymentTable
+              rows={(report as RefundReportResponse).rows}
+              mode="refunds"
+            />
           ) : report ? (
             <SalesLikeTable
               rows={
                 report.rows as Array<SalesBookRow | InvoiceRow | VatSalesRow>
               }
               mode={mode}
+              onSelectSale={openSaleDetail}
             />
           ) : (
-            <div className="p-8 text-center text-sm text-muted-foreground">No report loaded.</div>
+            <div className="p-8 text-center text-sm text-muted-foreground">
+              No report loaded.
+            </div>
           )}
         </CardContent>
       </Card>
-    </div>
+      <SalesDocumentDetailSheet
+        open={selectedSale != null}
+        onOpenChange={(open) => !open && setSelectedSale(null)}
+        document={selectedSale}
+      />
+    </AppPage>
   );
 }

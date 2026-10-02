@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
-import { ArrowLeft, Loader2, RefreshCw, Search, ChevronLeft, ChevronRight } from "lucide-react";
+import { Loader2, Search, ChevronLeft, ChevronRight } from "lucide-react";
 
 import apiClient from "@/lib/api-client";
 import { AnalyticsApis } from "@/lib/api/endpoints";
@@ -17,20 +16,34 @@ import {
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
+import { AppPage } from "@/components/patterns/page/app-page";
+import { PageHeader } from "@/components/patterns/page/page-header";
+import { ReportFilters } from "@/components/patterns/controls/report-filters";
+import { DataList, ListRow } from "@/components/patterns/data/data-list";
 
 type StaffDetail = {
   id: number;
   name: string;
   email: string;
+  /** Orders this staff member created, and their revenue. */
   revenue: number;
   orders_count: number;
   avg_order_value: number;
+  /** Orders this staff member *completed* (collected final payment on) --
+   * can be a different person than whoever created the order, e.g. a
+   * cashier closing out a table a waiter opened. */
+  orders_completed: number;
+  revenue_as_completer: number;
+  /** Order lines added to an already-created order. An activity count, not
+   * revenue -- items don't have a clean dollar amount separate from the
+   * order they belong to. */
+  items_added: number;
 };
 
 type StaffDetailsResponse = {
@@ -135,10 +148,15 @@ export default function AnalyticsStaffPage() {
   if (!canViewAnalytics) return <AnalyticsAccessDenied />;
 
   return (
-    <div className="flex flex-col gap-6 max-w-[1600px] mx-auto p-6">
+    <AppPage width="wide" className="gap-5 pb-24">
       {fetchError ? (
         <AnalyticsFetchError message={fetchError} onRetry={fetchDetails} />
       ) : null}
+      <PageHeader
+        title="Staff analytics"
+        description="See order activity and sales contribution by staff member."
+      />
+      {/* Legacy local header is intentionally replaced by the shared internal app bar and page header.
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div className="flex items-center gap-4">
           <Link href="/analytics">
@@ -148,7 +166,10 @@ export default function AnalyticsStaffPage() {
           </Link>
           <div>
             <h1 className="text-2xl font-bold tracking-tight">Staff Analytics</h1>
-            <p className="text-muted-foreground">Revenue and orders by staff.</p>
+            <p className="text-muted-foreground">
+              Orders created, orders completed, and items added by staff — tracked
+              separately since one order can involve more than one person.
+            </p>
           </div>
         </div>
         <Button variant="outline" onClick={fetchDetails} disabled={loading}>
@@ -156,15 +177,12 @@ export default function AnalyticsStaffPage() {
           Refresh
         </Button>
       </div>
+      */}
 
-      <Card className="border-border">
-        <CardHeader>
-          <CardTitle className="text-base">Filters</CardTitle>
-        </CardHeader>
-        <CardContent className="grid grid-cols-1 md:grid-cols-6 gap-4">
-          <div className="space-y-2 md:col-span-1">
+      <ReportFilters title="Staff filters" className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <div className="space-y-1.5">
             <Label>From</Label>
-            <Input
+            <Input className="h-11"
               type="date"
               value={dateFrom}
               onChange={(e) => {
@@ -173,9 +191,9 @@ export default function AnalyticsStaffPage() {
               }}
             />
           </div>
-          <div className="space-y-2 md:col-span-1">
+          <div className="space-y-1.5">
             <Label>To</Label>
-            <Input
+            <Input className="h-11"
               type="date"
               value={dateTo}
               onChange={(e) => {
@@ -185,18 +203,18 @@ export default function AnalyticsStaffPage() {
             />
           </div>
 
-          <div className="space-y-2 md:col-span-2">
+          <div className="space-y-1.5">
             <Label>Search</Label>
             <div className="relative">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input className="pl-8" placeholder="Name or email..." value={search} onChange={(e) => setSearch(e.target.value)} />
+              <Search className="absolute left-3 top-3.5 h-4 w-4 text-muted-foreground" />
+              <Input className="h-11 pl-9" placeholder="Name or email" value={search} onChange={(e) => setSearch(e.target.value)} />
             </div>
           </div>
 
-          <div className="space-y-2 md:col-span-1">
+          <div className="space-y-1.5">
             <Label>Page Size</Label>
             <Select value={String(pageSize)} onValueChange={(v) => { setPage(1); setPageSize(Number(v)); }}>
-              <SelectTrigger>
+              <SelectTrigger className="h-11">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -208,7 +226,7 @@ export default function AnalyticsStaffPage() {
             </Select>
           </div>
 
-          <div className="space-y-2 md:col-span-1">
+          <div className="space-y-1.5">
             <Label>Business Line</Label>
             <Select
               value={businessLine}
@@ -218,7 +236,7 @@ export default function AnalyticsStaffPage() {
               }}
               disabled={!showBusinessLine}
             >
-              <SelectTrigger>
+              <SelectTrigger className="h-11">
                 <SelectValue placeholder={showBusinessLine ? "All" : "All"} />
               </SelectTrigger>
               <SelectContent>
@@ -228,8 +246,7 @@ export default function AnalyticsStaffPage() {
               </SelectContent>
             </Select>
           </div>
-        </CardContent>
-      </Card>
+      </ReportFilters>
 
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -261,28 +278,60 @@ export default function AnalyticsStaffPage() {
         ) : null}
       </div>
 
-      <Card className="border-border shadow-sm overflow-hidden">
+      <Card className="overflow-hidden rounded-xl border-border shadow-sm">
+        <div className="md:hidden">
+          <DataList>
+            {loading && !data ? (
+              <div className="flex h-40 items-center justify-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" /> Loading staff analytics...
+              </div>
+            ) : (visibleRows?.length || 0) === 0 ? (
+              <div className="flex h-40 items-center justify-center px-6 text-center text-sm text-muted-foreground">
+                No staff activity was found for this range.
+              </div>
+            ) : (
+              visibleRows.map((s) => (
+                <ListRow
+                  key={s.id}
+                  title={s.name || "Unknown staff"}
+                  description={`${Number(s.orders_count || 0).toLocaleString()} created · ${Number(s.orders_completed || 0).toLocaleString()} completed`}
+                  meta={s.email || undefined}
+                  value={(
+                    <div className="text-right">
+                      <p className="font-semibold tabular-nums">Rs. {money.format(Number(s.revenue || 0))}</p>
+                      <p className="text-xs text-muted-foreground">avg Rs. {money.format(Number(s.avg_order_value || 0))}</p>
+                    </div>
+                  )}
+                />
+              ))
+            )}
+          </DataList>
+        </div>
+        <div className="hidden md:block">
         <Table>
           <TableHeader className="bg-muted/30">
             <TableRow>
               <TableHead>Staff</TableHead>
               <TableHead>Email</TableHead>
-              <TableHead className="text-right">Orders</TableHead>
+              <TableHead className="text-right">Created</TableHead>
               <TableHead className="text-right">Avg Order</TableHead>
-              <TableHead className="text-right">Revenue</TableHead>
+              <TableHead className="text-right">Revenue (Created)</TableHead>
+              <TableHead className="text-right">Completed</TableHead>
+              <TableHead className="text-right">Revenue (Completed)</TableHead>
+              <TableHead className="text-right">Items Added</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading && !data ? (
               <TableRow>
-                <TableCell colSpan={5} className="h-40 text-center text-muted-foreground">
+                <TableCell colSpan={8} className="h-40 text-center text-muted-foreground">
                   <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" />
                   Loading...
                 </TableCell>
               </TableRow>
             ) : (visibleRows?.length || 0) === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="h-40 text-center text-muted-foreground">
+                <TableCell colSpan={8} className="h-40 text-center text-muted-foreground">
                   No results found for the selected range.
                 </TableCell>
               </TableRow>
@@ -296,12 +345,20 @@ export default function AnalyticsStaffPage() {
                   <TableCell className="text-right font-semibold text-emerald-700 dark:text-emerald-400">
                     Rs. {money.format(Number(s.revenue || 0))}
                   </TableCell>
+                  <TableCell className="text-right">{Number(s.orders_completed || 0).toLocaleString()}</TableCell>
+                  <TableCell className="text-right text-muted-foreground">
+                    Rs. {money.format(Number(s.revenue_as_completer || 0))}
+                  </TableCell>
+                  <TableCell className="text-right text-muted-foreground">
+                    {Number(s.items_added || 0).toLocaleString()}
+                  </TableCell>
                 </TableRow>
               ))
             )}
           </TableBody>
         </Table>
+        </div>
       </Card>
-    </div>
+    </AppPage>
   );
 }

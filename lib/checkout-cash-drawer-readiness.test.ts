@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   CHECKOUT_MULTIPLE_ACTIVE_CASH_DRAWERS_MESSAGE,
   CHECKOUT_OPEN_CASH_DRAWER_MESSAGE,
+  HOTEL_CHECKOUT_OPEN_CASH_DRAWER_MESSAGE,
   resolveCheckoutCashDrawerReadiness,
 } from "./checkout-cash-drawer-readiness";
 
@@ -17,6 +18,7 @@ describe("checkout cash drawer readiness", () => {
       controlsEnabled: false,
       paymentReadySessions: [],
       ready: true,
+      autoOpenOnPayment: false,
       message: "",
     });
   });
@@ -35,6 +37,7 @@ describe("checkout cash drawer readiness", () => {
     });
 
     expect(result.ready).toBe(true);
+    expect(result.autoOpenOnPayment).toBe(false);
     expect(result.paymentReadySessions).toEqual([sharedDrawer]);
   });
 
@@ -53,11 +56,12 @@ describe("checkout cash drawer readiness", () => {
         { id: 52, status: "closing_count_required" },
       ],
       ready: false,
+      autoOpenOnPayment: false,
       message: CHECKOUT_MULTIPLE_ACTIVE_CASH_DRAWERS_MESSAGE,
     });
   });
 
-  it("blocks checkout when controls are enabled and no payment-ready drawer is accessible", () => {
+  it("allows the backend to auto-open a configured drawer for the first cash payment", () => {
     expect(
       resolveCheckoutCashDrawerReadiness({
         data: [
@@ -68,8 +72,18 @@ describe("checkout cash drawer readiness", () => {
     ).toEqual({
       controlsEnabled: true,
       paymentReadySessions: [],
-      ready: false,
+      ready: true,
+      autoOpenOnPayment: true,
       message: CHECKOUT_OPEN_CASH_DRAWER_MESSAGE,
     });
+  });
+
+  it("identifies the hotel drawer when hotel cash has no open drawer", () => {
+    expect(
+      resolveCheckoutCashDrawerReadiness(
+        { data: [] },
+        { businessLine: "hotel" },
+      ).message,
+    ).toBe(HOTEL_CHECKOUT_OPEN_CASH_DRAWER_MESSAGE);
   });
 });

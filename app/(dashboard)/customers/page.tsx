@@ -1,258 +1,384 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useAuth } from "@/hooks/use-auth";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Plus, User } from "lucide-react";
 import { useRouter } from "next/navigation";
-import apiClient from "@/lib/api-client";
-import { CustomerApis, OrderApis } from "@/lib/api/endpoints";
-import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Search, Plus, User, Phone, Mail, Award, Loader2, DollarSign } from "lucide-react";
-import Link from "next/link";
-import { Badge } from "@/components/ui/badge";
 
 import { AddCustomerDialog } from "@/components/customers/add-customer-dialog";
-import { CustomerDetailsSheet } from "@/components/customers/customer-details-sheet";
+import { MetricCard } from "@/components/cards/metric-card";
+import { SearchField } from "@/components/patterns/controls/search-field";
+import { FilterBar } from "@/components/patterns/controls/filter-bar";
+import { MobileRegisterToolbar } from "@/components/patterns/controls/mobile-register-toolbar";
+import { MobileCreateFab } from "@/components/patterns/actions/mobile-create-fab";
+import { DataList, ListRow } from "@/components/patterns/data/data-list";
+import {
+  EmptyState,
+  LoadingState,
+} from "@/components/patterns/feedback/feedback-state";
+import { AppPage } from "@/components/patterns/page/app-page";
+import { PageHeader } from "@/components/patterns/page/page-header";
+import { useAuth } from "@/hooks/use-auth";
+import { useRestaurant } from "@/hooks/use-restaurant";
+import apiClient from "@/lib/api-client";
+import { CustomerApis, OrderApis } from "@/lib/api/endpoints";
+import { presentCustomerBalance } from "@/lib/presentation/customer-balance";
+import { formatCurrency } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+
+interface CustomerRecord {
+  id: number;
+  name?: string | null;
+  full_name?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  credit?: number | null;
+  visits?: number | null;
+  loyalty_points?: number | null;
+  is_active?: boolean | null;
+}
 
 export default function CustomersPage() {
-  const [customers, setCustomers] = useState<any[]>([]);
+  const [customers, setCustomers] = useState<CustomerRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [isFallbackMode, setIsFallbackMode] = useState(false);
-  const [selectedCustomer, setSelectedCustomer] = useState<any>(null);
-  const [isSheetOpen, setIsSheetOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [addCustomerOpen, setAddCustomerOpen] = useState(false);
 
-  const user = useAuth(state => state.user);
-  const me = useAuth(state => state.me);
+  const user = useAuth((state) => state.user);
+  const me = useAuth((state) => state.me);
+  const restaurant = useRestaurant((state) => state.restaurant);
   const router = useRouter();
 
-  // 1. Session Restoration & Auth Guard
   useEffect(() => {
     const checkAuth = async () => {
-      const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
+      const token =
+        typeof window !== "undefined"
+          ? localStorage.getItem("accessToken")
+          : null;
       if (!user && token) await me();
-
-      const updatedToken = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
-      if (!user && !updatedToken) router.push('/');
+      if (!user && !token) router.push("/");
     };
-    const timer = setTimeout(checkAuth, 500);
-    return () => clearTimeout(timer);
-  }, [user, me, router]);
+    const timer = window.setTimeout(checkAuth, 500);
+    return () => window.clearTimeout(timer);
+  }, [me, router, user]);
 
-  // 2. Fetch Customers
-  const fetchCustomers = async () => {
+  const fetchCustomers = useCallback(async () => {
     if (!user?.restaurant_id) return;
     setLoading(true);
     try {
-      const response = await apiClient.get(CustomerApis.listCustomers(user.restaurant_id));
+      const response = await apiClient.get(
+        CustomerApis.listCustomers(user.restaurant_id),
+      );
       if (response.data.status === "success") {
-        setCustomers(response.data.data.customers || []);
+        setCustomers(response.data.data.customers ?? []);
         setIsFallbackMode(false);
         return;
       }
-    } catch (err: any) {
-      // Keep page usable when /customers is blocked for this token on web.
-      // Build a read-only customer list from order snapshots as fallback.
-      if (err?.response?.status === 403) {
+    } catch (error: unknown) {
+      const status =
+        typeof error === "object" && error !== null && "response" in error
+          ? (error as { response?: { status?: number } }).response?.status
+          : undefined;
+      if (status === 403) {
         try {
-          console.error("Customers endpoint returned 403:", err?.response?.data);
-          const ordersRes = await apiClient.get(OrderApis.listOrders, {
-            params: {
-              restaurant_id: user.restaurant_id,
-              limit: 1000,
-              skip: 0,
-            },
+          const ordersResponse = await apiClient.get(OrderApis.listOrders, {
+            params: { restaurant_id: user.restaurant_id, limit: 1000, skip: 0 },
           });
-          if (ordersRes.data?.status === "success") {
-            const orders = ordersRes.data?.data?.orders || [];
-            const byId = new Map<number, any>();
-
-            for (const o of orders) {
-              const cid = Number(o?.customer_id || 0);
-              if (cid <= 0) continue; // keep only real linked customers
-              const name = o?.customer_name || "Guest";
-              const phone = o?.customer_phone || "";
-              if (!byId.has(cid)) {
-                byId.set(cid, {
-                  id: cid,
-                  name,
-                  full_name: name,
-                  phone,
-                  email: "",
-                  loyalty_points: 0,
-                  // Unknown in fallback mode; avoid fake totals.
-                  credit: undefined,
-                  visits: 1,
-                  is_active: true,
-                  is_vip: false,
-                });
-              } else {
-                const existing = byId.get(cid);
-                existing.visits = (existing.visits || 0) + 1;
-                if (!existing.phone && phone) existing.phone = phone;
-                if (!existing.name && name) {
-                  existing.name = name;
-                  existing.full_name = name;
-                }
+          if (ordersResponse.data?.status === "success") {
+            const customersById = new Map<number, CustomerRecord>();
+            for (const order of ordersResponse.data?.data?.orders ?? []) {
+              const customerId = Number(order?.customer_id ?? 0);
+              if (customerId <= 0) continue;
+              const existing = customersById.get(customerId);
+              if (existing) {
+                existing.visits = (existing.visits ?? 0) + 1;
+                if (!existing.phone && order.customer_phone)
+                  existing.phone = order.customer_phone;
+                continue;
               }
+              const name = order?.customer_name || "Guest";
+              customersById.set(customerId, {
+                id: customerId,
+                name,
+                full_name: name,
+                phone: order?.customer_phone || "",
+                email: "",
+                visits: 1,
+                is_active: true,
+              });
             }
-
-            setCustomers(Array.from(byId.values()));
+            setCustomers(Array.from(customersById.values()));
             setIsFallbackMode(true);
             return;
           }
-        } catch (fallbackErr) {
-          console.error("Fallback customers from orders failed:", fallbackErr);
+        } catch (fallbackError) {
+          console.error("Customer order fallback failed:", fallbackError);
         }
       }
-      console.error("Failed to fetch customers:", err);
+      console.error("Failed to fetch customers:", error);
       setCustomers([]);
       setIsFallbackMode(false);
     } finally {
       setLoading(false);
     }
-  };
+  }, [user?.restaurant_id]);
 
   useEffect(() => {
-    if (user?.restaurant_id) {
-      fetchCustomers();
-    }
-  }, [user]);
+    void fetchCustomers();
+  }, [fetchCustomers]);
 
-  const handleCreateSuccess = () => {
-    fetchCustomers();
-  };
+  const filteredCustomers = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    return customers.filter((customer) => {
+      const matchesSearch =
+        !query ||
+        [
+          customer.name,
+          customer.full_name,
+          customer.phone,
+          customer.email,
+        ].some((value) => value?.toLowerCase().includes(query));
+      const matchesStatus =
+        statusFilter === "all" ||
+        (statusFilter === "active"
+          ? customer.is_active !== false
+          : customer.is_active === false);
+      return matchesSearch && matchesStatus;
+    });
+  }, [customers, searchQuery, statusFilter]);
 
-  const openDetails = (customer: any) => {
-    setSelectedCustomer(customer);
-    setIsSheetOpen(true);
-  };
+  const totalReceivable = customers.reduce(
+    (sum, customer) => sum + Number(customer.credit ?? 0),
+    0,
+  );
+  const openDetails = (customerId: number) =>
+    router.push(`/customers/${customerId}`);
+  const customerName = (customer: CustomerRecord) =>
+    customer.full_name || customer.name || "Guest";
+  const contact = (customer: CustomerRecord) =>
+    customer.phone || customer.email || "No contact details";
 
   return (
-    <div className="flex flex-col gap-8 max-w-[1600px] mx-auto p-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Customers</h1>
-          <p className="text-muted-foreground">Manage your customer base and loyalty.</p>
+    <AppPage width="register">
+      <div className="hidden lg:block">
+        <PageHeader
+          title="Customers"
+          description="Manage customer relationships, sales history, and settlements."
+          actions={
+            <Button
+              type="button"
+              className="h-11 rounded-xl"
+              onClick={() => setAddCustomerOpen(true)}
+            >
+              <Plus className="mr-2 h-4 w-4" />
+              Add customer
+            </Button>
+          }
+        />
+      </div>
+
+      <MobileRegisterToolbar
+        search={
+          <SearchField
+            placeholder="Search customers"
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+            onClear={() => setSearchQuery("")}
+          />
+        }
+        filter={
+          <FilterBar
+            title="Filters"
+            activeCount={statusFilter === "all" ? 0 : 1}
+            responsiveAt="lg"
+            mobileTriggerVariant="icon"
+            mobileContent={
+              <div className="space-y-2">
+                <label
+                  className="text-sm font-medium"
+                  htmlFor="customer-status-filter-mobile"
+                >
+                  Status
+                </label>
+                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <SelectTrigger
+                    id="customer-status-filter-mobile"
+                    className="h-11 rounded-xl"
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All customers</SelectItem>
+                    <SelectItem value="active">Active</SelectItem>
+                    <SelectItem value="inactive">Inactive</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            }
+          />
+        }
+      />
+
+      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-2xl border border-border/70 bg-card px-4 py-3 lg:hidden">
+        <div className="min-w-0">
+          <p className="text-xs font-medium text-muted-foreground">
+            Total receivable
+          </p>
+          <p className="mt-1 truncate text-lg font-semibold tabular-nums text-foreground">
+            {isFallbackMode
+              ? "Unavailable"
+              : formatCurrency(totalReceivable, restaurant?.currency)}
+          </p>
         </div>
-        <AddCustomerDialog onCustomerAdded={handleCreateSuccess} />
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <Card className="bg-primary/5 border-primary/20">
-          <CardContent className="p-6 flex items-center gap-4">
-            <div className="h-12 w-12 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
-              <User className="w-6 h-6" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-muted-foreground">Total Customers</p>
-              <h3 className="text-2xl font-bold">{customers.length}</h3>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="bg-emerald-50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-900/30">
-          <CardContent className="p-6 flex items-center gap-4">
-            <div className="h-12 w-12 rounded-xl bg-emerald-100 dark:bg-emerald-900/50 flex items-center justify-center text-emerald-600">
-              <DollarSign className="w-6 h-6" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-muted-foreground text-emerald-800 dark:text-emerald-400">
-                Total Credit Balance
-              </p>
-              <h3 className="text-2xl font-bold text-emerald-700 dark:text-emerald-500">
-                {isFallbackMode
-                  ? "Unavailable"
-                  : `Rs. ${customers.reduce((acc, c) => acc + (c.credit || 0), 0).toLocaleString()}`}
-              </h3>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-      {isFallbackMode && (
-        <p className="text-xs text-amber-600">
-          Customer API is plan-locked on web for this restaurant; showing linked order customers only.
+        <p className="text-xs text-muted-foreground">
+          {customers.length} customers
         </p>
-      )}
-
-      <div className="relative w-full max-w-sm">
-        <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-        <Input className="pl-8 bg-muted/50 border-border" placeholder="Search customers..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
       </div>
+
+      <div className="hidden max-w-2xl grid-cols-2 gap-3 lg:grid">
+        <MetricCard
+          label="Customers"
+          value={customers.length}
+          icon={<User className="h-4 w-4" />}
+          tone="brand"
+        />
+        <MetricCard
+          label="Total receivable"
+          value={
+            isFallbackMode
+              ? "Unavailable"
+              : formatCurrency(totalReceivable, restaurant?.currency)
+          }
+          icon={<User className="h-4 w-4" />}
+          tone="neutral"
+        />
+      </div>
+
+      {isFallbackMode ? (
+        <p className="text-xs text-amber-700 dark:text-amber-400">
+          Customer profiles are unavailable for this account. Showing customers
+          linked to orders only.
+        </p>
+      ) : null}
+
+      <FilterBar className="hidden lg:block" responsiveAt="lg">
+        <SearchField
+          containerClassName="max-w-md"
+          placeholder="Search name, phone, or email"
+          value={searchQuery}
+          onChange={(event) => setSearchQuery(event.target.value)}
+          onClear={() => setSearchQuery("")}
+        />
+        <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <SelectTrigger
+            className="h-11 w-44 rounded-xl"
+            aria-label="Customer status"
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All customers</SelectItem>
+            <SelectItem value="active">Active</SelectItem>
+            <SelectItem value="inactive">Inactive</SelectItem>
+          </SelectContent>
+        </Select>
+      </FilterBar>
 
       {loading ? (
-        <div className="h-64 flex items-center justify-center">
-          <Loader2 className="w-8 h-8 animate-spin text-primary" />
-        </div>
-      ) : customers.length === 0 ? (
-        <div className="h-64 flex flex-col items-center justify-center text-muted-foreground border-2 border-dashed border-border rounded-lg">
-          <User className="w-12 h-12 mb-4 opacity-20" />
-          <p>No customers found.</p>
-        </div>
+        <LoadingState label="Loading customers..." />
+      ) : filteredCustomers.length === 0 ? (
+        <EmptyState
+          icon={<User className="h-5 w-5" />}
+          title="No customers found"
+          description="Add a customer to track their sales and settlements."
+        />
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-          {customers.filter((c) => {
-            if (!searchQuery.trim()) return true;
-            const q = searchQuery.toLowerCase();
-            return (c.name || "").toLowerCase().includes(q) || (c.phone || "").toLowerCase().includes(q) || (c.email || "").toLowerCase().includes(q);
-          }).map((customer) => (
-            <Card key={customer.id} className="bg-card border-border hover:shadow-md transition-all shadow-sm cursor-pointer" onClick={() => openDetails(customer)}>
-              <CardContent className="p-6">
-                <div className="flex items-start justify-between mb-4">
-                  <div className="flex items-center gap-3">
-                    <div className="h-10 w-10 rounded-full bg-muted flex items-center justify-center text-lg font-bold text-muted-foreground">
-                      {customer.name?.charAt(0) || <User className="w-5 h-5" />}
-                    </div>
-                    <div>
-                      <h3 className="font-semibold text-foreground truncate">{customer.name || "Guest"}</h3>
-                      <p className="text-xs text-muted-foreground">ID: #{customer.id}</p>
-                    </div>
-                  </div>
-                  {customer.loyalty_points > 0 && (
-                    <Badge variant="outline" className="border-orange-200 bg-orange-50 text-orange-600 dark:border-orange-900/50 dark:bg-orange-950/20 dark:text-orange-500">
-                      <Award className="w-3 h-3 mr-1" /> {customer.loyalty_points}
-                    </Badge>
-                  )}
-                </div>
+        <>
+          <DataList className="lg:hidden">
+            {filteredCustomers.map((customer) => {
+              const balance = presentCustomerBalance({
+                isAvailable: !isFallbackMode,
+                legacyReceivable: customer.credit,
+              });
+              return (
+                <ListRow
+                  key={customer.id}
+                  interactive
+                  onClick={() => openDetails(customer.id)}
+                  leading={
+                    <span className="font-semibold">
+                      {customerName(customer).charAt(0)}
+                    </span>
+                  }
+                  title={customerName(customer)}
+                  description={contact(customer)}
+                  meta={
+                    balance.amount === null
+                      ? balance.label
+                      : `${balance.label} ${formatCurrency(balance.amount, restaurant?.currency)}`
+                  }
+                />
+              );
+            })}
+          </DataList>
 
-                <div className="space-y-2 text-sm text-muted-foreground">
-                  <div className="flex items-center gap-2">
-                    <Phone className="w-3.5 h-3.5" />
-                    <span>{customer.phone || "No phone"}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Mail className="w-3.5 h-3.5" />
-                    <span className="truncate">{customer.email || "No email"}</span>
-                  </div>
-                </div>
-
-                <div className="mt-4 pt-4 border-t border-border flex justify-between items-center text-xs">
-                  <span className="text-muted-foreground font-medium">
-                    {typeof customer.credit === "number" && customer.credit > 0 ? (
-                      <span className="text-red-600 flex items-center gap-1">
-                        <DollarSign className="w-3 h-3" />
-                        Credit: Rs. {customer.credit.toLocaleString()}
-                      </span>
-                    ) : (
-                      <span>Visits: {customer.visits || 0}</span>
-                    )}
-                  </span>
-                  <Button variant="ghost" size="sm" className="h-auto p-0 text-primary hover:text-primary/80" onClick={(e) => { e.stopPropagation(); openDetails(customer); }}>
-                    View Details
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+          <DataList className="hidden lg:block">
+            {filteredCustomers.map((customer) => {
+              const balance = presentCustomerBalance({
+                isAvailable: !isFallbackMode,
+                legacyReceivable: customer.credit,
+              });
+              return (
+                <ListRow
+                  key={customer.id}
+                  interactive
+                  onClick={() => openDetails(customer.id)}
+                  leading={
+                    <span className="font-semibold">
+                      {customerName(customer).charAt(0)}
+                    </span>
+                  }
+                  title={customerName(customer)}
+                  description={contact(customer)}
+                  meta={
+                    customer.loyalty_points
+                      ? `${customer.loyalty_points} loyalty points`
+                      : customer.is_active === false
+                        ? "Inactive"
+                        : "Active"
+                  }
+                  trailing={
+                    <div className="hidden min-w-40 text-right text-xs text-muted-foreground lg:block">
+                      {balance.amount === null
+                        ? balance.label
+                        : `${balance.label} ${formatCurrency(balance.amount, restaurant?.currency)}`}
+                    </div>
+                  }
+                />
+              );
+            })}
+          </DataList>
+        </>
       )}
 
-      <CustomerDetailsSheet
-        customer={selectedCustomer}
-        open={isSheetOpen}
-        onOpenChange={setIsSheetOpen}
-        onUpdate={fetchCustomers}
+      <MobileCreateFab
+        label="Add customer"
+        onClick={() => setAddCustomerOpen(true)}
       />
-    </div>
+      <AddCustomerDialog
+        hideTrigger
+        open={addCustomerOpen}
+        onOpenChange={setAddCustomerOpen}
+        onCustomerAdded={fetchCustomers}
+      />
+    </AppPage>
   );
 }

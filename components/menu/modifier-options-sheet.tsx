@@ -1,14 +1,14 @@
 "use client";
 
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
-import { Button } from "@/components/ui/button";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Plus, Edit, Trash2, Loader2, AlertCircle, Link as LinkIcon } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { Edit, Link as LinkIcon, Loader2, Plus, Trash2 } from "lucide-react";
+
 import apiClient from "@/lib/api-client";
 import { ModifierApis } from "@/lib/api/endpoints";
-import { ModifierItem, ModifierItemDialog } from "./modifier-item-dialog";
+import { formatCurrency } from "@/lib/utils";
+import { useRestaurant } from "@/hooks/use-restaurant";
 import { useToast } from "@/components/ui/use-toast";
+import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -21,8 +21,22 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { ModifierGroup } from "./modifier-group-dialog";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
+import { DataList, ListRow } from "@/components/patterns/data/data-list";
+import { EmptyState } from "@/components/patterns/feedback/feedback-state";
 import { ModifierInventoryLinker } from "@/components/inventory/modifier-inventory-linker";
+import { ModifierGroup } from "./modifier-group-dialog";
+import {
+  ModifierItem,
+  ModifierItemDialog,
+  type ModifierItemFormValues,
+} from "./modifier-item-dialog";
 
 interface ModifierOptionsSheetProps {
   open: boolean;
@@ -30,36 +44,30 @@ interface ModifierOptionsSheetProps {
   group: ModifierGroup | null;
 }
 
-export function ModifierOptionsSheet({ open, onOpenChange, group }: ModifierOptionsSheetProps) {
+export function ModifierOptionsSheet({
+  open,
+  onOpenChange,
+  group,
+}: ModifierOptionsSheetProps) {
   const [items, setItems] = useState<ModifierItem[]>([]);
   const [loading, setLoading] = useState(false);
-  const { toast } = useToast();
-
   const [itemDialogOpen, setItemDialogOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<ModifierItem | null>(null);
-  
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [itemToDelete, setItemToDelete] = useState<ModifierItem | null>(null);
-
   const [linkerOpen, setLinkerOpen] = useState(false);
   const [linkerItem, setLinkerItem] = useState<ModifierItem | null>(null);
+  const restaurant = useRestaurant((state) => state.restaurant);
+  const { toast } = useToast();
 
-  useEffect(() => {
-    if (open && group) {
-      fetchItems();
-    } else {
-        setItems([]);
-    }
-  }, [open, group]);
-
-  const fetchItems = async () => {
+  const fetchItems = useCallback(async () => {
     if (!group) return;
     setLoading(true);
     try {
-      const response = await apiClient.get(ModifierApis.listItemsByGroup(group.id));
-      if (response.data.status === "success") {
-        setItems(response.data.data);
-      }
+      const response = await apiClient.get(
+        ModifierApis.listItemsByGroup(group.id),
+      );
+      if (response.data.status === "success") setItems(response.data.data);
     } catch (error) {
       console.error("Failed to fetch modifier items:", error);
       toast({
@@ -70,30 +78,48 @@ export function ModifierOptionsSheet({ open, onOpenChange, group }: ModifierOpti
     } finally {
       setLoading(false);
     }
-  };
+  }, [group, toast]);
 
-  const handleCreateItem = async (data: any) => {
+  useEffect(() => {
+    if (open && group) {
+      fetchItems();
+    } else {
+      setItems([]);
+    }
+  }, [fetchItems, open, group]);
+
+  const handleCreateItem = async (data: ModifierItemFormValues) => {
     if (!group) return;
     try {
       await apiClient.post(ModifierApis.createItem, {
         ...data,
-        modifier_group_id: group.id
+        modifier_group_id: group.id,
       });
-      toast({ title: "Success", description: "Option added." });
+      toast({ title: "Option added" });
       fetchItems();
     } catch (error) {
-      toast({ title: "Error", description: "Failed to add option.", variant: "destructive" });
+      console.error(error);
+      toast({
+        title: "Error",
+        description: "Failed to add option.",
+        variant: "destructive",
+      });
     }
   };
 
-  const handleUpdateItem = async (data: any) => {
+  const handleUpdateItem = async (data: ModifierItemFormValues) => {
     if (!editingItem) return;
     try {
       await apiClient.patch(ModifierApis.updateItem(editingItem.id), data);
-      toast({ title: "Success", description: "Option updated." });
+      toast({ title: "Option updated" });
       fetchItems();
     } catch (error) {
-      toast({ title: "Error", description: "Failed to update option.", variant: "destructive" });
+      console.error(error);
+      toast({
+        title: "Error",
+        description: "Failed to update option.",
+        variant: "destructive",
+      });
     }
   };
 
@@ -101,148 +127,181 @@ export function ModifierOptionsSheet({ open, onOpenChange, group }: ModifierOpti
     if (!itemToDelete) return;
     try {
       await apiClient.delete(ModifierApis.deleteItem(itemToDelete.id));
-      toast({ title: "Success", description: "Option deleted." });
+      toast({ title: "Option deleted" });
       fetchItems();
     } catch (error) {
-        toast({ title: "Error", description: "Failed to delete option.", variant: "destructive" });
+      console.error(error);
+      toast({
+        title: "Error",
+        description: "Failed to delete option.",
+        variant: "destructive",
+      });
     } finally {
-        setDeleteDialogOpen(false);
-        setItemToDelete(null);
+      setDeleteDialogOpen(false);
+      setItemToDelete(null);
     }
   };
 
-  const openCreateDialog = () => {
-    setEditingItem(null);
-    setItemDialogOpen(true);
-  };
-
-  const openEditDialog = (item: ModifierItem) => {
-    setEditingItem(item);
-    setItemDialogOpen(true);
-  };
-
-  const openDeleteDialog = (item: ModifierItem) => {
-     setItemToDelete(item);
-     setDeleteDialogOpen(true);
-  };
-
-  const openLinker = (item: ModifierItem) => {
-    setLinkerItem(item);
-    setLinkerOpen(true);
+  const optionAmount = (item: ModifierItem) => {
+    const amount = formatCurrency(
+      Math.abs(item.price_adjustment || 0),
+      restaurant?.currency,
+    );
+    if (!item.price_adjustment) return "No price change";
+    return `${item.price_adjustment > 0 ? "+" : "−"}${amount}`;
   };
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="w-[600px] sm:max-w-[600px] flex flex-col p-6">
-        <SheetHeader className="mb-6">
-            <div className="flex items-center justify-between">
-                <div>
-                     <SheetTitle>Manage Options</SheetTitle>
-                    <SheetDescription>
-                        For group: <span className="font-bold text-foreground">{group?.name}</span>
-                    </SheetDescription>
-                </div>
-                <Button size="sm" onClick={openCreateDialog}>
-                    <Plus className="h-4 w-4 mr-1" /> Add Option
-                </Button>
+      <SheetContent className="flex h-[100dvh] w-full max-w-none flex-col p-0 sm:w-[600px] sm:max-w-[600px]">
+        <SheetHeader className="border-b px-4 py-4 sm:px-6 sm:py-5">
+          <div className="flex items-start justify-between gap-3 pr-8">
+            <div className="min-w-0">
+              <SheetTitle>Options</SheetTitle>
+              <SheetDescription className="mt-1 truncate">
+                {group?.name || "Option group"}
+              </SheetDescription>
             </div>
+            <Button
+              size="sm"
+              className="h-10 shrink-0 rounded-xl"
+              onClick={() => {
+                setEditingItem(null);
+                setItemDialogOpen(true);
+              }}
+            >
+              <Plus className="mr-1.5 h-4 w-4" /> Add option
+            </Button>
+          </div>
         </SheetHeader>
 
-        <div className="flex-1 overflow-y-auto -mx-6 px-6">
-            <Table>
-                <TableHeader>
-                    <TableRow>
-                        <TableHead>Option Name</TableHead>
-                        <TableHead>Price</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead className="text-right">Actions</TableHead>
-                    </TableRow>
-                </TableHeader>
-                <TableBody>
-                    {loading ? (
-                        [1,2,3].map(i => (
-                             <TableRow key={i}>
-                                <TableCell><Skeleton className="h-4 w-20" /></TableCell>
-                                <TableCell><Skeleton className="h-4 w-12" /></TableCell>
-                                <TableCell><Skeleton className="h-4 w-16" /></TableCell>
-                                <TableCell><Skeleton className="h-8 w-8 ml-auto" /></TableCell>
-                             </TableRow>
-                        ))
-                    ) : items.length === 0 ? (
-                        <TableRow>
-                            <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
-                                No options found in this group.
-                            </TableCell>
-                        </TableRow>
-                    ) : (
-                        items.map((item) => (
-                            <TableRow key={item.id}>
-                                <TableCell className="font-medium">{item.name}</TableCell>
-                                <TableCell>{item.price_adjustment >= 0 ? "+" : ""}{item.price_adjustment}</TableCell>
-                                <TableCell>
-                                    <Badge variant={item.is_active ? "default" : "destructive"} className={item.is_active ? "bg-green-600" : ""}>
-                                        {item.is_active ? "Active" : "Inactive"}
-                                    </Badge>
-                                </TableCell>
-	                                <TableCell className="text-right">
-	                                    <div className="flex justify-end gap-2">
-                                        <Button
-                                          variant="ghost"
-                                          size="icon"
-                                          title="Link inventory"
-                                          onClick={() => openLinker(item)}
-                                        >
-                                          <LinkIcon className="h-4 w-4" />
-                                        </Button>
-	                                        <Button variant="ghost" size="icon" onClick={() => openEditDialog(item)}>
-	                                            <Edit className="h-4 w-4" />
-	                                        </Button>
-	                                        <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive/90" onClick={() => openDeleteDialog(item)}>
-	                                            <Trash2 className="h-4 w-4" />
-	                                        </Button>
-	                                    </div>
-	                                </TableCell>
-                            </TableRow>
-                        ))
-                    )}
-                </TableBody>
-            </Table>
+        <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
+          {loading ? (
+            <DataList>
+              {[1, 2, 3].map((item) => (
+                <div
+                  key={item}
+                  className="flex min-h-16 items-center gap-3 px-4 py-3"
+                >
+                  <Skeleton className="h-9 w-9 rounded-xl" />
+                  <div className="flex-1 space-y-2">
+                    <Skeleton className="h-3.5 w-32" />
+                    <Skeleton className="h-3 w-20" />
+                  </div>
+                </div>
+              ))}
+            </DataList>
+          ) : items.length === 0 ? (
+            <EmptyState
+              title="No options yet"
+              description="Add the choices customers can select for this group."
+              actionLabel="Add option"
+              onAction={() => {
+                setEditingItem(null);
+                setItemDialogOpen(true);
+              }}
+            />
+          ) : (
+            <DataList>
+              {items.map((item) => (
+                <ListRow
+                  key={item.id}
+                  title={item.name}
+                  description={optionAmount(item)}
+                  meta={
+                    <Badge variant={item.is_active ? "secondary" : "outline"}>
+                      {item.is_active ? "Active" : "Inactive"}
+                    </Badge>
+                  }
+                  trailing={
+                    <div className="flex items-center gap-0.5">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-11 w-11 rounded-xl"
+                        title="Link inventory"
+                        aria-label={`Link inventory for ${item.name}`}
+                        onClick={() => {
+                          setLinkerItem(item);
+                          setLinkerOpen(true);
+                        }}
+                      >
+                        <LinkIcon className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-11 w-11 rounded-xl"
+                        aria-label={`Edit ${item.name}`}
+                        onClick={() => {
+                          setEditingItem(item);
+                          setItemDialogOpen(true);
+                        }}
+                      >
+                        <Edit className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-11 w-11 rounded-xl text-destructive hover:text-destructive"
+                        aria-label={`Delete ${item.name}`}
+                        onClick={() => {
+                          setItemToDelete(item);
+                          setDeleteDialogOpen(true);
+                        }}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  }
+                />
+              ))}
+            </DataList>
+          )}
         </div>
 
-        <ModifierItemDialog 
-            open={itemDialogOpen}
-            onOpenChange={setItemDialogOpen}
-            onSubmit={editingItem ? handleUpdateItem : handleCreateItem}
-            initialData={editingItem}
-            groupName={group?.name || ""}
+        <ModifierItemDialog
+          open={itemDialogOpen}
+          onOpenChange={setItemDialogOpen}
+          onSubmit={editingItem ? handleUpdateItem : handleCreateItem}
+          initialData={editingItem}
+          groupName={group?.name || ""}
         />
 
-	        <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-            <AlertDialogContent>
-                <AlertDialogHeader>
-                    <AlertDialogTitle>Delete Option?</AlertDialogTitle>
-                    <AlertDialogDescription>
-                        This will delete <span className="font-bold">{itemToDelete?.name}</span> from this group.
-                    </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                    <AlertDialogAction className="bg-destructive hover:bg-destructive/90" onClick={handleDeleteItem}>Delete</AlertDialogAction>
-                </AlertDialogFooter>
-            </AlertDialogContent>
-	        </AlertDialog>
+        <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete option?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This removes
+                <span className="font-semibold text-foreground">
+                  {` ${itemToDelete?.name || "this option"}`}
+                </span>
+                from the group.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-destructive hover:bg-destructive/90"
+                onClick={handleDeleteItem}
+              >
+                Delete
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
-          <ModifierInventoryLinker
-            open={linkerOpen}
-            onOpenChange={(v) => {
-              setLinkerOpen(v);
-              if (!v) setLinkerItem(null);
-            }}
-            modifierId={linkerItem?.id ?? null}
-            modifierName={linkerItem?.name}
-          />
-
-	      </SheetContent>
-	    </Sheet>
-	  );
+        <ModifierInventoryLinker
+          open={linkerOpen}
+          onOpenChange={(isOpen) => {
+            setLinkerOpen(isOpen);
+            if (!isOpen) setLinkerItem(null);
+          }}
+          modifierId={linkerItem?.id ?? null}
+          modifierName={linkerItem?.name}
+        />
+      </SheetContent>
+    </Sheet>
+  );
 }

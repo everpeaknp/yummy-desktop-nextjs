@@ -1,19 +1,15 @@
 "use client";
 
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
-import { Plus, Search, Edit, Trash2, GripVertical, AlertCircle } from "lucide-react";
-import { useToast } from "@/components/ui/use-toast";
-
 import { useCallback, useEffect, useState } from "react";
+import { Edit, FolderTree, Plus, Trash2 } from "lucide-react";
+
 import apiClient from "@/lib/api-client";
+import { ItemCategoryApis, StationApis } from "@/lib/api/endpoints";
 import { useAuth } from "@/hooks/use-auth";
+import { useToast } from "@/components/ui/use-toast";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ItemCategoryApis } from "@/lib/api/endpoints";
-import { CategoryDialog } from "@/components/menu/category-dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -24,38 +20,74 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { CategoryDialog } from "@/components/menu/category-dialog";
+import { SearchField } from "@/components/patterns/controls/search-field";
+import { MobileRegisterToolbar } from "@/components/patterns/controls/mobile-register-toolbar";
+import { MobileCreateFab } from "@/components/patterns/actions/mobile-create-fab";
+import { DataList, ListRow } from "@/components/patterns/data/data-list";
+import { EmptyState } from "@/components/patterns/feedback/feedback-state";
+import { AppPage } from "@/components/patterns/page/app-page";
+import { PageHeader } from "@/components/patterns/page/page-header";
 
 interface Category {
   id: number;
   name: string;
-  type: string;
+  station_id?: number | null;
+}
+
+function stationLabel(
+  category: Category,
+  stationNames: Record<number, string>,
+) {
+  if (category.station_id == null) return "No station assigned";
+  return stationNames[category.station_id] || "Station unavailable";
 }
 
 export default function CategoriesPage() {
   const [categories, setCategories] = useState<Category[]>([]);
+  const [stationNames, setStationNames] = useState<Record<number, string>>({});
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
-  const restaurantId = useAuth((s) => s.user?.restaurant_id);
-  const { toast } = useToast();
-
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
-
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [categoryToDelete, setCategoryToDelete] = useState<Category | null>(null);
+  const [categoryToDelete, setCategoryToDelete] = useState<Category | null>(
+    null,
+  );
+
+  const restaurantId = useAuth((state) => state.user?.restaurant_id);
+  const { toast } = useToast();
 
   const fetchCategories = useCallback(async () => {
     if (!restaurantId) {
       setLoading(false);
       return;
     }
+
+    setLoading(true);
     try {
-      const response = await apiClient.get(ItemCategoryApis.getItemCategories(restaurantId));
-      if (response.data.status === "success") {
-        setCategories(response.data.data);
+      const [categoriesRes, stationsRes] = await Promise.all([
+        apiClient.get(ItemCategoryApis.getItemCategories(restaurantId)),
+        apiClient.get(
+          StationApis.list({ restaurantId, isActive: true, limit: 200 }),
+        ),
+      ]);
+      if (categoriesRes.data.status === "success") {
+        setCategories(categoriesRes.data.data);
       }
-    } catch (err) {
-      console.error("Failed to fetch categories:", err);
+      if (stationsRes.data.status === "success") {
+        const stations = stationsRes.data.data?.stations || [];
+        setStationNames(
+          Object.fromEntries(
+            stations.map((station: { id: number; name: string }) => [
+              station.id,
+              station.name,
+            ]),
+          ),
+        );
+      }
+    } catch (error) {
+      console.error("Failed to fetch categories:", error);
       toast({
         title: "Error",
         description: "Failed to load categories.",
@@ -64,181 +96,227 @@ export default function CategoriesPage() {
     } finally {
       setLoading(false);
     }
-  }, [restaurantId]);
+  }, [restaurantId, toast]);
 
   useEffect(() => {
     fetchCategories();
   }, [fetchCategories]);
 
-  const handleCreate = async (data: { name: string; type: string }) => {
+  const handleCreate = async (data: { name: string; station_id: number }) => {
     if (!restaurantId) return;
     try {
-      await apiClient.post(ItemCategoryApis.createItemCategory(restaurantId), data);
-      toast({ title: "Success", description: "Category created successfully." });
+      await apiClient.post(
+        ItemCategoryApis.createItemCategory(restaurantId),
+        data,
+      );
+      toast({ title: "Category created" });
       fetchCategories();
     } catch (error) {
       console.error(error);
-      toast({ title: "Error", description: "Failed to create category.", variant: "destructive" });
+      toast({
+        title: "Error",
+        description: "Failed to create category.",
+        variant: "destructive",
+      });
     }
   };
 
-  const handleUpdate = async (data: { name: string; type: string }) => {
+  const handleUpdate = async (data: { name: string; station_id: number }) => {
     if (!editingCategory) return;
     try {
-      await apiClient.put(ItemCategoryApis.updateItemCategory(editingCategory.id), data);
-      toast({ title: "Success", description: "Category updated successfully." });
+      await apiClient.put(
+        ItemCategoryApis.updateItemCategory(editingCategory.id),
+        data,
+      );
+      toast({ title: "Category updated" });
       fetchCategories();
     } catch (error) {
-       console.error(error);
-       toast({ title: "Error", description: "Failed to update category.", variant: "destructive" });
+      console.error(error);
+      toast({
+        title: "Error",
+        description: "Failed to update category.",
+        variant: "destructive",
+      });
     }
   };
 
   const handleDelete = async () => {
     if (!categoryToDelete) return;
     try {
-      await apiClient.delete(ItemCategoryApis.deleteItemCategory(categoryToDelete.id));
-      toast({ title: "Success", description: "Category deleted successfully." });
+      await apiClient.delete(
+        ItemCategoryApis.deleteItemCategory(categoryToDelete.id),
+      );
+      toast({ title: "Category deleted" });
       fetchCategories();
     } catch (error) {
-       console.error(error);
-       toast({ title: "Error", description: "Failed to delete category.", variant: "destructive" });
+      console.error(error);
+      toast({
+        title: "Error",
+        description: "Failed to delete category.",
+        variant: "destructive",
+      });
     } finally {
       setDeleteDialogOpen(false);
       setCategoryToDelete(null);
     }
   };
 
+  const filteredCategories = categories.filter((category) => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return true;
+    return [category.name, stationLabel(category, stationNames)].some((value) =>
+      value.toLowerCase().includes(query),
+    );
+  });
+
   const openCreateDialog = () => {
     setEditingCategory(null);
     setDialogOpen(true);
   };
 
-  const openEditDialog = (category: Category) => {
-    setEditingCategory(category);
-    setDialogOpen(true);
-  };
-
-  const openDeleteDialog = (category: Category) => {
-    setCategoryToDelete(category);
-    setDeleteDialogOpen(true);
-  };
-
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Categories</h1>
-          <p className="text-muted-foreground">Organize your menu items into categories.</p>
-        </div>
-        <Button onClick={openCreateDialog} className="bg-primary text-white hover:bg-primary/90">
-          <Plus className="mr-2 h-4 w-4" /> Add Category
-        </Button>
+    <AppPage width="standard">
+      <PageHeader
+        className="hidden lg:flex"
+        title="Categories"
+        description="Organize menu items and their preparation station."
+        actions={
+          <Button onClick={openCreateDialog} className="h-11 rounded-xl">
+            <Plus className="mr-1.5 h-4 w-4" /> Add category
+          </Button>
+        }
+      />
+
+      <MobileRegisterToolbar
+        search={
+          <SearchField
+            placeholder="Search categories"
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+            onClear={() => setSearchQuery("")}
+          />
+        }
+      />
+
+      <SearchField
+        containerClassName="hidden max-w-sm lg:block"
+        placeholder="Search categories"
+        value={searchQuery}
+        onChange={(event) => setSearchQuery(event.target.value)}
+        onClear={() => setSearchQuery("")}
+      />
+
+      {loading ? (
+        <DataList>
+          {[1, 2, 3, 4].map((item) => (
+            <div
+              key={item}
+              className="flex min-h-16 items-center gap-3 px-4 py-3"
+            >
+              <Skeleton className="h-9 w-9 rounded-xl" />
+              <div className="flex-1 space-y-2">
+                <Skeleton className="h-3.5 w-36" />
+                <Skeleton className="h-3 w-24" />
+              </div>
+              <Skeleton className="h-11 w-11 rounded-xl" />
+            </div>
+          ))}
+        </DataList>
+      ) : filteredCategories.length === 0 ? (
+        <EmptyState
+          icon={<FolderTree className="h-5 w-5" />}
+          title={searchQuery ? "No matching categories" : "No categories yet"}
+          description={
+            searchQuery
+              ? "Try another category or station name."
+              : "Create a category to organize the menu and preparation routing."
+          }
+          actionLabel={searchQuery ? undefined : "Add category"}
+          onAction={searchQuery ? undefined : openCreateDialog}
+        />
+      ) : (
+        <DataList>
+          {filteredCategories.map((category) => (
+            <ListRow
+              key={category.id}
+              leading={<FolderTree className="h-4 w-4" />}
+              title={category.name}
+              description={stationLabel(category, stationNames)}
+              trailing={
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-11 w-11 rounded-xl"
+                    onClick={() => {
+                      setEditingCategory(category);
+                      setDialogOpen(true);
+                    }}
+                    aria-label={`Edit ${category.name}`}
+                  >
+                    <Edit className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-11 w-11 rounded-xl text-destructive hover:text-destructive"
+                    onClick={() => {
+                      setCategoryToDelete(category);
+                      setDeleteDialogOpen(true);
+                    }}
+                    aria-label={`Delete ${category.name}`}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              }
+            />
+          ))}
+        </DataList>
+      )}
+
+      <div className="hidden lg:block">
+        <p className="text-xs text-muted-foreground">
+          {categories.length} categor{categories.length === 1 ? "y" : "ies"}
+          {searchQuery ? ` · ${filteredCategories.length} shown` : ""}
+        </p>
       </div>
 
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle>Categories</CardTitle>
-            <div className="relative w-full md:w-64">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input placeholder="Search categories..." className="pl-8" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
-            </div>
-          </div>
-          <CardDescription>
-            Manage your menu structure here.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-[50px]"></TableHead>
-                <TableHead>Name</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {loading ? (
-                [1, 2, 3].map((i) => (
-                  <TableRow key={i}>
-                    <TableCell><Skeleton className="h-4 w-4" /></TableCell>
-                    <TableCell><Skeleton className="h-4 w-32" /></TableCell>
-                    <TableCell><Skeleton className="h-4 w-24" /></TableCell>
-                    <TableCell><Skeleton className="h-4 w-20" /></TableCell>
-                    <TableCell className="text-right flex justify-end gap-2"><Skeleton className="h-8 w-8" /><Skeleton className="h-8 w-8" /></TableCell>
-                  </TableRow>
-                ))
-              ) : categories.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
-                    <div className="flex flex-col items-center gap-2">
-                       <AlertCircle className="h-8 w-8 opacity-50" />
-                       <p>No categories found. Click &apos;Add Category&apos; to create one.</p>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ) : (
-                categories.filter((c) => {
-                  if (!searchQuery.trim()) return true;
-                  const q = searchQuery.toLowerCase();
-                  return c.name.toLowerCase().includes(q) || c.type.toLowerCase().includes(q);
-                }).map((category) => (
-                  <TableRow key={category.id}>
-                    <TableCell>
-                      <GripVertical className="h-4 w-4 text-muted-foreground cursor-grab" />
-                    </TableCell>
-                    <TableCell className="font-medium">{category.name}</TableCell>
-                    <TableCell className="capitalize">
-                      <Badge variant="secondary" className="font-normal">{category.type}</Badge>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className="font-normal border-green-500 text-green-500">Active</Badge>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex justify-end gap-2">
-                        <Button variant="ghost" size="icon" onClick={() => openEditDialog(category)}>
-                          <Edit className="h-4 w-4" />
-                        </Button>
-                        <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive/90" onClick={() => openDeleteDialog(category)}>
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+      <MobileCreateFab label="Add category" onClick={openCreateDialog} />
 
-      <CategoryDialog 
-        open={dialogOpen} 
-        onOpenChange={setDialogOpen} 
-        onSubmit={editingCategory ? handleUpdate : handleCreate}
-        initialData={editingCategory}
-      />
+      {restaurantId ? (
+        <CategoryDialog
+          open={dialogOpen}
+          onOpenChange={setDialogOpen}
+          onSubmit={editingCategory ? handleUpdate : handleCreate}
+          initialData={editingCategory}
+          restaurantId={restaurantId}
+        />
+      ) : null}
 
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+            <AlertDialogTitle>Delete category?</AlertDialogTitle>
             <AlertDialogDescription>
-              This action cannot be undone. This will permanently delete the category
-              <span className="font-bold text-foreground"> {categoryToDelete?.name}</span>.
+              This permanently deletes
+              <span className="font-semibold text-foreground">
+                {` ${categoryToDelete?.name || "this category"}`}
+              </span>
+              .
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={handleDelete}>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={handleDelete}
+            >
               Delete
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+    </AppPage>
   );
 }

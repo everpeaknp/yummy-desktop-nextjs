@@ -27,12 +27,12 @@ import { useAuth } from "@/hooks/use-auth";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import { ImageService } from "@/services/image-service";
 import { addMembershipEventListener } from "@/lib/restaurant-membership";
-import { canReplayOnboarding } from "@/lib/onboarding";
 import { resolvePostLoginRoute } from "@/lib/post-login-route";
 import {
   invitationTokenFromPayload,
   PENDING_INVITATION_TOKEN_KEY,
 } from "@/lib/restaurant-invitation-link";
+import { shouldRefreshOnboardingAccess } from "@/lib/onboarding-access-refresh";
 import { OnboardingWizard } from "@/components/onboarding/onboarding-wizard";
 import { Button } from "@/components/ui/button";
 import {
@@ -132,10 +132,6 @@ export default function OnboardingPage() {
 function OnboardingPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const isReplay =
-    searchParams.get("replay") === "1" ||
-    searchParams.get("replay") === "true" ||
-    searchParams.has("replay-1");
   const user = useAuth((state) => state.user);
   const logout = useAuth((state) => state.logout);
   const syncUserProfile = useAuth((state) => state.syncUserProfile);
@@ -196,6 +192,7 @@ function OnboardingPageContent() {
   const scanTimerRef = useRef<number | null>(null);
   const scanRequestRef = useRef(0);
   const refreshingAccessRef = useRef(false);
+  const lastAccessRefreshAtRef = useRef(0);
   const enteringWorkspaceRef = useRef(false);
   const logoPreviewRef = useRef("");
   const coverPreviewRef = useRef("");
@@ -322,9 +319,15 @@ function OnboardingPageContent() {
     setMode("join");
   }, []);
 
-  const refreshAccessOptions = useCallback(async () => {
+  const refreshAccessOptions = useCallback(async (force = false) => {
+    if (!user?.id || user.restaurant_id) return;
     if (refreshingAccessRef.current) return;
+
+    const now = Date.now();
+    if (!force && !shouldRefreshOnboardingAccess(lastAccessRefreshAtRef.current, now)) return;
+
     refreshingAccessRef.current = true;
+    lastAccessRefreshAtRef.current = now;
     try {
       const [requestResult, invitationResult] = await Promise.allSettled([
         apiClient.get(RestaurantJoinApis.myRequests),
@@ -366,7 +369,7 @@ function OnboardingPageContent() {
     } finally {
       refreshingAccessRef.current = false;
     }
-  }, [enterRestaurantWorkspace]);
+  }, [enterRestaurantWorkspace, user?.id, user?.restaurant_id]);
 
   const stopScanner = useCallback(() => {
     scanRequestRef.current += 1;
@@ -380,7 +383,7 @@ function OnboardingPageContent() {
   }, []);
 
   useEffect(() => {
-    void refreshAccessOptions();
+    void refreshAccessOptions(true);
     return stopScanner;
   }, [refreshAccessOptions, stopScanner]);
 
@@ -632,7 +635,7 @@ function OnboardingPageContent() {
       localStorage.removeItem("yummy:pending-join-code");
       toast.success("Request sent for restaurant approval");
       setJoinCode("");
-      await refreshAccessOptions();
+      await refreshAccessOptions(true);
     } catch (error: unknown) {
       toast.error(getApiErrorMessage(error, "Unable to send request"));
     } finally {
@@ -771,49 +774,15 @@ function OnboardingPageContent() {
     router.replace("/");
   };
 
-  // Replay setup tour from help center / settings.
-  useEffect(() => {
-    if (!isReplay) return;
-    void fetchRestaurant(true);
-  }, [isReplay, fetchRestaurant]);
-
-  // First registration only — after a restaurant exists, leave /onboarding unless admin replay.
+  // First registration only — after a restaurant exists, leave setup.
   useEffect(() => {
     if (!user) return;
     const hasRestaurant = Boolean(user.restaurant_id || restaurantProfile?.id);
 
-    if (isReplay) {
-      if (!canReplayOnboarding(user)) {
-        router.replace(resolvePostLoginRoute(user));
-      }
-      return;
-    }
-
     if (hasRestaurant) {
       router.replace(resolvePostLoginRoute(user));
     }
-  }, [user, restaurantProfile?.id, isReplay, router]);
-
-  if (isReplay) {
-    if (!canReplayOnboarding(user)) {
-      return (
-        <div className="flex min-h-[50vh] items-center justify-center">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        </div>
-      );
-    }
-    return (
-      <div className="bg-transparent">
-        <OnboardingWizard
-          initialEmail={user?.email || ""}
-          replay
-          restaurantId={user?.restaurant_id ?? restaurantProfile?.id ?? null}
-          initialRestaurant={restaurantProfile as Record<string, unknown> | null}
-          embedded
-        />
-      </div>
-    );
-  }
+  }, [user, restaurantProfile?.id, router]);
 
   // Already registered — redirect away from first-time onboarding.
   if (user?.restaurant_id || restaurantProfile?.id) {
@@ -829,9 +798,6 @@ function OnboardingPageContent() {
       <div className="bg-transparent">
         <OnboardingWizard
           initialEmail={user?.email || ""}
-          replay={false}
-          restaurantId={user?.restaurant_id ?? null}
-          initialRestaurant={null}
           onBackToOptions={() => setMode("choice")}
           embedded
         />

@@ -33,6 +33,7 @@ export const SubscriptionApis = {
   usage: "/subscriptions/usage",
   invoices: "/subscriptions/invoices",
   upgradeRequests: "/subscriptions/upgrade-requests",
+  quotaCompliance: "/subscriptions/quota-compliance/resolve",
 };
 
 export const FiscalApis = {
@@ -52,6 +53,53 @@ export const FiscalApis = {
   cbmsStatus: "/fiscal/cbms/status",
   cbmsConfig: "/fiscal/cbms/config",
   cbmsReconcile: "/fiscal/cbms/reconcile",
+};
+
+export const HotelPmsApis = {
+  settings: "/hotel/v2/settings",
+  buildings: "/hotel/v2/buildings",
+  building: (id: number) => `/hotel/v2/buildings/${id}`,
+  floors: "/hotel/v2/floors",
+  floor: (id: number) => `/hotel/v2/floors/${id}`,
+  roomTypes: "/hotel/v2/room-types",
+  roomType: (id: number) => `/hotel/v2/room-types/${id}`,
+  rooms: "/hotel/v2/rooms",
+  room: (id: number) => `/hotel/v2/rooms/${id}`,
+  roomStatus: (id: number) => `/hotel/v2/rooms/${id}/status`,
+  ratePlans: "/hotel/v2/rate-plans",
+  dailyRates: "/hotel/v2/daily-rates",
+  availability: "/hotel/v2/availability",
+  frontDesk: "/hotel/v2/front-desk",
+  bookings: "/hotel/v2/bookings",
+  booking: (id: number) => `/hotel/v2/bookings/${id}`,
+  assignBooking: (id: number) => `/hotel/v2/bookings/${id}/assign`,
+  cancelBooking: (id: number) => `/hotel/v2/bookings/${id}/cancel`,
+  noShowBooking: (id: number) => `/hotel/v2/bookings/${id}/no-show`,
+  checkIn: (id: number) => `/hotel/v2/bookings/${id}/check-in`,
+  bookingStay: (id: number) => `/hotel/v2/bookings/${id}/stay`,
+  stay: (id: number) => `/hotel/v2/stays/${id}`,
+  stayRoomOrders: (id: number) => `/hotel/v2/stays/${id}/room-orders`,
+  roomOrderAnalytics: "/hotel/v2/room-orders/analytics/summary",
+  financeSummary: "/hotel/v2/finance/summary",
+  checkout: (id: number) => `/hotel/v2/stays/${id}/checkout`,
+  prepareCheckout: (id: number) => `/hotel/v2/stays/${id}/prepare-checkout`,
+  earlyDepartureQuote: (id: number) =>
+    `/hotel/v2/stays/${id}/early-departure/quote`,
+  prepareEarlyDeparture: (id: number) =>
+    `/hotel/v2/stays/${id}/early-departure/prepare`,
+  moveRoom: (id: number) => `/hotel/v2/stays/${id}/move-room`,
+  extendStay: (id: number) => `/hotel/v2/stays/${id}/extend`,
+  folio: (id: number) => `/hotel/v2/folios/${id}`,
+  folioEntries: (id: number) => `/hotel/v2/folios/${id}/entries`,
+  folioPayments: (id: number) => `/hotel/v2/folios/${id}/payments`,
+  folioRefunds: (id: number) => `/hotel/v2/folios/${id}/refunds`,
+  folioPaymentQuote: (id: number) => `/hotel/v2/folios/${id}/payment-quote`,
+  folioDiscounts: (id: number) => `/hotel/v2/folios/${id}/discounts`,
+  stayCustomer: (id: number) => `/hotel/v2/stays/${id}/customer`,
+  housekeeping: "/hotel/v2/housekeeping",
+  housekeepingTask: (id: number) => `/hotel/v2/housekeeping/tasks/${id}`,
+  nightAuditPreview: "/hotel/v2/night-audit/preview",
+  nightAuditRun: "/hotel/v2/night-audit/run",
 };
 
 export const RestaurantJoinApis = {
@@ -202,13 +250,18 @@ export const OrderApis = {
     if (fields) params.append("fields", fields);
     return `/orders/summary?${params.toString()}`;
   },
-  addItemsToOrder: (id: number) => `/orders/${id}/items/bulk-add`,
-  updateOrderItems: (id: number) => `/orders/${id}/items/bulk-update`,
+  addOrderLine: (id: number) => `/orders/${id}/lines`,
+  addOrderLinesBatch: (id: number) => `/orders/${id}/lines/batch`,
+  updateOrderLine: (orderId: number, itemId: number) =>
+    `/orders/${orderId}/lines/${itemId}`,
+  voidOrderLine: (orderId: number, itemId: number) =>
+    `/orders/${orderId}/lines/${itemId}/void`,
   addPayment: (id: number) => `/orders/${id}/payments`,
   updatePayment: (orderId: number, paymentId: number) =>
     `/orders/${orderId}/payments/${paymentId}`,
   removePayment: (orderId: number, paymentId: number) =>
     `/orders/${orderId}/payments/${paymentId}`,
+  replaceSettlement: (orderId: number) => `/orders/${orderId}/settlement`,
   getOrderEvents: (id: number, scope: "order" | "group" = "order") =>
     `/orders/${id}/events?scope=${scope}`,
   getOrderBill: (id: number) => `/orders/${id}/bill`,
@@ -217,7 +270,6 @@ export const OrderApis = {
   activateReservation: (id: number) => `/orders/${id}/activate`,
   cancelOrder: (id: number) => `/orders/${id}/cancel`,
   refundOrder: (id: number) => `/orders/${id}/refund`,
-  checkinRoom: "/orders/room/checkin",
 
   // Guest Bill / Split Bill helpers
   getGuestBills: (orderId: number) => `/orders/${orderId}/guest-bills`,
@@ -334,6 +386,7 @@ export const CustomerApis = {
   deleteCustomer: (id: number) => `/customers/${id}`,
   redeemLoyaltyPoints: (id: number) => `/customers/${id}/loyalty/redeem`,
   repayCredit: (id: number) => `/customers/${id}/credit/repay`,
+  payOut: (id: number) => `/customers/${id}/payments-out`,
   getCreditHistory: (id: number) => `/customers/${id}/credit/history`,
 };
 
@@ -375,6 +428,18 @@ export const InventoryApis = {
   deleteInventoryItem: (id: number) => `/inventory/items/${id}`,
   lowStockInventory: "/inventory/items/low-stock",
   adjustInventory: (id: number) => `/inventory/items/${id}/adjust`,
+  addStock: (id: number) => `/inventory/items/${id}/add-stock`,
+  reduceStock: (id: number) => `/inventory/items/${id}/reduce-stock`,
+  stockCountCorrection: (id: number) =>
+    `/inventory/items/${id}/stock-count-correction`,
+  searchDuplicateItems: ({
+    restaurantId,
+    q,
+  }: {
+    restaurantId: number;
+    q: string;
+  }) =>
+    `/inventory-items/search-duplicates?restaurant_id=${restaurantId}&q=${encodeURIComponent(q)}`,
   getAdjustments: (id: number) => `/inventory/items/${id}/adjustments`,
   getAdjustment: (id: number) => `/inventory/adjustments/${id}`,
   markAdjustmentPayment: (id: number) => `/inventory/adjustments/${id}/payment`,
@@ -429,38 +494,135 @@ export const InventoryApis = {
     if (timezone) params.append("timezone", timezone);
     return `/inventory/items/${itemId}/ledger?${params.toString()}`;
   },
+  getMenuLinksForInventory: (itemId: number, restaurantId: number) =>
+    `/inventory/items/${itemId}/menu-links?restaurant_id=${restaurantId}`,
+  getModifierLinksForInventory: (itemId: number, restaurantId: number) =>
+    `/inventory/items/${itemId}/modifier-links?restaurant_id=${restaurantId}`,
   linkMenuInventory: "/inventory/menu-link",
+  updateMenuInventory: (linkId: number) => `/inventory/menu-link/${linkId}`,
   unlinkMenuInventory: (linkId: number) => `/inventory/menu-link/${linkId}`,
   getMenuInventory: (menuItemId: number) => `/inventory/menu/${menuItemId}`,
   // Modifier <-> inventory linking (used to deduct inventory when a modifier is applied).
   linkModifierInventory: "/inventory/modifier-link",
+  updateModifierInventory: (linkId: number) =>
+    `/inventory/modifier-link/${linkId}`,
   unlinkModifierInventory: (linkId: number) =>
     `/inventory/modifier-link/${linkId}`,
   getInventoryForModifier: (modifierId: number) =>
     `/inventory/modifier/${modifierId}`,
   previewConsumption: "/inventory/consumption/preview",
   consume: "/inventory/consumption",
-  awaitingPayments: "/awaiting-payments",
-  awaitingPaymentById: (id: number) => `/awaiting-payments/${id}`,
-  markAwaitingPaymentPaid: (id: number) => `/awaiting-payments/${id}/mark-paid`,
-  rejectAwaitingPayment: (id: number) => `/awaiting-payments/${id}/reject`,
 };
 
-export const AwaitingPaymentApis = {
-  list: (restaurantId: number, params: any) => {
-    const qv = new URLSearchParams({
+// Inventory-linked purchases: posting one increases inventory and creates
+// its own Expense. Distinct from the older, non-inventory GeneralPurchaseApis
+// below (kept live during the Phase 2 frontend transition).
+export const PurchaseApis = {
+  create: "/purchases",
+  list: ({
+    restaurantId,
+    supplierId,
+    status,
+    skip = 0,
+    limit = 50,
+  }: {
+    restaurantId: number;
+    supplierId?: number;
+    status?: string;
+    skip?: number;
+    limit?: number;
+  }) => {
+    const params = new URLSearchParams({
       restaurant_id: restaurantId.toString(),
-      ...params,
+      skip: skip.toString(),
+      limit: limit.toString(),
     });
-    return `/awaiting-payments?${qv.toString()}`;
+    if (status) params.append("status", status);
+    if (supplierId) params.append("supplier_id", supplierId.toString());
+    return `/purchases?${params.toString()}`;
   },
-  markPaid: (id: number, restaurantId: number) =>
-    `/awaiting-payments/${id}/mark-paid?restaurant_id=${restaurantId}`,
-  reject: (id: number, restaurantId: number) =>
-    `/awaiting-payments/${id}/reject?restaurant_id=${restaurantId}`,
+  get: (id: number, restaurantId: number) =>
+    `/purchases/${id}?restaurant_id=${restaurantId}`,
+  void: (id: number, restaurantId: number) =>
+    `/purchases/${id}/void?restaurant_id=${restaurantId}`,
+};
+
+export const PurchaseReturnApis = {
+  create: "/purchase-returns",
+  list: ({
+    restaurantId,
+    supplierId,
+    skip = 0,
+    limit = 50,
+  }: {
+    restaurantId: number;
+    supplierId?: number;
+    skip?: number;
+    limit?: number;
+  }) => {
+    const params = new URLSearchParams({
+      restaurant_id: restaurantId.toString(),
+      skip: skip.toString(),
+      limit: limit.toString(),
+    });
+    if (supplierId) params.append("supplier_id", supplierId.toString());
+    return `/purchase-returns?${params.toString()}`;
+  },
+  get: (id: number, restaurantId: number) =>
+    `/purchase-returns/${id}?restaurant_id=${restaurantId}`,
+  void: (id: number, restaurantId: number) =>
+    `/purchase-returns/${id}/void?restaurant_id=${restaurantId}`,
+};
+
+export const CashAndBanksApis = {
+  list: (restaurantId: number, businessLine = "restaurant") => {
+    const params = new URLSearchParams({
+      restaurant_id: restaurantId.toString(),
+      business_line: businessLine,
+    });
+    return `/cash-and-banks?${params.toString()}`;
+  },
+};
+
+export const BalanceTransferApis = {
+  list: (restaurantId: number, businessLine = "restaurant") => {
+    const params = new URLSearchParams({
+      restaurant_id: restaurantId.toString(),
+      business_line: businessLine,
+    });
+    return `/balance-transfers?${params.toString()}`;
+  },
+  create: "/balance-transfers",
+};
+
+export const DayBookApis = {
+  list: ({
+    restaurantId,
+    businessLine = "restaurant",
+    dateFrom,
+    dateTo,
+  }: {
+    restaurantId: number;
+    businessLine?: string;
+    dateFrom?: string;
+    dateTo?: string;
+  }) => {
+    const params = new URLSearchParams({
+      restaurant_id: restaurantId.toString(),
+      business_line: businessLine,
+    });
+    if (dateFrom) params.append("date_from", dateFrom);
+    if (dateTo) params.append("date_to", dateTo);
+    return `/day-book?${params.toString()}`;
+  },
 };
 
 export const AnalyticsApis = {
+  dateFilterOptions: ({ restaurantId, timezone }: { restaurantId: number; timezone?: string }) => {
+    const params = new URLSearchParams({ restaurant_id: restaurantId.toString() });
+    if (timezone) params.append("timezone", timezone);
+    return `/analytics/date-filter-options?${params.toString()}`;
+  },
   dashboard: ({
     restaurantId,
     dateFrom,
@@ -567,6 +729,8 @@ export const AnalyticsApis = {
     restaurantId,
     dateFrom,
     dateTo,
+    startTime,
+    endTime,
     timezone,
     page = 1,
     pageSize = 20,
@@ -577,8 +741,10 @@ export const AnalyticsApis = {
     businessLine,
   }: {
     restaurantId: number;
-    dateFrom: string;
-    dateTo: string;
+    dateFrom?: string;
+    dateTo?: string;
+    startTime?: string;
+    endTime?: string;
     timezone?: string;
     page?: number;
     pageSize?: number;
@@ -591,13 +757,18 @@ export const AnalyticsApis = {
   }) => {
     const params = new URLSearchParams({
       restaurant_id: restaurantId.toString(),
-      date_from: dateFrom,
-      date_to: dateTo,
       page: page.toString(),
       page_size: pageSize.toString(),
       sort_by: sortBy,
       sort_dir: sortDir,
     });
+    if (startTime && endTime) {
+      params.append("start_time", startTime);
+      params.append("end_time", endTime);
+    } else {
+      if (dateFrom) params.append("date_from", dateFrom);
+      if (dateTo) params.append("date_to", dateTo);
+    }
     if (timezone) params.append("timezone", timezone);
     if (search) params.append("search", search);
     if (category) params.append("category", category);
@@ -713,28 +884,40 @@ export const AnalyticsApis = {
     restaurantId,
     dateFrom,
     dateTo,
+    startTime,
+    endTime,
     timezone,
     page = 1,
     pageSize = 20,
     businessLine,
+    staffUserId,
   }: {
     restaurantId: number;
-    dateFrom: string;
-    dateTo: string;
+    dateFrom?: string;
+    dateTo?: string;
+    startTime?: string;
+    endTime?: string;
     timezone?: string;
     page?: number;
     pageSize?: number;
     businessLine?: string;
+    staffUserId?: number;
   }) => {
     const params = new URLSearchParams({
       restaurant_id: restaurantId.toString(),
-      date_from: dateFrom,
-      date_to: dateTo,
       page: page.toString(),
       page_size: pageSize.toString(),
     });
+    if (startTime && endTime) {
+      params.append("start_time", startTime);
+      params.append("end_time", endTime);
+    } else {
+      if (dateFrom) params.append("date_from", dateFrom);
+      if (dateTo) params.append("date_to", dateTo);
+    }
     if (timezone) params.append("timezone", timezone);
     if (businessLine) params.append("business_line", businessLine);
+    if (staffUserId) params.append("staff_user_id", staffUserId.toString());
     return `/analytics/staff/details?${params.toString()}`;
   },
   ncOrders: ({
@@ -778,6 +961,8 @@ export const AnalyticsApis = {
     restaurantId,
     dateFrom,
     dateTo,
+    startTime,
+    endTime,
     timezone,
     page = 1,
     pageSize = 20,
@@ -787,6 +972,8 @@ export const AnalyticsApis = {
     restaurantId: number;
     dateFrom: string;
     dateTo: string;
+    startTime?: string;
+    endTime?: string;
     timezone?: string;
     page?: number;
     pageSize?: number;
@@ -800,6 +987,8 @@ export const AnalyticsApis = {
       page: page.toString(),
       page_size: pageSize.toString(),
     });
+    if (startTime) params.append("start_time", startTime);
+    if (endTime) params.append("end_time", endTime);
     if (timezone) params.append("timezone", timezone);
     if (businessLine) params.append("business_line", businessLine);
     if (category) params.append("category", category);
@@ -809,6 +998,8 @@ export const AnalyticsApis = {
     restaurantId,
     dateFrom,
     dateTo,
+    startTime,
+    endTime,
     timezone,
     page = 1,
     pageSize = 20,
@@ -818,6 +1009,8 @@ export const AnalyticsApis = {
     restaurantId: number;
     dateFrom: string;
     dateTo: string;
+    startTime?: string;
+    endTime?: string;
     timezone?: string;
     page?: number;
     pageSize?: number;
@@ -832,6 +1025,8 @@ export const AnalyticsApis = {
       page_size: pageSize.toString(),
       view,
     });
+    if (startTime) params.append("start_time", startTime);
+    if (endTime) params.append("end_time", endTime);
     if (timezone) params.append("timezone", timezone);
     if (businessLine) params.append("business_line", businessLine);
     return `/analytics/inventory/details?${params.toString()}`;
@@ -913,6 +1108,8 @@ export const ExpenseApis = {
 export const IncomeApis = {
   summary: "/income/summary",
   recent: "/income/recent",
+  detail: (id: number, restaurantId: number) =>
+    `/income/${id}?restaurant_id=${restaurantId}`,
   bySource: "/income/by-source",
   byPaymentMethod: "/income/by-payment-method",
   manual: "/income/manual",
@@ -988,6 +1185,9 @@ type AccountingLedgerParams = AccountingCoreParams & {
 
 type AccountingDaybookParams = AccountingCoreParams & {
   businessDate: string;
+  periodStartAt?: string;
+  periodEndAt?: string;
+  dayCloseId?: number;
 };
 
 type AccountingSettlementParams = Pick<
@@ -1227,6 +1427,11 @@ export const AccountingApis = {
   daybook: (params: AccountingDaybookParams) => {
     const query = buildAccountingQuery(params);
     query.append("business_date", params.businessDate);
+    if (params.periodStartAt)
+      query.append("period_start_at", params.periodStartAt);
+    if (params.periodEndAt) query.append("period_end_at", params.periodEndAt);
+    if (params.dayCloseId !== undefined)
+      query.append("day_close_id", params.dayCloseId.toString());
     return `/accounting/daybook?${query.toString()}`;
   },
   dayCloses: (
@@ -1359,17 +1564,22 @@ export const AccountingApis = {
     if (paymentMethod) query.append("payment_method", paymentMethod);
     if (activeOnly !== undefined)
       query.append("active_only", String(activeOnly));
-    return `/accounting/payment-instruments?${query.toString()}`;
+    return `/finance/payment-instruments?${query.toString()}`;
   },
-  createPaymentInstrument: () => "/accounting/payment-instruments",
+  createPaymentInstrument: () => "/finance/payment-instruments",
+  migrateLegacyPaymentInstruments: (
+    restaurantId: number,
+    businessLine: string,
+  ) =>
+    `/finance/payment-instruments/migrate-legacy?restaurant_id=${restaurantId}&business_line=${businessLine}`,
   updatePaymentInstrument: (instrumentId: number) =>
-    `/accounting/payment-instruments/${instrumentId}`,
+    `/finance/payment-instruments/${instrumentId}`,
   deactivatePaymentInstrument: (instrumentId: number) =>
-    `/accounting/payment-instruments/${instrumentId}/deactivate`,
+    `/finance/payment-instruments/${instrumentId}/deactivate`,
   paymentBanks: (restaurantId: number) =>
-    `/accounting/payment-banks?restaurant_id=${restaurantId}`,
-  createPaymentBank: () => "/accounting/payment-banks",
-  updatePaymentBank: (bankId: number) => `/accounting/payment-banks/${bankId}`,
+    `/finance/payment-banks?restaurant_id=${restaurantId}`,
+  createPaymentBank: () => "/finance/payment-banks",
+  updatePaymentBank: (bankId: number) => `/finance/payment-banks/${bankId}`,
   createCashTransfer: () => "/accounting/cash-transfers",
   previewSettlement: () => "/accounting/settlements/preview",
   createSettlement: () => "/accounting/settlements",
@@ -1494,7 +1704,8 @@ export const KotApis = {
 };
 
 export const ReceiptApis = {
-  getReceiptData: (orderId: number) => `/receipts/orders/${orderId}/data`,
+  getReceiptData: (orderId: number, terminalId?: number | null) =>
+    `/receipts/orders/${orderId}/data${terminalId ? `?terminal_id=${terminalId}` : ""}`,
 };
 
 export const ModifierApis = {
@@ -1735,6 +1946,20 @@ export const DayCloseApis = {
 };
 
 export const DrawerSessionApis = {
+  cashControlPolicy: ({
+    restaurantId,
+    effectiveDate,
+  }: {
+    restaurantId: number;
+    effectiveDate?: string;
+  }) => {
+    const params = new URLSearchParams({
+      restaurant_id: restaurantId.toString(),
+    });
+    if (effectiveDate) params.set("effective_date", effectiveDate);
+    return `/drawer-sessions/cash-control-policy?${params.toString()}`;
+  },
+  saveCashControlPolicy: "/drawer-sessions/cash-control-policy",
   configurations: ({
     restaurantId,
     businessLine = "restaurant",
@@ -1910,6 +2135,12 @@ export const PrinterApis = {
     `/printers/restaurants/${restaurantId}/default`,
   stationConfig: (restaurantId: number) =>
     `/printers/restaurants/${restaurantId}/station-config`,
+  receiptTerminals: (restaurantId: number, assignedToMe = false) =>
+    `/printers/restaurants/${restaurantId}/receipt-terminals${assignedToMe ? "?assigned_to_me=true" : ""}`,
+  createReceiptTerminal: (restaurantId: number) =>
+    `/printers/restaurants/${restaurantId}/receipt-terminals`,
+  updateReceiptTerminal: (terminalId: number) =>
+    `/printers/receipt-terminals/${terminalId}`,
 };
 
 export const SupplierApis = {
@@ -1922,11 +2153,68 @@ export const SupplierApis = {
   },
   getSupplier: (id: number, restaurantId: number) =>
     `/suppliers/${id}?restaurant_id=${restaurantId}`,
+  transactions: (id: number, restaurantId: number) => {
+    const params = new URLSearchParams({
+      restaurant_id: restaurantId.toString(),
+      skip: "0",
+      limit: "200",
+    });
+    return `/suppliers/${id}/transactions?${params.toString()}`;
+  },
+  settleTransaction: (
+    supplierId: number,
+    transactionId: number,
+    restaurantId: number,
+  ) =>
+    `/suppliers/${supplierId}/transactions/${transactionId}/settle?restaurant_id=${restaurantId}`,
+  pay: (supplierId: number, restaurantId: number) =>
+    `/suppliers/${supplierId}/payments?restaurant_id=${restaurantId}`,
+  receive: (supplierId: number, restaurantId: number) =>
+    `/suppliers/${supplierId}/receipts?restaurant_id=${restaurantId}`,
   createSupplier: "/suppliers",
   updateSupplier: (id: number, restaurantId: number) =>
     `/suppliers/${id}?restaurant_id=${restaurantId}`,
   deleteSupplier: (id: number, restaurantId: number) =>
     `/suppliers/${id}?restaurant_id=${restaurantId}`,
+};
+
+/** Immutable open-item statements used by customer and supplier balances. */
+export const PartyLedgerApis = {
+  statement: (
+    partyType: "customer" | "supplier",
+    partyId: number,
+    restaurantId: number,
+  ) =>
+    `/party-ledger/${partyType}/${partyId}/statement?restaurant_id=${restaurantId}`,
+};
+
+export const StationApis = {
+  list: (options: {
+    restaurantId: number;
+    isActive?: boolean;
+    search?: string;
+    skip?: number;
+    limit?: number;
+  }) => {
+    const params = new URLSearchParams({
+      restaurant_id: options.restaurantId.toString(),
+    });
+    if (options.isActive !== undefined)
+      params.append("is_active", options.isActive.toString());
+    if (options.search) params.append("search", options.search);
+    if (options.skip !== undefined)
+      params.append("skip", options.skip.toString());
+    if (options.limit !== undefined)
+      params.append("limit", options.limit.toString());
+    return `/stations?${params.toString()}`;
+  },
+  getStation: (id: number, restaurantId: number) =>
+    `/stations/${id}?restaurant_id=${restaurantId}`,
+  createStation: "/stations",
+  updateStation: (id: number, restaurantId: number) =>
+    `/stations/${id}?restaurant_id=${restaurantId}`,
+  deleteStation: (id: number, restaurantId: number) =>
+    `/stations/${id}?restaurant_id=${restaurantId}`,
 };
 
 export const StaffApis = {
@@ -1958,11 +2246,39 @@ export const StaffProfileApis = {
   employmentHistory: (userId: number) =>
     `/staff/users/${userId}/employment-history`,
   rehire: (staffId: number) => `/staff/${staffId}/rehire`,
+  profile: (staffId: number) => `/staff/${staffId}/profile`,
+  balances: () => `/staff/balances`,
+  discountLimit: (staffId: number) => `/staff/${staffId}/discount-limit`,
+};
+
+export const StaffCreditApis = {
+  balance: (staffId: number) => `/staff/${staffId}/credit/balance`,
+  transactions: (staffId: number) => `/staff/${staffId}/credit/transactions`,
+  advance: (staffId: number) => `/staff/${staffId}/credit/advance`,
+  repay: (staffId: number) => `/staff/${staffId}/credit/repay`,
+  reverse: (staffId: number, transactionId: number) =>
+    `/staff/${staffId}/credit/transactions/${transactionId}/reverse`,
+};
+
+export const StaffSalaryApis = {
+  balance: (staffId: number) => `/staff/${staffId}/salary/balance`,
+  pay: (staffId: number) => `/staff/${staffId}/salary/pay`,
+  deduct: (staffId: number) => `/staff/${staffId}/salary/deduct`,
+  payAll: () => `/staff/salary/pay-all`,
+  payAllPreview: () => `/staff/salary/pay-all/preview`,
+  overtime: (staffId: number) => `/staff/${staffId}/salary/overtime`,
+  resolveOvertime: (staffId: number) =>
+    `/staff/${staffId}/salary/overtime/resolve`,
+  selfDiscount: (staffId: number) => `/staff/${staffId}/self-discount`,
+  attendanceBasedSalary: (staffId: number) =>
+    `/staff/${staffId}/attendance-based-salary`,
 };
 
 export const AttendanceApis = {
   settings: "/attendance/settings",
   overview: "/attendance/overview",
+  myStatus: "/attendance/me/status",
+  myEntries: "/attendance/me/entries",
   entries: "/attendance/entries",
   submitEntry: (id: number) => "/attendance/entries/" + id + "/submit",
   approveEntry: (id: number) => "/attendance/entries/" + id + "/approve",
@@ -2004,105 +2320,6 @@ export const AttendanceApis = {
     "/attendance/connectors/" + credentialId + "/revoke",
 };
 
-export const PayrollApis = {
-  listRuns: (statuses?: string[]) => {
-    const params = new URLSearchParams();
-    if (statuses) statuses.forEach((s) => params.append("statuses", s));
-    const q = params.toString();
-    return q ? `/payroll/runs?${q}` : "/payroll/runs";
-  },
-  getRun: (id: number) => `/payroll/runs/${id}`,
-  createRun: "/payroll/runs",
-  previewRun: "/payroll/runs/preview",
-  approveRun: (id: number) => `/payroll/runs/${id}/approve`,
-  markPaid: (id: number) => `/payroll/runs/${id}/paid`,
-  cancelRun: (id: number) => `/payroll/runs/${id}/cancel`,
-  addAdjustments: (id: number) => `/payroll/runs/${id}/adjustments`,
-  deleteAdjustment: (adjustmentId: number) =>
-    `/payroll/adjustments/${adjustmentId}`,
-  runPdf: (id: number) => `/payroll/runs/${id}/pdf`,
-  staffHistory: (staffId: number) => `/payroll/staff/${staffId}/history`,
-  dueSummary: (asOf?: string) =>
-    asOf
-      ? `/payroll/due-summary?as_of=${encodeURIComponent(asOf)}`
-      : "/payroll/due-summary",
-  staffBalance: (staffId: number, asOf?: string) =>
-    asOf
-      ? `/payroll/staff/${staffId}/balance?as_of=${encodeURIComponent(asOf)}`
-      : `/payroll/staff/${staffId}/balance`,
-  setupReadiness: (asOf?: string) =>
-    asOf
-      ? `/payroll/setup-readiness?as_of=${encodeURIComponent(asOf)}`
-      : "/payroll/setup-readiness",
-  bulkPrepare: "/payroll/runs/bulk-prepare",
-  schedules: "/payroll/schedules",
-  payments: (staffId?: number) =>
-    staffId ? `/payroll/payments?staff_id=${staffId}` : "/payroll/payments",
-  recordPayment: "/payroll/payments",
-  reversePayment: (paymentId: number) =>
-    `/payroll/payments/${paymentId}/reverse`,
-  taxLiability: (asOf?: string) =>
-    asOf
-      ? `/payroll/tax-liability?as_of=${encodeURIComponent(asOf)}`
-      : "/payroll/tax-liability",
-  taxRemittances: (limit = 100) =>
-    `/payroll/tax-remittances?limit=${encodeURIComponent(String(limit))}`,
-  recordTaxRemittance: "/payroll/tax-remittances",
-  reverseTaxRemittance: (remittanceId: number) =>
-    `/payroll/tax-remittances/${remittanceId}/reverse`,
-};
-
-export const PeriodCloseApis = {
-  weeklyPreview: (restaurantId: number, year: number, week: number) =>
-    `/period-closes/weekly/preview?restaurant_id=${restaurantId}&year=${year}&week_number=${week}`,
-  confirmWeekly: (restaurantId: number, year: number, week: number) =>
-    `/period-closes/weekly/confirm?restaurant_id=${restaurantId}&year=${year}&week_number=${week}`,
-  weeklyRebuild: (restaurantId: number, year: number, week: number) =>
-    `/period-closes/weekly/rebuild?restaurant_id=${restaurantId}&year=${year}&week_number=${week}`,
-  listWeekly: (restaurantId: number, year?: number) => {
-    const params = new URLSearchParams({
-      restaurant_id: restaurantId.toString(),
-    });
-    if (year) params.append("year", year.toString());
-    return `/period-closes/weekly?${params.toString()}`;
-  },
-  weeklySnapshot: (weeklyCloseId: number) =>
-    `/period-closes/weekly/${weeklyCloseId}/snapshot`,
-  weeklyPreviewPdf: (
-    restaurantId: number,
-    year: number,
-    week: number,
-    doc: string,
-  ) =>
-    `/period-closes/weekly/preview/export/pdf?restaurant_id=${restaurantId}&year=${year}&week_number=${week}&doc=${encodeURIComponent(doc)}`,
-  weeklyClosePdf: (weeklyCloseId: number, doc: string) =>
-    `/period-closes/weekly/${weeklyCloseId}/export/pdf?doc=${encodeURIComponent(doc)}`,
-  monthlyPreview: (restaurantId: number, year: number, month: number) =>
-    `/period-closes/monthly/preview?restaurant_id=${restaurantId}&year=${year}&month=${month}`,
-  confirmMonthly: (restaurantId: number, year: number, month: number) =>
-    `/period-closes/monthly/confirm?restaurant_id=${restaurantId}&year=${year}&month=${month}`,
-  monthlyRebuild: (restaurantId: number, year: number, month: number) =>
-    `/period-closes/monthly/rebuild?restaurant_id=${restaurantId}&year=${year}&month=${month}`,
-  listMonthly: (restaurantId: number, year?: number) => {
-    const params = new URLSearchParams({
-      restaurant_id: restaurantId.toString(),
-    });
-    if (year) params.append("year", year.toString());
-    return `/period-closes/monthly?${params.toString()}`;
-  },
-  monthlySnapshot: (monthlyCloseId: number) =>
-    `/period-closes/monthly/${monthlyCloseId}/snapshot`,
-  monthlyPreviewPdf: (
-    restaurantId: number,
-    year: number,
-    month: number,
-    doc: string,
-  ) =>
-    `/period-closes/monthly/preview/export/pdf?restaurant_id=${restaurantId}&year=${year}&month=${month}&doc=${encodeURIComponent(doc)}`,
-  monthlyClosePdf: (monthlyCloseId: number, doc: string) =>
-    `/period-closes/monthly/${monthlyCloseId}/export/pdf?doc=${encodeURIComponent(doc)}`,
-};
-
 export const GeneralPurchaseApis = {
   list: ({
     restaurantId,
@@ -2133,8 +2350,6 @@ export const GeneralPurchaseApis = {
   receive: (id: number) => `/general-purchases/${id}/receive`,
   cancel: (id: number) => `/general-purchases/${id}/cancel`,
   return: (id: number) => `/general-purchases/${id}/return`,
-  awaitingPayments: (restaurantId: number) =>
-    `/awaiting-payments/general?restaurant_id=${restaurantId}`,
 };
 
 export const TaxConfigApis = {
@@ -2147,6 +2362,67 @@ export const TaxConfigApis = {
 
 export const FeedbackApis = {
   submit: "/feedbacks/",
+};
+
+export const HelpCenterApis = {
+  content: "/help-center",
+};
+
+export const GrowthApis = {
+  overview: "/growth/overview",
+  readiness: "/growth/readiness",
+  opportunities: "/growth/opportunities",
+  refreshOpportunities: "/growth/opportunities/refresh",
+  segmentPreview: (segmentCode: string) =>
+    `/growth/segments/${encodeURIComponent(segmentCode)}/preview`,
+  campaigns: "/growth/campaigns",
+  campaign: (campaignId: number | string) => `/growth/campaigns/${campaignId}`,
+  campaignAudiencePreview: (campaignId: number | string) =>
+    `/growth/campaigns/${campaignId}/preview-audience`,
+  campaignSubmitReview: (campaignId: number | string) =>
+    `/growth/campaigns/${campaignId}/submit-review`,
+  campaignReturnToDraft: (campaignId: number | string) =>
+    `/growth/campaigns/${campaignId}/return-to-draft`,
+  campaignPosterUpload: (campaignId: number | string) =>
+    `/growth/campaigns/${campaignId}/creative-assets/upload`,
+  campaignApprove: (campaignId: number | string) =>
+    `/growth/campaigns/${campaignId}/approve`,
+  campaignSchedule: (campaignId: number | string) =>
+    `/growth/campaigns/${campaignId}/schedule`,
+  campaignPause: (campaignId: number | string) =>
+    `/growth/campaigns/${campaignId}/pause`,
+  campaignCancel: (campaignId: number | string) =>
+    `/growth/campaigns/${campaignId}/cancel`,
+  campaignResults: (campaignId: number | string) =>
+    `/growth/campaigns/${campaignId}/results`,
+  campaignResultsCsv: (campaignId: number | string) =>
+    `/growth/campaigns/${campaignId}/results.csv`,
+  settings: "/growth/settings",
+  smsEstimate: "/growth/sms/estimate",
+  smsWallet: "/growth/sms/wallet",
+  smsPackages: "/growth/sms/packages",
+  smsPurchases: "/growth/sms/purchases",
+  smsPurchaseVerify: (id: number) => `/growth/sms/purchases/${id}/verify`,
+  brand: "/growth/brand",
+  messageTemplates: "/growth/message-templates",
+  suggestCopy: "/growth/content/suggest-copy",
+  validateOffer: "/growth/offers/validate",
+  sendTestEmail: "/growth/send-test-email",
+  subscribers: "/growth/subscribers",
+  redemptionByOrder: (orderId: number | string) =>
+    `/growth/redemptions/by-order/${orderId}`,
+  staffConsentCapture: "/growth/consent/staff-capture",
+};
+
+export const PublicGrowthApis = {
+  restaurant: (publicSlug: string) =>
+    `/public/growth/restaurants/${encodeURIComponent(publicSlug)}`,
+  join: (publicSlug: string) =>
+    `/public/growth/restaurants/${encodeURIComponent(publicSlug)}/join`,
+  preferences: (signedToken: string) =>
+    `/public/growth/preferences/${encodeURIComponent(signedToken)}`,
+  unsubscribe: (signedToken: string) =>
+    `/public/growth/preferences/${encodeURIComponent(signedToken)}/unsubscribe`,
 };
 
 export const TransactionsApis = {

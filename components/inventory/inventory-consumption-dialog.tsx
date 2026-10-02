@@ -50,7 +50,6 @@ const PURPOSES: Array<{ value: InventoryConsumptionPurpose; label: string }> = [
   { value: "staff_meal", label: "Staff meal" },
   { value: "complimentary", label: "Complimentary" },
   { value: "testing", label: "Testing" },
-  { value: "other", label: "Other" },
 ];
 
 function newLine(): DraftLine {
@@ -318,7 +317,7 @@ export function InventoryConsumptionDialog({
           {preview ? (
             <div className="overflow-hidden rounded-md border">
               <div className="grid grid-cols-[minmax(0,1fr)_110px_110px] bg-muted/40 px-3 py-2 text-xs font-medium text-muted-foreground">
-                <span>Item</span><span>After</span><span>COGS</span>
+                <span>Item</span><span>After</span><span>Cost posted</span>
               </div>
               {preview.lines.map((line) => (
                 <div key={line.inventory_item_id} className="grid grid-cols-[minmax(0,1fr)_110px_110px] border-t px-3 py-2 text-sm">

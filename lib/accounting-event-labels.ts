@@ -81,9 +81,39 @@ export const ACCOUNTING_EVENT_LABELS: Record<string, AccountingEventLabel> = {
   },
   inventory_cogs_recognized: {
     label: "Inventory COGS recognized",
-    meaning: "Inventory cost moved into expense when stock is consumed, wasted, or adjusted.",
+    meaning: "Inventory cost moved into cost of goods sold for preparation or recipe usage.",
     defaultDebitHint: "Cost of Goods Sold",
     defaultCreditHint: "Inventory Asset",
+  },
+  inventory_wastage_recognized: {
+    label: "Inventory wastage recognized",
+    meaning: "The book value of wasted, damaged, or expired stock was recognized as an expense.",
+    defaultDebitHint: "Inventory Wastage",
+    defaultCreditHint: "Inventory Asset",
+  },
+  inventory_staff_meal_recognized: {
+    label: "Staff meal inventory used",
+    meaning: "Inventory consumed for staff meals was recognized separately from food sold to customers.",
+    defaultDebitHint: "Staff Meals",
+    defaultCreditHint: "Inventory Asset",
+  },
+  inventory_complimentary_use_recognized: {
+    label: "Complimentary inventory used",
+    meaning: "Inventory given away to customers was recognized as a complimentary-items expense.",
+    defaultDebitHint: "Complimentary Items",
+    defaultCreditHint: "Inventory Asset",
+  },
+  inventory_testing_recognized: {
+    label: "Testing inventory used",
+    meaning: "Inventory consumed for testing or quality control was recognized as its own expense.",
+    defaultDebitHint: "Testing & Quality Control",
+    defaultCreditHint: "Inventory Asset",
+  },
+  inventory_complimentary_stock_received: {
+    label: "Complimentary inventory received",
+    meaning: "Free stock increased inventory value without creating a supplier payable or cash payment.",
+    defaultDebitHint: "Inventory Asset",
+    defaultCreditHint: "Complimentary Inventory Gain",
   },
   inventory_return_processed: {
     label: "Inventory return processed",

@@ -7,7 +7,21 @@ import apiClient from "@/lib/api-client";
 import { useAuth } from "@/hooks/use-auth";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import { useOrderFull } from "@/hooks/use-order-full";
-import { OrderApis, CustomerApis, PaymentApis, DrawerSessionApis, AccountingApis } from "@/lib/api/endpoints";
+import { useMobileAppBarTitle } from "@/components/layout/mobile-app-bar-title";
+
+function CheckoutAppBarTitle({ title }: { title: string }) {
+  useMobileAppBarTitle(title);
+  return null;
+}
+import {
+  OrderApis,
+  CustomerApis,
+  PaymentApis,
+  DrawerSessionApis,
+  AccountingApis,
+  StaffProfileApis,
+  GrowthApis,
+} from "@/lib/api/endpoints";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -24,7 +38,11 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import {
   Select,
   SelectContent,
@@ -48,6 +66,7 @@ import {
   AlertCircle,
   RefreshCw,
   CheckCircle,
+  Clock3,
   User,
   ChevronDown,
   Search,
@@ -58,6 +77,8 @@ import {
   Pencil,
   Plus,
   Minus,
+  Mail,
+  MessageCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { usePosBillingPermissions } from "@/hooks/use-pos-billing-permissions";
@@ -74,8 +95,28 @@ import {
   optionalCustomerText,
 } from "@/lib/customer-fiscal";
 import { getRecordedOrderDiscount } from "@/lib/order-totals";
+import {
+  canPostRoomOrderToFolio,
+  requiresRoomOrderKotFulfillment,
+} from "@/lib/hotel/room-order-settlement";
+import {
+  PaymentMethodGrid,
+  PaymentModeTabs,
+  STANDARD_PAYMENT_METHODS,
+} from "@/components/payments/payment-composer-controls";
+import {
+  PAYMENT_AMOUNT_STEP,
+  preventPaymentAmountWheelChange,
+} from "@/lib/payment-composer-config";
+import { CompletedSettlementCorrectionDialog } from "@/components/orders/completed-settlement-correction-dialog";
+import { InvoiceSettlementCard } from "@/components/orders/invoice-settlement-card";
+import { financeSalesApi } from "@/lib/api/finance-sales-api";
+import type { FinanceSalesDocumentSettlement } from "@/types/finance-sales";
 
-function findFirstStringByKey(input: unknown, keyHints: string[]): string | null {
+function findFirstStringByKey(
+  input: unknown,
+  keyHints: string[],
+): string | null {
   if (!input) return null;
   const hints = keyHints.map((h) => h.toLowerCase());
   const queue: unknown[] = [input];
@@ -86,9 +127,15 @@ function findFirstStringByKey(input: unknown, keyHints: string[]): string | null
       for (const item of current) queue.push(item);
       continue;
     }
-    for (const [rawKey, rawValue] of Object.entries(current as Record<string, unknown>)) {
+    for (const [rawKey, rawValue] of Object.entries(
+      current as Record<string, unknown>,
+    )) {
       const key = rawKey.toLowerCase();
-      if (hints.some((h) => key.includes(h)) && typeof rawValue === "string" && rawValue.trim()) {
+      if (
+        hints.some((h) => key.includes(h)) &&
+        typeof rawValue === "string" &&
+        rawValue.trim()
+      ) {
         return rawValue.trim();
       }
       if (rawValue && typeof rawValue === "object") queue.push(rawValue);
@@ -97,10 +144,15 @@ function findFirstStringByKey(input: unknown, keyHints: string[]): string | null
   return null;
 }
 
-function resolveQrDisplay(rawQr: string | null, payloadText: string | null, prn: string): string | null {
+function resolveQrDisplay(
+  rawQr: string | null,
+  payloadText: string | null,
+  prn: string,
+): string | null {
   const qrCandidate = rawQr?.trim();
   if (qrCandidate) {
-    if (qrCandidate.startsWith("data:") || qrCandidate.startsWith("http")) return qrCandidate;
+    if (qrCandidate.startsWith("data:") || qrCandidate.startsWith("http"))
+      return qrCandidate;
     if (/^[A-Za-z0-9+/=]+$/.test(qrCandidate) && qrCandidate.length > 120) {
       return `data:image/png;base64,${qrCandidate}`;
     }
@@ -115,11 +167,7 @@ function resolveQrDisplay(rawQr: string | null, payloadText: string | null, prn:
 function extractApiErrorMessage(err: any, fallback: string): string {
   const data = err?.response?.data;
   return (
-    data?.detail ||
-    data?.message ||
-    data?.error ||
-    err?.message ||
-    fallback
+    data?.detail || data?.message || data?.error || err?.message || fallback
   );
 }
 
@@ -132,6 +180,7 @@ type BaseResponse<T> = {
 type CheckoutQrInstrument = {
   name: string;
   payload: string;
+  configId?: string | null;
   instrumentType: string;
   isSelectable: boolean;
 };
@@ -185,6 +234,9 @@ interface BillPayment {
 
 interface OrderBill {
   order_id: number;
+  invoice_number?: string | null;
+  daily_order_number?: number | null;
+  fiscal_document_number?: string | null;
   items: BillItem[];
   payments: BillPayment[];
   subtotal: number;
@@ -203,6 +255,7 @@ interface OrderBill {
 interface OrderMeta {
   id: number;
   restaurant_order_id?: number;
+  invoice_number?: string | null;
   table_name?: string;
   table_id?: number;
   table_category_name?: string;
@@ -211,21 +264,26 @@ interface OrderMeta {
   customer_name?: string;
   customer_phone?: string;
   customer_id?: number;
+  staff_order_for_id?: number | null;
   number_of_guests?: number;
   notes?: string;
   created_at: string;
+  room_order_context?: {
+    stay_id: number;
+    folio_id: number;
+    room_number: string;
+    guest_name: string;
+    folio_number: string;
+    settlement_status: "unsettled" | "paid_now" | "posted_to_folio" | "voided";
+  } | null;
 }
 
-const PAYMENT_METHODS = [
-  { value: "cash", label: "Cash", icon: Banknote, color: "text-emerald-600" },
-  { value: "card", label: "Card", icon: CreditCard, color: "text-blue-600" },
-  { value: "fonepay", label: "Fonepay", icon: QrCode, color: "text-fuchsia-600" },
-  { value: "digital", label: "Digital/QR", icon: Smartphone, color: "text-purple-600" },
-  { value: "credit", label: "Credit", icon: Wallet, color: "text-orange-600" },
-];
+const PAYMENT_METHODS = STANDARD_PAYMENT_METHODS;
 
 const REFUND_PAYMENT_METHODS = REFUND_PAYMENT_METHOD_OPTIONS.map((method) => {
-  const fullMethod = PAYMENT_METHODS.find((option) => option.value === method.value);
+  const fullMethod = PAYMENT_METHODS.find(
+    (option) => option.value === method.value,
+  );
   return {
     ...method,
     icon: fullMethod?.icon || Banknote,
@@ -239,7 +297,11 @@ function formatCurrency(amount: number, currency = "Rs.") {
 
 function getItemEffectiveUnitPrice(item: BillItem) {
   const modifierTotal = Array.isArray(item.modifiers)
-    ? item.modifiers.reduce((sum, modifier) => sum + Number(modifier.price_adjustment_snapshot || 0), 0)
+    ? item.modifiers.reduce(
+        (sum, modifier) =>
+          sum + Number(modifier.price_adjustment_snapshot || 0),
+        0,
+      )
     : 0;
   return Number(item.unit_price || 0) + modifierTotal;
 }
@@ -252,14 +314,21 @@ function getItemEffectiveLineTotal(item: BillItem) {
 function formatCustomerLabel(c: any, currency: string) {
   const name = c?.full_name || c?.name || "Guest";
   const phone = c?.phone || "No phone";
-  const bal = typeof c?.credit === "number" ? ` - Balance: ${formatCurrency(c.credit || 0, currency)}` : "";
+  const bal =
+    typeof c?.credit === "number"
+      ? ` - Balance: ${formatCurrency(c.credit || 0, currency)}`
+      : "";
   return `${name} (${phone})${bal}`;
 }
 
 function readPaymentInstrument(payment: BillPayment | null | undefined) {
   if (!payment) return null;
   const nested = payment.instrument;
-  if (nested && typeof nested.type === "string" && typeof nested.name === "string") {
+  if (
+    nested &&
+    typeof nested.type === "string" &&
+    typeof nested.name === "string"
+  ) {
     return {
       type: nested.type,
       name: nested.name,
@@ -275,6 +344,12 @@ function readPaymentInstrument(payment: BillPayment | null | undefined) {
   }
   return null;
 }
+
+type StaffOption = {
+  id: number;
+  user_name?: string | null;
+  account_number?: string | null;
+};
 
 type CustomerOption = {
   id: number;
@@ -314,7 +389,9 @@ function CustomerSearchSelect({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const selected = customers.find((c) => String(c.id) === value);
-  const selectedLabel = selected ? formatCustomerLabel(selected, currency) : placeholder;
+  const selectedLabel = selected
+    ? formatCustomerLabel(selected, currency)
+    : placeholder;
 
   const filteredCustomers = customers.filter((customer) => {
     const haystack = [
@@ -380,7 +457,9 @@ function CustomerSearchSelect({
           <ScrollArea className="max-h-72">
             <div className="p-1">
               {filteredCustomers.length === 0 ? (
-                <div className="px-3 py-6 text-sm text-muted-foreground">No customers found.</div>
+                <div className="px-3 py-6 text-sm text-muted-foreground">
+                  No customers found.
+                </div>
               ) : (
                 filteredCustomers.map((customer) => {
                   const customerLabel = formatCustomerLabel(customer, currency);
@@ -398,10 +477,13 @@ function CustomerSearchSelect({
                         "flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-left text-sm transition-colors",
                         isSelected
                           ? "bg-orange-100 text-orange-700 dark:bg-orange-950/30 dark:text-orange-300"
-                          : "hover:bg-muted/70 text-foreground"
+                          : "hover:bg-muted/70 text-foreground",
                       )}
                     >
-                      <span className="block min-w-0 flex-1 truncate" title={customerLabel}>
+                      <span
+                        className="block min-w-0 flex-1 truncate"
+                        title={customerLabel}
+                      >
                         {customerLabel}
                       </span>
                     </button>
@@ -420,14 +502,119 @@ function CustomerSearchSelect({
   );
 }
 
+function staffDisplayName(staff: StaffOption) {
+  const name = staff.user_name?.trim();
+  return name && name.length > 0 ? name : `Staff #${staff.id}`;
+}
+
+function StaffSearchSelect({
+  staff,
+  value,
+  onValueChange,
+}: {
+  staff: StaffOption[];
+  value: string;
+  onValueChange: (value: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const selected = staff.find((s) => String(s.id) === value);
+  const selectedLabel = selected
+    ? staffDisplayName(selected)
+    : "Select staff member";
+
+  const filteredStaff = staff.filter((s) => {
+    const haystack = [staffDisplayName(s), s.account_number, String(s.id)]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+    return haystack.includes(query.trim().toLowerCase());
+  });
+
+  return (
+    <Popover
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (!next) setQuery("");
+      }}
+    >
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          className="w-full justify-between gap-3 h-11 pr-3 font-normal"
+        >
+          <span className="min-w-0 flex-1 truncate text-left">
+            {selectedLabel}
+          </span>
+          <ChevronDown className="h-4 w-4 shrink-0 opacity-60" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[min(92vw,420px)] p-0" align="start">
+        <div className="border-b border-border/40 p-3">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search staff..."
+              autoFocus
+              className="pl-9"
+            />
+          </div>
+        </div>
+        <ScrollArea className="max-h-72">
+          <div className="p-1">
+            {filteredStaff.length === 0 ? (
+              <div className="px-3 py-6 text-sm text-muted-foreground">
+                No staff found.
+              </div>
+            ) : (
+              filteredStaff.map((s) => {
+                const label = staffDisplayName(s);
+                const isSelected = String(s.id) === value;
+                return (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => {
+                      onValueChange(String(s.id));
+                      setOpen(false);
+                      setQuery("");
+                    }}
+                    className={cn(
+                      "flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-left text-sm transition-colors",
+                      isSelected
+                        ? "bg-orange-100 text-orange-700 dark:bg-orange-950/30 dark:text-orange-300"
+                        : "hover:bg-muted/70 text-foreground",
+                    )}
+                  >
+                    <span
+                      className="block min-w-0 flex-1 truncate"
+                      title={label}
+                    >
+                      {label}
+                    </span>
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </ScrollArea>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 // ── Main Checkout Page ─────────────────────────────
 export default function CheckoutPage() {
   const params = useParams() as { id?: string | string[] } | null;
   const router = useRouter();
-  
+
   // Extract returnTo from URL if present
   const [returnTo, setReturnTo] = useState<string | null>(null);
-  
+
   useEffect(() => {
     if (typeof window !== "undefined") {
       const urlParams = new URLSearchParams(window.location.search);
@@ -450,13 +637,34 @@ export default function CheckoutPage() {
     canMarkNc,
   } = usePosBillingPermissions();
 
-  const { context, loading: orderLoading, fetchContext, isFullyPaid, allKotsServed } = useOrderFull(orderId);
+  const {
+    context,
+    loading: orderLoading,
+    fetchContext,
+    isFullyPaid,
+    allKotsServed,
+  } = useOrderFull(orderId);
+  const kotFulfillmentRequired = requiresRoomOrderKotFulfillment({
+    kotEnabled: restaurant?.kot_enabled,
+    kotEntitled: restaurant?.entitlements?.["kitchen.kot.enabled"] as
+      boolean | null | undefined,
+  });
+  const roomOrderCanPost = canPostRoomOrderToFolio({
+    kotEnabled: restaurant?.kot_enabled,
+    kotEntitled: restaurant?.entitlements?.["kitchen.kot.enabled"] as
+      boolean | null | undefined,
+    allKotsServed,
+  });
   const [bill, setBill] = useState<OrderBill | null>(null);
   const [orderMeta, setOrderMeta] = useState<OrderMeta | null>(null);
+  const [invoiceSettlement, setInvoiceSettlement] =
+    useState<FinanceSalesDocumentSettlement | null>(null);
   const [loading, setLoading] = useState(true);
   const [completing, setCompleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [itemOverrides, setItemOverrides] = useState<Record<number, Partial<BillItem>>>({});
+  const [itemOverrides, setItemOverrides] = useState<
+    Record<number, Partial<BillItem>>
+  >({});
 
   // Payment dialog
   const [paymentOpen, setPaymentOpen] = useState(false);
@@ -468,7 +676,9 @@ export default function CheckoutPage() {
   const [fonepayDialogOpen, setFonepayDialogOpen] = useState(false);
   const [fonepayPrn, setFonepayPrn] = useState<string | null>(null);
   const [fonepayQr, setFonepayQr] = useState<string | null>(null);
-  const [fonepayPayloadText, setFonepayPayloadText] = useState<string | null>(null);
+  const [fonepayPayloadText, setFonepayPayloadText] = useState<string | null>(
+    null,
+  );
   const [fonepayStatus, setFonepayStatus] = useState<string>("pending");
   const [fonepayLoading, setFonepayLoading] = useState(false);
   const [fonepayVerifying, setFonepayVerifying] = useState(false);
@@ -476,46 +686,62 @@ export default function CheckoutPage() {
   const [selectedCardIndex, setSelectedCardIndex] = useState(0);
   const drawerBusinessLine = "restaurant";
   const [drawerSessions, setDrawerSessions] = useState<DrawerSession[]>([]);
-  const [cashDrawerControlsEnabled, setCashDrawerControlsEnabled] = useState(true);
+  const [cashDrawerControlsEnabled, setCashDrawerControlsEnabled] =
+    useState(true);
+  const [cashDrawerWillAutoOpen, setCashDrawerWillAutoOpen] = useState(false);
   const [drawerLoading, setDrawerLoading] = useState(false);
   const [drawerError, setDrawerError] = useState<string | null>(null);
   const [editPaymentOpen, setEditPaymentOpen] = useState(false);
-  const [editingPayment, setEditingPayment] = useState<BillPayment | null>(null);
+  const [editingPayment, setEditingPayment] = useState<BillPayment | null>(
+    null,
+  );
   const [editPayMethod, setEditPayMethod] = useState("cash");
   const [editPayReference, setEditPayReference] = useState("");
   const [editPaySubmitting, setEditPaySubmitting] = useState(false);
   const [editPayError, setEditPayError] = useState<string | null>(null);
   const [editSelectedStaticQrIndex, setEditSelectedStaticQrIndex] = useState(0);
   const [editSelectedCardIndex, setEditSelectedCardIndex] = useState(0);
-  const [activePaymentInstruments, setActivePaymentInstruments] = useState<PaymentInstrument[]>([]);
-  const [removingPaymentId, setRemovingPaymentId] = useState<number | null>(null);
-  const [shouldAutoRedirectAfterPayment, setShouldAutoRedirectAfterPayment] = useState(false);
+  const [activePaymentInstruments, setActivePaymentInstruments] = useState<
+    PaymentInstrument[]
+  >([]);
+  const [removingPaymentId, setRemovingPaymentId] = useState<number | null>(
+    null,
+  );
+  const [shouldAutoRedirectAfterPayment, setShouldAutoRedirectAfterPayment] =
+    useState(false);
   const [editingItem, setEditingItem] = useState<BillItem | null>(null);
   const [editItemNotes, setEditItemNotes] = useState("");
   const [itemUpdating, setItemUpdating] = useState(false);
 
-
   // Multi-Payment state
   const [isMultiPayment, setIsMultiPayment] = useState(false);
-  const [multiPayments, setMultiPayments] = useState<Array<{
-    method: string;
-    amount: string;
-    reference: string;
-    selectedStaticQrIndex: number;
-    selectedCardIndex: number;
-  }>>([
-    { method: "cash", amount: "", reference: "", selectedStaticQrIndex: 0, selectedCardIndex: 0 }
+  const [multiPayments, setMultiPayments] = useState<
+    Array<{
+      method: string;
+      amount: string;
+      reference: string;
+      selectedStaticQrIndex: number;
+      selectedCardIndex: number;
+    }>
+  >([
+    {
+      method: "cash",
+      amount: "",
+      reference: "",
+      selectedStaticQrIndex: 0,
+      selectedCardIndex: 0,
+    },
   ]);
 
   // Guest Split Bill state
   const [guestBills, setGuestBills] = useState<any>(null);
   const [splitBillOpen, setSplitBillOpen] = useState(false);
-  const [splitParts, setSplitParts] = useState<Array<{
-    label: string;
-    items: Record<number, number>; // order_item_id -> qty
-  }>>([
-    { label: "Guest 1", items: {} }
-  ]);
+  const [splitParts, setSplitParts] = useState<
+    Array<{
+      label: string;
+      items: Record<number, number>; // order_item_id -> qty
+    }>
+  >([{ label: "Guest 1", items: {} }]);
   const [splitSubmitting, setSplitSubmitting] = useState(false);
   const [splitError, setSplitError] = useState<string | null>(null);
   const [payAllOpen, setPayAllOpen] = useState(false);
@@ -525,7 +751,7 @@ export default function CheckoutPage() {
 
   const splitSourceItems = context?.order?.items?.length
     ? context.order.items
-    : (bill?.items || []);
+    : bill?.items || [];
   const hasSuccessfulPayments = Number(bill?.total_paid || 0) > 0;
   const orderEditLocked = ["completed", "canceled"].includes(
     String(orderMeta?.status || context?.order?.status || "").toLowerCase(),
@@ -547,6 +773,8 @@ export default function CheckoutPage() {
   const [refundReference, setRefundReference] = useState("");
   const [refundSubmitting, setRefundSubmitting] = useState(false);
   const [refundError, setRefundError] = useState<string | null>(null);
+  const [settlementCorrectionOpen, setSettlementCorrectionOpen] =
+    useState(false);
 
   // Customer selection for Credit
   const [customers, setCustomers] = useState<any[]>([]);
@@ -562,19 +790,33 @@ export default function CheckoutPage() {
     pan_number: "",
     billing_address: "",
   });
+  const [quickAddMarketingConsent, setQuickAddMarketingConsent] = useState({
+    email: false,
+    whatsapp: false,
+  });
 
   // Discount dialog
   const [discountOpen, setDiscountOpen] = useState(false);
-  const [discountType, setDiscountType] = useState<"code" | "manual">("code");
+  const [discountType, setDiscountType] = useState<"code" | "manual" | "staff">(
+    "code",
+  );
   const [discountCode, setDiscountCode] = useState("");
   const [manualDiscountAmount, setManualDiscountAmount] = useState("");
   const [manualDiscountPercent, setManualDiscountPercent] = useState("");
   const [discountSubmitting, setDiscountSubmitting] = useState(false);
 
+  // Staff self-purchase discount ("this order is for staff member X")
+  const [staffOptions, setStaffOptions] = useState<StaffOption[]>([]);
+  const [selectedStaffId, setSelectedStaffId] = useState<string>("");
+
   const hasNcItems = Boolean(
-    (context?.order?.items || bill?.items || []).some((item: any) => Boolean(item?.is_nc))
+    (context?.order?.items || bill?.items || []).some((item: any) =>
+      Boolean(item?.is_nc),
+    ),
   );
-  const selectedCheckoutCustomerId = selectedCustomerId ? parseInt(selectedCustomerId, 10) : undefined;
+  const selectedCheckoutCustomerId = selectedCustomerId
+    ? parseInt(selectedCustomerId, 10)
+    : undefined;
   const pendingCheckoutCustomerId =
     selectedCheckoutCustomerId ?? orderMeta?.customer_id;
   const ncNeedsCustomer = hasNcItems && !pendingCheckoutCustomerId;
@@ -583,39 +825,64 @@ export default function CheckoutPage() {
   const [loyaltyPoints, setLoyaltyPoints] = useState("");
   const [loyaltySubmitting, setLoyaltySubmitting] = useState(false);
   const [loyaltyError, setLoyaltyError] = useState<string | null>(null);
-  const legacyPaymentQrs = useMemo<Array<{ name: string; payload: string }>>(
-    () => Array.isArray((restaurant as any)?.payment_qrs)
-      ? (restaurant as any).payment_qrs
-          .filter((q: any) => q && typeof q.payload === "string" && q.payload.trim())
-          .map((q: any) => ({ name: String(q.name || "QR"), payload: String(q.payload) }))
-      : [],
+  const legacyPaymentQrs = useMemo<
+    Array<{ name: string; payload: string; configId?: string | null }>
+  >(
+    () =>
+      Array.isArray((restaurant as any)?.payment_qrs)
+        ? (restaurant as any).payment_qrs
+            .filter(
+              (q: any) =>
+                q && typeof q.payload === "string" && q.payload.trim(),
+            )
+            .map((q: any) => ({
+              name: String(q.name || "QR"),
+              payload: String(q.payload),
+              configId: q.config_id ? String(q.config_id) : null,
+            }))
+        : [],
     [restaurant],
   );
-  const legacyPaymentCards = useMemo<Array<{ name: string; identifier?: string | null }>>(
-    () => Array.isArray((restaurant as any)?.payment_cards)
-      ? (restaurant as any).payment_cards
-          .filter((c: any) => c && typeof c.name === "string" && c.name.trim())
-          .map((c: any) => ({ name: String(c.name), identifier: c.identifier ? String(c.identifier) : null }))
-      : [],
+  const legacyPaymentCards = useMemo<
+    Array<{ name: string; identifier?: string | null }>
+  >(
+    () =>
+      Array.isArray((restaurant as any)?.payment_cards)
+        ? (restaurant as any).payment_cards
+            .filter(
+              (c: any) => c && typeof c.name === "string" && c.name.trim(),
+            )
+            .map((c: any) => ({
+              name: String(c.name),
+              identifier: c.identifier ? String(c.identifier) : null,
+            }))
+        : [],
     [restaurant],
   );
   const activeCardInstruments = useMemo(
-    () => activePaymentInstruments.filter((instrument) => (
-      instrument.is_active &&
-      String(instrument.payment_method || "").toLowerCase() === "card"
-    )),
+    () =>
+      activePaymentInstruments.filter(
+        (instrument) =>
+          instrument.is_active &&
+          String(instrument.payment_method || "").toLowerCase() === "card",
+      ),
     [activePaymentInstruments],
   );
   const activeStaticQrInstruments = useMemo(
-    () => activePaymentInstruments.filter((instrument) => (
-      instrument.is_active &&
-      String(instrument.payment_method || "").toLowerCase() === "digital"
-    )),
+    () =>
+      activePaymentInstruments.filter(
+        (instrument) =>
+          instrument.is_active &&
+          String(instrument.payment_method || "").toLowerCase() === "digital",
+      ),
     [activePaymentInstruments],
   );
   const staticPaymentQrs = useMemo<CheckoutQrInstrument[]>(() => {
     const activeByName = new Map(
-      activeStaticQrInstruments.map((instrument) => [instrument.name, instrument]),
+      activeStaticQrInstruments.map((instrument) => [
+        instrument.name,
+        instrument,
+      ]),
     );
 
     const mergedLegacy = legacyPaymentQrs.map((qr) => {
@@ -624,6 +891,7 @@ export default function CheckoutPage() {
         return {
           name: qr.name,
           payload: qr.payload,
+          configId: qr.configId || `finance-instrument:${active.id}`,
           instrumentType: active.instrument_type || "static_qr",
           isSelectable: true,
         };
@@ -631,26 +899,33 @@ export default function CheckoutPage() {
       return {
         name: qr.name,
         payload: qr.payload,
+        configId: qr.configId,
         instrumentType: "static_qr",
         isSelectable: activeStaticQrInstruments.length === 0,
       };
     });
 
     const activeOnly = activeStaticQrInstruments
-      .filter((instrument) => !legacyPaymentQrs.some((qr) => qr.name === instrument.name))
-      .map((instrument) => {
-        const metadataPayload = typeof instrument.metadata_json?.payload === "string"
-          ? instrument.metadata_json.payload
-          : "";
-        if (!metadataPayload.trim()) return null;
-        return {
-          name: instrument.name,
-          payload: metadataPayload,
-          instrumentType: instrument.instrument_type || "static_qr",
-          isSelectable: true,
-        };
-      })
-      .filter((instrument): instrument is CheckoutQrInstrument => Boolean(instrument));
+      .filter(
+        (instrument) =>
+          !legacyPaymentQrs.some((qr) => qr.name === instrument.name),
+      )
+      .flatMap<CheckoutQrInstrument>((instrument) => {
+        const metadataPayload =
+          typeof instrument.metadata_json?.payload === "string"
+            ? instrument.metadata_json.payload
+            : "";
+        if (!metadataPayload.trim()) return [];
+        return [
+          {
+            name: instrument.name,
+            payload: metadataPayload,
+            configId: `finance-instrument:${instrument.id}`,
+            instrumentType: instrument.instrument_type || "static_qr",
+            isSelectable: true,
+          },
+        ];
+      });
 
     return [...mergedLegacy, ...activeOnly];
   }, [activeStaticQrInstruments, legacyPaymentQrs]);
@@ -678,7 +953,10 @@ export default function CheckoutPage() {
     });
 
     const activeOnly = activeCardInstruments
-      .filter((instrument) => !legacyPaymentCards.some((card) => card.name === instrument.name))
+      .filter(
+        (instrument) =>
+          !legacyPaymentCards.some((card) => card.name === instrument.name),
+      )
       .map((instrument) => ({
         name: instrument.name,
         identifier: null,
@@ -688,51 +966,69 @@ export default function CheckoutPage() {
 
     return [...mergedLegacy, ...activeOnly];
   }, [activeCardInstruments, legacyPaymentCards]);
-  const cardConfigHelpText = activeCardInstruments.length > 0
-    ? "No active card instrument available for checkout. Align Finance / Accounting / Setup with this restaurant's card settings."
-    : "No card account configured. Add one in Manage / Settings / Payments & POS.";
-  const qrConfigHelpText = activeStaticQrInstruments.length > 0
-    ? "No active static QR instrument with payload is available for checkout. Align Finance / Accounting / Setup with Manage / Settings / Payments & POS."
-    : "No static QR configured. Add one in Manage / Settings / Payments & POS.";
-  const hasUnsyncedLegacyCards = staticPaymentCards.some((card) => !card.isSelectable);
+  const cardConfigHelpText =
+    activeCardInstruments.length > 0
+      ? 'The configured card instrument isn\'t marked available at checkout. Edit it in Finance / Cash & Banks / Payment Instruments and turn on "Available at checkout".'
+      : "No card account configured. Add one in Finance / Cash & Banks / Payment Instruments.";
+  const qrConfigHelpText =
+    activeStaticQrInstruments.length > 0
+      ? "The configured static QR instrument is missing its payment payload. Edit it in Finance / Cash & Banks / Payment Instruments and add the QR payload."
+      : "No static QR configured. Add one in Finance / Cash & Banks / Payment Instruments.";
+  const hasUnsyncedLegacyCards = staticPaymentCards.some(
+    (card) => !card.isSelectable,
+  );
   const hasUnsyncedLegacyQrs = staticPaymentQrs.some((qr) => !qr.isSelectable);
   const availableCashDrawerSessions = drawerSessions;
   const currentCashierDrawer =
-    cashDrawerControlsEnabled && availableCashDrawerSessions.length === 1 ? availableCashDrawerSessions[0] : null;
+    cashDrawerControlsEnabled && availableCashDrawerSessions.length === 1
+      ? availableCashDrawerSessions[0]
+      : null;
   const hasCurrentCashierDrawer = Boolean(currentCashierDrawer);
-  const hasCashDrawerConflict = cashDrawerControlsEnabled && availableCashDrawerSessions.length > 1;
+  const hasCashDrawerConflict =
+    cashDrawerControlsEnabled && availableCashDrawerSessions.length > 1;
   const cashMethodSelected = !isMultiPayment
     ? payMethod === "cash"
     : multiPayments.some((row) => row.method === "cash");
 
-  const loadCashDrawerState = useCallback(async (options?: { silent?: boolean }) => {
-    if (!restaurant?.id) {
-      return { ready: false, message: "Restaurant profile is not loaded." };
-    }
-    if (!user?.id) {
-      return { ready: false, message: "Login session is not loaded." };
-    }
+  const loadCashDrawerState = useCallback(
+    async (options?: { silent?: boolean }) => {
+      if (!restaurant?.id) {
+        return { ready: false, message: "Restaurant profile is not loaded." };
+      }
+      if (!user?.id) {
+        return { ready: false, message: "Login session is not loaded." };
+      }
 
-    if (!options?.silent) setDrawerLoading(true);
-    setDrawerError(null);
-    try {
-      const activeRes = await apiClient.get<BaseResponse<DrawerSession[]>>(
-        DrawerSessionApis.active({ restaurantId: restaurant.id, businessLine: drawerBusinessLine }),
-      );
-      const readiness = resolveCheckoutCashDrawerReadiness(activeRes.data);
-      setCashDrawerControlsEnabled(readiness.controlsEnabled);
-      setDrawerSessions(readiness.paymentReadySessions);
-      return { ready: readiness.ready, message: readiness.message };
-    } catch (err: any) {
-      const message = extractApiErrorMessage(err, "Failed to load cash drawer status.");
-      setCashDrawerControlsEnabled(true);
-      setDrawerSessions([]);
-      setDrawerError(message);
-      return { ready: false, message };
-    } finally {
-      if (!options?.silent) setDrawerLoading(false);
-    }
-  }, [drawerBusinessLine, restaurant?.id, user?.id]);
+      if (!options?.silent) setDrawerLoading(true);
+      setDrawerError(null);
+      try {
+        const activeRes = await apiClient.get<BaseResponse<DrawerSession[]>>(
+          DrawerSessionApis.active({
+            restaurantId: restaurant.id,
+            businessLine: drawerBusinessLine,
+          }),
+        );
+        const readiness = resolveCheckoutCashDrawerReadiness(activeRes.data);
+        setCashDrawerControlsEnabled(readiness.controlsEnabled);
+        setCashDrawerWillAutoOpen(readiness.autoOpenOnPayment);
+        setDrawerSessions(readiness.paymentReadySessions);
+        return { ready: readiness.ready, message: readiness.message };
+      } catch (err: any) {
+        const message = extractApiErrorMessage(
+          err,
+          "Failed to load cash drawer status.",
+        );
+        setCashDrawerControlsEnabled(true);
+        setCashDrawerWillAutoOpen(false);
+        setDrawerSessions([]);
+        setDrawerError(message);
+        return { ready: false, message };
+      } finally {
+        if (!options?.silent) setDrawerLoading(false);
+      }
+    },
+    [drawerBusinessLine, restaurant?.id, user?.id],
+  );
   const ensureCashDrawerReady = useCallback(async () => {
     const result = await loadCashDrawerState({ silent: true });
     if (!result.ready) {
@@ -758,7 +1054,10 @@ export default function CheckoutPage() {
       );
       setActivePaymentInstruments(response.data?.data ?? []);
     } catch (err) {
-      console.error("Failed to load active payment instruments for checkout", err);
+      console.error(
+        "Failed to load active payment instruments for checkout",
+        err,
+      );
       setActivePaymentInstruments([]);
     }
   }, [restaurant?.id]);
@@ -766,7 +1065,9 @@ export default function CheckoutPage() {
   const fetchGuestBills = useCallback(async () => {
     if (!orderId) return;
     try {
-      const res = await apiClient.get(OrderApis.getGuestBills(orderId), { params: { _t: Date.now() } });
+      const res = await apiClient.get(OrderApis.getGuestBills(orderId), {
+        params: { _t: Date.now() },
+      });
       if (res.data.status === "success") {
         setGuestBills(res.data.data);
       } else {
@@ -783,8 +1084,12 @@ export default function CheckoutPage() {
     if (!orderId) return;
     try {
       const [billRes, orderRes] = await Promise.all([
-        apiClient.get(OrderApis.getOrderBill(orderId), { params: { _t: Date.now() } }),
-        apiClient.get(OrderApis.getOrder(orderId), { params: { _t: Date.now() } }),
+        apiClient.get(OrderApis.getOrderBill(orderId), {
+          params: { _t: Date.now() },
+        }),
+        apiClient.get(OrderApis.getOrder(orderId), {
+          params: { _t: Date.now() },
+        }),
       ]);
       if (billRes.data.status === "success") {
         setBill(billRes.data.data);
@@ -792,14 +1097,36 @@ export default function CheckoutPage() {
       if (orderRes.data.status === "success") {
         setOrderMeta(orderRes.data.data);
       }
+      const isCompleted =
+        String(orderRes.data?.data?.status || "").toLowerCase() === "completed";
+      const restaurantId = Number(user?.restaurant_id || restaurant?.id || 0);
+      if (isCompleted && restaurantId > 0) {
+        try {
+          const document = await financeSalesApi.getByOrder(
+            restaurantId,
+            orderId,
+          );
+          const settlement = await financeSalesApi.getSettlement(
+            restaurantId,
+            document.id,
+          );
+          setInvoiceSettlement(settlement);
+        } catch {
+          setInvoiceSettlement(null);
+        }
+      } else {
+        setInvoiceSettlement(null);
+      }
       setError(null);
       await fetchGuestBills();
     } catch (err: any) {
-      setError(err?.response?.data?.detail || err?.message || "Failed to load bill");
+      setError(
+        err?.response?.data?.detail || err?.message || "Failed to load bill",
+      );
     } finally {
       setLoading(false);
     }
-  }, [orderId, fetchGuestBills]);
+  }, [orderId, fetchGuestBills, restaurant?.id, user?.restaurant_id]);
 
   const handleOpenItemEdit = (item: BillItem) => {
     setEditingItem(item);
@@ -818,36 +1145,73 @@ export default function CheckoutPage() {
     await apiClient.patch(OrderApis.updateOrder(orderId), {
       customer_id: customerId,
     });
-    setOrderMeta((prev) => (prev ? { ...prev, customer_id: customerId } : prev));
+    setOrderMeta((prev) =>
+      prev ? { ...prev, customer_id: customerId } : prev,
+    );
     return customerId;
   }, [orderId, orderMeta?.customer_id, selectedCustomerId]);
 
-  const handleApplyItemUpdate = useCallback(async (
-    targetItemId: number,
-    patch: { qty?: number; notes?: string | null; is_nc?: boolean },
-    options?: { successMessage?: string }
-  ) => {
-    if (!context?.order?.items?.length) return;
+  const handleApplyItemUpdate = useCallback(
+    async (
+      targetItemId: number,
+      patch: { qty?: number; notes?: string | null; is_nc?: boolean },
+      options?: { successMessage?: string },
+    ) => {
+      if (!context?.order?.items?.length) return;
 
-    setItemUpdating(true);
-    try {
-      const payload = {
-        items: context.order.items.map((item: any) => {
-          const isTarget = Number(item.id) === Number(targetItemId);
-          const displayItem = {
-            ...item,
-            ...(itemOverrides[item.id] || {})
-          };
-          return {
+      setItemUpdating(true);
+      let item: any;
+      let requestedQty: number | undefined;
+      try {
+        item = context.order.items.find(
+          (candidate: any) => Number(candidate.id) === Number(targetItemId),
+        );
+        if (!item) throw new Error("Order line not found");
+        const displayItem = { ...item, ...(itemOverrides[item.id] || {}) };
+        const qty = patch.qty ?? displayItem.qty;
+        requestedQty = Number(qty);
+        const identityChanged =
+          patch.notes !== undefined || patch.is_nc !== undefined;
+        if (qty <= 0) {
+          if (!canVoidItem)
+            throw new Error("You do not have permission to void order items.");
+          const reason = window.prompt("Reason for voiding this item?")?.trim();
+          if (!reason) return;
+          await apiClient.post(OrderApis.voidOrderLine(orderId, item.id), {
+            qty: item.qty,
+            reason,
+            idempotency_key: crypto.randomUUID(),
+          });
+        } else if (patch.is_nc !== undefined) {
+          await apiClient.patch(OrderApis.updateOrderLine(orderId, item.id), {
+            is_nc: patch.is_nc,
+            expected_version: (context.order as any).version,
+            idempotency_key: crypto.randomUUID(),
+          });
+        } else if (identityChanged) {
+          if (!canVoidItem)
+            throw new Error(
+              "You do not have permission to replace order items.",
+            );
+          await apiClient.post(OrderApis.voidOrderLine(orderId, item.id), {
+            qty: item.qty,
+            reason: "Line details changed",
+            idempotency_key: crypto.randomUUID(),
+          });
+          await apiClient.post(OrderApis.addOrderLine(orderId), {
             menu_item_id: item.menu_item_id,
             name_snapshot: item.name_snapshot,
             category_name_snapshot: item.category_name_snapshot,
             category_type_snapshot: item.category_type_snapshot,
             revenue_category: item.revenue_category,
             unit_price: item.unit_price,
-            qty: isTarget ? (patch.qty ?? displayItem.qty) : displayItem.qty,
-            notes: isTarget ? (patch.notes !== undefined ? patch.notes : (displayItem.notes || null)) : (displayItem.notes || null),
-            is_nc: isTarget ? (patch.is_nc ?? Boolean(displayItem.is_nc)) : Boolean(displayItem.is_nc),
+            qty,
+            notes:
+              patch.notes !== undefined
+                ? patch.notes
+                : displayItem.notes || null,
+            is_nc: patch.is_nc ?? Boolean(displayItem.is_nc),
+            idempotency_key: crypto.randomUUID(),
             modifiers: Array.isArray(item.modifiers)
               ? item.modifiers.map((modifier: any) => ({
                   modifier_id: modifier.modifier_id,
@@ -855,34 +1219,77 @@ export default function CheckoutPage() {
                   price_adjustment_snapshot: modifier.price_adjustment_snapshot,
                 }))
               : [],
-          };
-        }),
-      };
-
-      await apiClient.post(OrderApis.updateOrderItems(orderId), payload);
-      if (options?.successMessage) toast.success(options.successMessage);
-      await Promise.all([fetchContext(), fetchBill()]);
-      setItemOverrides({});
-    } catch (err: any) {
-      console.error("Failed to update item from checkout:", err);
-      toast.error(extractApiErrorMessage(err, "Failed to update item"));
-      // Revert optimistic update on error
-      setItemOverrides(prev => {
-        const next = { ...prev };
-        delete next[targetItemId];
-        return next;
-      });
-    } finally {
-      setItemUpdating(false);
-    }
-  }, [context?.order?.items, orderId, itemOverrides, fetchBill, fetchContext]);
+          });
+        } else if (patch.qty !== undefined) {
+          await apiClient.patch(OrderApis.updateOrderLine(orderId, item.id), {
+            qty,
+            idempotency_key: crypto.randomUUID(),
+          });
+        }
+        if (options?.successMessage) toast.success(options.successMessage);
+        await Promise.all([fetchContext(), fetchBill()]);
+        setItemOverrides({});
+      } catch (err: any) {
+        console.error("Failed to update item from checkout:", err);
+        const detail = extractApiErrorMessage(err, "Failed to update item");
+        if (
+          detail.includes("manager-confirmed void") &&
+          canVoidItem &&
+          item &&
+          Number(requestedQty) < Number(item.qty)
+        ) {
+          const reason = window
+            .prompt(
+              "Kitchen has started this item. Enter the manager void reason:",
+            )
+            ?.trim();
+          if (reason) {
+            try {
+              await apiClient.post(OrderApis.voidOrderLine(orderId, item.id), {
+                qty: Number(item.qty) - Number(requestedQty),
+                reason,
+                idempotency_key: crypto.randomUUID(),
+              });
+              toast.success("Manager void recorded");
+              await Promise.all([fetchContext(), fetchBill()]);
+              setItemOverrides({});
+              return;
+            } catch (voidErr: any) {
+              toast.error(
+                extractApiErrorMessage(voidErr, "Failed to void item"),
+              );
+            }
+          }
+        } else {
+          toast.error(detail);
+        }
+        // Revert optimistic update on error
+        setItemOverrides((prev) => {
+          const next = { ...prev };
+          delete next[targetItemId];
+          return next;
+        });
+      } finally {
+        setItemUpdating(false);
+      }
+    },
+    [
+      canVoidItem,
+      context?.order?.items,
+      context?.order?.version,
+      orderId,
+      itemOverrides,
+      fetchBill,
+      fetchContext,
+    ],
+  );
 
   const handleSaveItemEdit = async () => {
     if (!editingItem) return;
     await handleApplyItemUpdate(
       Number(editingItem.id),
       { notes: editItemNotes || null },
-      { successMessage: "Note updated" }
+      { successMessage: "Note updated" },
     );
     setEditingItem(null);
   };
@@ -896,13 +1303,24 @@ export default function CheckoutPage() {
   }, [loadActivePaymentInstruments]);
 
   useEffect(() => {
-    if ((paymentOpen && cashMethodSelected) || (payAllOpen && payAllMethod === "cash")) {
+    if (
+      (paymentOpen && cashMethodSelected) ||
+      (payAllOpen && payAllMethod === "cash")
+    ) {
       void loadCashDrawerState({ silent: true });
     }
-  }, [cashMethodSelected, loadCashDrawerState, payAllMethod, payAllOpen, paymentOpen]);
+  }, [
+    cashMethodSelected,
+    loadCashDrawerState,
+    payAllMethod,
+    payAllOpen,
+    paymentOpen,
+  ]);
 
   // ── Fetch Customers ───────────────────────────────
-  const fetchCustomers = useCallback(async (): Promise<CustomerOption[] | null> => {
+  const fetchCustomers = useCallback(async (): Promise<
+    CustomerOption[] | null
+  > => {
     if (!user?.restaurant_id) return null;
     try {
       const pageSize = 500;
@@ -911,9 +1329,12 @@ export default function CheckoutPage() {
       const seenCustomerIds = new Set<number>();
 
       while (true) {
-        const { data } = await apiClient.get(CustomerApis.listCustomers(user.restaurant_id), {
-          params: { skip, limit: pageSize },
-        });
+        const { data } = await apiClient.get(
+          CustomerApis.listCustomers(user.restaurant_id),
+          {
+            params: { skip, limit: pageSize },
+          },
+        );
 
         if (data.status !== "success") {
           break;
@@ -946,13 +1367,16 @@ export default function CheckoutPage() {
           let skip = 0;
           const orders: any[] = [];
           while (true) {
-            const { data: ordersData } = await apiClient.get(OrderApis.listOrders, {
-              params: {
-                restaurant_id: user.restaurant_id,
-                limit: pageSize,
-                skip,
+            const { data: ordersData } = await apiClient.get(
+              OrderApis.listOrders,
+              {
+                params: {
+                  restaurant_id: user.restaurant_id,
+                  limit: pageSize,
+                  skip,
+                },
               },
-            });
+            );
             const pageOrders = ordersData?.data?.orders || [];
             orders.push(...pageOrders);
             if (pageOrders.length < pageSize) break;
@@ -974,11 +1398,14 @@ export default function CheckoutPage() {
               if (!c.id || seen.has(c.id)) return false;
               seen.add(c.id);
               return true;
-          });
+            });
           setCustomers(derivedCustomers);
           return derivedCustomers;
         } catch (fallbackErr) {
-          console.error("Failed to load fallback customers from orders:", fallbackErr);
+          console.error(
+            "Failed to load fallback customers from orders:",
+            fallbackErr,
+          );
         }
       }
       console.error("Failed to load customers:", err);
@@ -992,78 +1419,111 @@ export default function CheckoutPage() {
     }
   }, [fetchCustomers, user?.restaurant_id]);
 
+  const fetchStaffOptions = useCallback(async () => {
+    try {
+      const { data } = await apiClient.get(
+        StaffProfileApis.list({ limit: 500 }),
+      );
+      if (data.status === "success") {
+        setStaffOptions((data.data || []) as StaffOption[]);
+      }
+    } catch (err) {
+      console.error("Failed to load staff:", err);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (user?.restaurant_id) {
+      fetchStaffOptions();
+    }
+  }, [fetchStaffOptions, user?.restaurant_id]);
+
   // ── Auto-navigate on full payment ─────────────────
   useEffect(() => {
     if (bill?.is_fully_paid && shouldAutoRedirectAfterPayment) {
       const timer = setTimeout(() => {
         setShouldAutoRedirectAfterPayment(false);
         if (returnTo) {
-          router.push(`/orders/${orderId}/receipt?returnTo=${encodeURIComponent(returnTo)}`);
+          router.push(
+            `/orders/${orderId}/receipt?autoPrint=1&returnTo=${encodeURIComponent(returnTo)}`,
+          );
         } else {
-          router.push(`/orders/${orderId}/receipt`);
+          router.push(`/orders/${orderId}/receipt?autoPrint=1`);
         }
       }, 2000);
       return () => clearTimeout(timer);
     }
-  }, [bill?.is_fully_paid, orderId, router, returnTo, shouldAutoRedirectAfterPayment]);
+  }, [
+    bill?.is_fully_paid,
+    orderId,
+    router,
+    returnTo,
+    shouldAutoRedirectAfterPayment,
+  ]);
 
   // Auto-complete parent order if all child guest bills are completed
   useEffect(() => {
-    const isParentOrder = guestBills && String(guestBills.anchor_order_id) === String(orderId);
+    const isParentOrder =
+      guestBills && String(guestBills.anchor_order_id) === String(orderId);
     if (
       isParentOrder &&
       guestBills.split_group_id &&
       guestBills.orders.length > 0 &&
-      guestBills.orders.every((g: any) => g.status === 'completed') &&
+      guestBills.orders.every((g: any) => g.status === "completed") &&
       orderMeta &&
-      orderMeta.status !== 'completed' &&
+      orderMeta.status !== "completed" &&
       !completing
     ) {
       handleComplete();
     }
   }, [guestBills, orderId, orderMeta, completing]);
 
+  const handleQtyChange = useCallback(
+    async (item: BillItem, delta: number) => {
+      // Read current qty from overrides or original item
+      const currentQty = itemOverrides[item.id]?.qty ?? item.qty;
+      const nextQty = Math.max(0, currentQty + delta);
+      if (nextQty === currentQty) return;
+      if (nextQty <= 0 && !canVoidItem) {
+        toast.error("You do not have permission to void order items.");
+        return;
+      }
+      // Optimistically update
+      setItemOverrides((prev) => ({
+        ...prev,
+        [item.id]: { ...(prev[item.id] || {}), qty: nextQty },
+      }));
+      await handleApplyItemUpdate(
+        Number(item.id),
+        { qty: nextQty },
+        { successMessage: "Quantity updated" },
+      );
+    },
+    [canVoidItem, handleApplyItemUpdate, itemOverrides],
+  );
 
-  const handleQtyChange = useCallback(async (item: BillItem, delta: number) => {
-    // Read current qty from overrides or original item
-    const currentQty = itemOverrides[item.id]?.qty ?? item.qty;
-    const nextQty = Math.max(0, currentQty + delta);
-    if (nextQty === currentQty) return;
-    if (nextQty <= 0 && !canVoidItem) {
-      toast.error("You do not have permission to void order items.");
-      return;
-    }
-    // Optimistically update
-    setItemOverrides(prev => ({
-      ...prev,
-      [item.id]: { ...(prev[item.id] || {}), qty: nextQty }
-    }));
-    await handleApplyItemUpdate(
-      Number(item.id),
-      { qty: nextQty },
-      { successMessage: "Quantity updated" }
-    );
-  }, [canVoidItem, handleApplyItemUpdate, itemOverrides]);
-
-  const handleNcToggle = useCallback(async (item: BillItem) => {
-    if (!canMarkNc) {
-      toast.error("You do not have permission to mark items as NC.");
-      return;
-    }
-    // Read current value from overrides or original item
-    const currentNc = itemOverrides[item.id]?.is_nc ?? item.is_nc;
-    const nextNc = !Boolean(currentNc);
-    // Optimistically update
-    setItemOverrides(prev => ({
-      ...prev,
-      [item.id]: { ...(prev[item.id] || {}), is_nc: nextNc }
-    }));
-    await handleApplyItemUpdate(
-      Number(item.id),
-      { is_nc: nextNc },
-      { successMessage: "NC status updated" }
-    );
-  }, [canMarkNc, handleApplyItemUpdate, itemOverrides]);
+  const handleNcToggle = useCallback(
+    async (item: BillItem) => {
+      if (!canMarkNc) {
+        toast.error("You do not have permission to mark items as NC.");
+        return;
+      }
+      // Read current value from overrides or original item
+      const currentNc = itemOverrides[item.id]?.is_nc ?? item.is_nc;
+      const nextNc = !Boolean(currentNc);
+      // Optimistically update
+      setItemOverrides((prev) => ({
+        ...prev,
+        [item.id]: { ...(prev[item.id] || {}), is_nc: nextNc },
+      }));
+      await handleApplyItemUpdate(
+        Number(item.id),
+        { is_nc: nextNc },
+        { successMessage: "NC status updated" },
+      );
+    },
+    [canMarkNc, handleApplyItemUpdate, itemOverrides],
+  );
   // ── Complete Order ──
   const handleComplete = async () => {
     setCompleting(true);
@@ -1071,16 +1531,20 @@ export default function CheckoutPage() {
       if (hasNcItems) {
         const customerId = await attachSelectedCustomerToOrderIfNeeded();
         if (!customerId) {
-          toast.error("Select a customer before completing an order with NC items.");
+          toast.error(
+            "Select a customer before completing an order with NC items.",
+          );
           return;
         }
       }
-      await apiClient.patch(OrderApis.updateOrderStatus(orderId), { status: "completed" });
+      await apiClient.patch(OrderApis.updateOrderStatus(orderId), {
+        status: "completed",
+      });
       await fetchCustomers();
       if (returnTo) {
         router.push(returnTo);
       } else if (orderMeta?.channel === "room_service") {
-        router.push("/rooms/checkin");
+        router.push("/hotel");
       } else {
         router.push("/orders/active");
       }
@@ -1111,9 +1575,7 @@ export default function CheckoutPage() {
         email: email || undefined,
         business_name: optionalCustomerText(quickAddForm.business_name),
         pan_number: optionalCustomerText(quickAddForm.pan_number),
-        billing_address: optionalCustomerText(
-          quickAddForm.billing_address,
-        ),
+        billing_address: optionalCustomerText(quickAddForm.billing_address),
         restaurant_id: user.restaurant_id,
         is_active: true,
       };
@@ -1125,6 +1587,27 @@ export default function CheckoutPage() {
       const created = res.data?.data;
       await fetchCustomers();
       if (created?.id) setSelectedCustomerId(String(created.id));
+      if (
+        created?.id &&
+        (quickAddMarketingConsent.email || quickAddMarketingConsent.whatsapp)
+      ) {
+        try {
+          await apiClient.post(
+            GrowthApis.staffConsentCapture,
+            {},
+            {
+              params: {
+                customer_id: created.id,
+                restaurant_id: user.restaurant_id,
+                email_opted_in: quickAddMarketingConsent.email,
+                whatsapp_opted_in: quickAddMarketingConsent.whatsapp,
+              },
+            },
+          );
+        } catch (consentError) {
+          console.warn("Customer created, but consent capture failed", consentError);
+        }
+      }
 
       setQuickAddForm({
         name: "",
@@ -1134,17 +1617,26 @@ export default function CheckoutPage() {
         pan_number: "",
         billing_address: "",
       });
+      setQuickAddMarketingConsent({ email: false, whatsapp: false });
       setQuickAddOpen(false);
     } catch (err: any) {
-      const backendDetail = err?.response?.data?.detail || err?.response?.data?.message || err?.message || "Failed to add customer";
-      const duplicateCustomer = typeof backendDetail === "string" && /already exists/i.test(backendDetail);
+      const backendDetail =
+        err?.response?.data?.detail ||
+        err?.response?.data?.message ||
+        err?.message ||
+        "Failed to add customer";
+      const duplicateCustomer =
+        typeof backendDetail === "string" &&
+        /already exists/i.test(backendDetail);
       if (duplicateCustomer) {
         const refreshedCustomers = await fetchCustomers();
         const phoneDigits = normalizeCustomerPhone(quickAddForm.phone);
         const emailLower = quickAddForm.email.trim().toLowerCase();
         const existing = (refreshedCustomers || customers).find((customer) => {
           const candidatePhone = normalizeCustomerPhone(customer.phone);
-          const candidateEmail = String(customer.email || "").trim().toLowerCase();
+          const candidateEmail = String(customer.email || "")
+            .trim()
+            .toLowerCase();
           return (
             (phoneDigits && candidatePhone && candidatePhone === phoneDigits) ||
             (emailLower && candidateEmail && candidateEmail === emailLower)
@@ -1193,10 +1685,27 @@ export default function CheckoutPage() {
     const initRes = await apiClient.post(PaymentApis.fonepayQr, initPayload);
     const payload = initRes?.data?.data || initRes?.data || {};
     const prn = String(
-      findFirstStringByKey(payload, ["prn", "merchant_txn", "merchanttxn", "transaction_id"]) || ""
+      findFirstStringByKey(payload, [
+        "prn",
+        "merchant_txn",
+        "merchanttxn",
+        "transaction_id",
+      ]) || "",
     );
-    const qrRaw = findFirstStringByKey(payload, ["qr_image", "qrurl", "qr_url", "qr", "base64"]);
-    const rawText = findFirstStringByKey(payload, ["qr_payload", "payload", "qr_string", "deeplink", "content"]);
+    const qrRaw = findFirstStringByKey(payload, [
+      "qr_image",
+      "qrurl",
+      "qr_url",
+      "qr",
+      "base64",
+    ]);
+    const rawText = findFirstStringByKey(payload, [
+      "qr_payload",
+      "payload",
+      "qr_string",
+      "deeplink",
+      "content",
+    ]);
     const qrUrl = resolveQrDisplay(qrRaw, rawText, prn);
 
     if (!prn) {
@@ -1210,7 +1719,15 @@ export default function CheckoutPage() {
     setPaymentOpen(false);
     setFonepayDialogOpen(true);
     toast.success("Fonepay QR generated. Ask customer to complete payment.");
-  }, [bill, canProcessPayment, orderId, orderMeta?.customer_id, payAmount, payReference, user?.restaurant_id]);
+  }, [
+    bill,
+    canProcessPayment,
+    orderId,
+    orderMeta?.customer_id,
+    payAmount,
+    payReference,
+    user?.restaurant_id,
+  ]);
 
   const buildPaymentInstrument = useCallback(
     (
@@ -1249,6 +1766,12 @@ export default function CheckoutPage() {
 
   const openEditPaymentDialog = useCallback(
     (payment: BillPayment) => {
+      if (orderEditLocked) {
+        toast.error(
+          "Completed payments cannot be edited individually. Correct the full settlement instead.",
+        );
+        return;
+      }
       if (!canEditPayment) {
         toast.error("You do not have permission to edit payments.");
         return;
@@ -1257,8 +1780,12 @@ export default function CheckoutPage() {
       let nextQrIndex = 0;
       let nextCardIndex = 0;
       if (instrument?.name) {
-        const qrIndex = staticPaymentQrs.findIndex((q) => q.name === instrument.name);
-        const cardIndex = staticPaymentCards.findIndex((c) => c.name === instrument.name);
+        const qrIndex = staticPaymentQrs.findIndex(
+          (q) => q.name === instrument.name,
+        );
+        const cardIndex = staticPaymentCards.findIndex(
+          (c) => c.name === instrument.name,
+        );
         if (qrIndex >= 0) nextQrIndex = qrIndex;
         if (cardIndex >= 0) nextCardIndex = cardIndex;
       }
@@ -1270,7 +1797,7 @@ export default function CheckoutPage() {
       setEditPayError(null);
       setEditPaymentOpen(true);
     },
-    [canEditPayment, staticPaymentCards, staticPaymentQrs],
+    [canEditPayment, orderEditLocked, staticPaymentCards, staticPaymentQrs],
   );
 
   const handleUpdatePayment = useCallback(async () => {
@@ -1280,8 +1807,13 @@ export default function CheckoutPage() {
       return;
     }
 
-    if (editPayMethod === "cash" && String(editingPayment.method || "").toLowerCase() !== "cash") {
-      setEditPayError("To change a non-cash payment to cash, remove it and add a new cash payment while your drawer is open.");
+    if (
+      editPayMethod === "cash" &&
+      String(editingPayment.method || "").toLowerCase() !== "cash"
+    ) {
+      setEditPayError(
+        "To change a non-cash payment to cash, remove it and add a new cash payment while your drawer is open.",
+      );
       return;
     }
 
@@ -1293,32 +1825,51 @@ export default function CheckoutPage() {
       setEditPayError(cardConfigHelpText);
       return;
     }
-    if (editPayMethod === "digital" && !staticPaymentQrs[editSelectedStaticQrIndex]?.isSelectable) {
-      setEditPayError("This QR is saved in settings but not synced as an active accounting instrument yet.");
+    if (
+      editPayMethod === "digital" &&
+      !staticPaymentQrs[editSelectedStaticQrIndex]?.isSelectable
+    ) {
+      setEditPayError(
+        "This QR is saved in settings but not synced as an active accounting instrument yet.",
+      );
       return;
     }
-    if (editPayMethod === "card" && !staticPaymentCards[editSelectedCardIndex]?.isSelectable) {
-      setEditPayError("This card is saved in settings but not synced as an active accounting instrument yet.");
+    if (
+      editPayMethod === "card" &&
+      !staticPaymentCards[editSelectedCardIndex]?.isSelectable
+    ) {
+      setEditPayError(
+        "This card is saved in settings but not synced as an active accounting instrument yet.",
+      );
       return;
     }
 
     setEditPaySubmitting(true);
     setEditPayError(null);
     try {
-      const instrument = buildPaymentInstrument(editPayMethod, editSelectedStaticQrIndex, editSelectedCardIndex);
-      await apiClient.patch(OrderApis.updatePayment(orderId, editingPayment.id), {
-        payment: {
-          method: editPayMethod,
-          reference: editPayReference.trim() || null,
-          instrument,
+      const instrument = buildPaymentInstrument(
+        editPayMethod,
+        editSelectedStaticQrIndex,
+        editSelectedCardIndex,
+      );
+      await apiClient.patch(
+        OrderApis.updatePayment(orderId, editingPayment.id),
+        {
+          payment: {
+            method: editPayMethod,
+            reference: editPayReference.trim() || null,
+            instrument,
+          },
         },
-      });
+      );
       setEditPaymentOpen(false);
       setEditingPayment(null);
       await Promise.all([fetchBill(), fetchCustomers()]);
       toast.success("Payment updated");
     } catch (err: any) {
-      setEditPayError(err?.response?.data?.detail || "Failed to update payment");
+      setEditPayError(
+        err?.response?.data?.detail || "Failed to update payment",
+      );
     } finally {
       setEditPaySubmitting(false);
     }
@@ -1339,44 +1890,54 @@ export default function CheckoutPage() {
     canEditPayment,
   ]);
 
-  const handleRemovePayment = useCallback(async (payment: BillPayment) => {
-    if (!canDeletePayment) {
-      toast.error("You do not have permission to remove payments.");
-      return;
-    }
-    if (removingPaymentId !== null) return;
+  const handleRemovePayment = useCallback(
+    async (payment: BillPayment) => {
+      if (orderEditLocked) {
+        toast.error(
+          "Completed payments cannot be removed. Correct the full settlement or create a sales return.",
+        );
+        return;
+      }
+      if (!canDeletePayment) {
+        toast.error("You do not have permission to remove payments.");
+        return;
+      }
+      if (removingPaymentId !== null) return;
 
-    const amount = Number(payment.amount || 0);
-    if (amount < 0) {
-      toast.error("Refund payments cannot be removed.");
-      return;
-    }
+      const amount = Number(payment.amount || 0);
+      if (amount < 0) {
+        toast.error("Refund payments cannot be removed.");
+        return;
+      }
 
-    const shouldRemove = window.confirm(
-      `Remove this payment?\n\nMethod: ${String(payment.method || "").toUpperCase()}\nAmount: ${formatCurrency(Math.abs(amount), curr)}`
-    );
-    if (!shouldRemove) return;
+      const shouldRemove = window.confirm(
+        `Remove this payment?\n\nMethod: ${String(payment.method || "").toUpperCase()}\nAmount: ${formatCurrency(Math.abs(amount), curr)}`,
+      );
+      if (!shouldRemove) return;
 
-    setRemovingPaymentId(payment.id);
-    try {
-      await apiClient.delete(OrderApis.removePayment(orderId, payment.id));
-      await Promise.all([fetchBill(), fetchContext(), fetchCustomers()]);
-      setShouldAutoRedirectAfterPayment(false);
-      toast.success("Payment removed");
-    } catch (err: any) {
-      toast.error(err?.response?.data?.detail || "Failed to remove payment");
-    } finally {
-      setRemovingPaymentId(null);
-    }
-  }, [
-    canDeletePayment,
-    curr,
-    fetchBill,
-    fetchContext,
-    fetchCustomers,
-    orderId,
-    removingPaymentId,
-  ]);
+      setRemovingPaymentId(payment.id);
+      try {
+        await apiClient.delete(OrderApis.removePayment(orderId, payment.id));
+        await Promise.all([fetchBill(), fetchContext(), fetchCustomers()]);
+        setShouldAutoRedirectAfterPayment(false);
+        toast.success("Payment removed");
+      } catch (err: any) {
+        toast.error(err?.response?.data?.detail || "Failed to remove payment");
+      } finally {
+        setRemovingPaymentId(null);
+      }
+    },
+    [
+      canDeletePayment,
+      curr,
+      fetchBill,
+      fetchContext,
+      fetchCustomers,
+      orderId,
+      orderEditLocked,
+      removingPaymentId,
+    ],
+  );
 
   // ── Add Payment ──────────────────────────────────
   const handleAddPayment = async () => {
@@ -1386,25 +1947,34 @@ export default function CheckoutPage() {
     }
 
     if (isMultiPayment) {
-      const parsedRows = multiPayments.map(p => ({
+      const parsedRows = multiPayments.map((p) => ({
         ...p,
-        amountNum: parseFloat(p.amount) || 0
+        amountNum: parseFloat(p.amount) || 0,
       }));
 
-      const totalAllocated = parsedRows.reduce((sum, r) => sum + r.amountNum, 0);
-      if (parsedRows.some(r => r.amountNum <= 0)) {
+      const totalAllocated = parsedRows.reduce(
+        (sum, r) => sum + r.amountNum,
+        0,
+      );
+      if (parsedRows.some((r) => r.amountNum <= 0)) {
         setPayError("All payment amounts must be greater than zero");
         return;
       }
 
       const tolerance = 0.01;
       if (Math.abs(totalAllocated - (bill?.balance_due || 0)) > tolerance) {
-        setPayError(`Total payment amount (${totalAllocated.toFixed(2)}) must equal the balance due (${(bill?.balance_due || 0).toFixed(2)})`);
+        setPayError(
+          `Total payment amount (${totalAllocated.toFixed(2)}) must equal the balance due (${(bill?.balance_due || 0).toFixed(2)})`,
+        );
         return;
       }
 
       for (const row of parsedRows) {
-        if (row.method === "credit" && !orderMeta?.customer_id && !selectedCustomerId) {
+        if (
+          row.method === "credit" &&
+          !orderMeta?.customer_id &&
+          !selectedCustomerId
+        ) {
           setPayError("Select a customer for credit payment");
           return;
         }
@@ -1416,36 +1986,58 @@ export default function CheckoutPage() {
           setPayError(cardConfigHelpText);
           return;
         }
-        if (row.method === "digital" && !staticPaymentQrs[row.selectedStaticQrIndex]?.isSelectable) {
-          setPayError("One selected QR is saved in settings but not synced as an active accounting instrument yet.");
+        if (
+          row.method === "digital" &&
+          !staticPaymentQrs[row.selectedStaticQrIndex]?.isSelectable
+        ) {
+          setPayError(
+            "One selected QR is saved in settings but not synced as an active accounting instrument yet.",
+          );
           return;
         }
-        if (row.method === "card" && !staticPaymentCards[row.selectedCardIndex]?.isSelectable) {
-          setPayError("One selected card is saved in settings but not synced as an active accounting instrument yet.");
+        if (
+          row.method === "card" &&
+          !staticPaymentCards[row.selectedCardIndex]?.isSelectable
+        ) {
+          setPayError(
+            "One selected card is saved in settings but not synced as an active accounting instrument yet.",
+          );
           return;
         }
       }
 
-      if (parsedRows.some((row) => row.method === "cash") && !(await ensureCashDrawerReady())) {
+      if (
+        parsedRows.some((row) => row.method === "cash") &&
+        !(await ensureCashDrawerReady())
+      ) {
         return;
       }
 
       setPaySubmitting(true);
       setPayError(null);
       try {
-        if (selectedCustomerId && String(orderMeta?.customer_id || "") !== selectedCustomerId) {
+        if (
+          selectedCustomerId &&
+          String(orderMeta?.customer_id || "") !== selectedCustomerId
+        ) {
           await apiClient.patch(OrderApis.updateOrder(orderId), {
             customer_id: parseInt(selectedCustomerId, 10),
           });
-          setOrderMeta((prev) => (
-            prev ? { ...prev, customer_id: parseInt(selectedCustomerId, 10) } : prev
-          ));
+          setOrderMeta((prev) =>
+            prev
+              ? { ...prev, customer_id: parseInt(selectedCustomerId, 10) }
+              : prev,
+          );
         }
 
         for (let i = 0; i < parsedRows.length; i++) {
           const row = parsedRows[i];
-          const instrument = buildPaymentInstrument(row.method, row.selectedStaticQrIndex, row.selectedCardIndex);
-          
+          const instrument = buildPaymentInstrument(
+            row.method,
+            row.selectedStaticQrIndex,
+            row.selectedCardIndex,
+          );
+
           await apiClient.post(OrderApis.addPayment(orderId), {
             payment: {
               method: row.method,
@@ -1458,7 +2050,15 @@ export default function CheckoutPage() {
         }
 
         setPaymentOpen(false);
-        setMultiPayments([{ method: "cash", amount: "", reference: "", selectedStaticQrIndex: 0, selectedCardIndex: 0 }]);
+        setMultiPayments([
+          {
+            method: "cash",
+            amount: "",
+            reference: "",
+            selectedStaticQrIndex: 0,
+            selectedCardIndex: 0,
+          },
+        ]);
         setIsMultiPayment(false);
         await Promise.all([fetchBill(), fetchCustomers()]);
         toast.success("Multiple payments processed successfully");
@@ -1466,18 +2066,31 @@ export default function CheckoutPage() {
       } catch (err: any) {
         // Backend sometimes throws 500/400 but payment succeeds. Verify:
         try {
-          const checkBill = await apiClient.get(OrderApis.getOrderBill(orderId));
+          const checkBill = await apiClient.get(
+            OrderApis.getOrderBill(orderId),
+          );
           if (checkBill.data?.data?.total_paid > (bill?.total_paid || 0)) {
             setPaymentOpen(false);
-            setMultiPayments([{ method: "cash", amount: "", reference: "", selectedStaticQrIndex: 0, selectedCardIndex: 0 }]);
+            setMultiPayments([
+              {
+                method: "cash",
+                amount: "",
+                reference: "",
+                selectedStaticQrIndex: 0,
+                selectedCardIndex: 0,
+              },
+            ]);
             setIsMultiPayment(false);
             await Promise.all([fetchBill(), fetchCustomers()]);
             toast.success("Multiple payments processed successfully");
-            if (checkBill.data.data.payment_complete) setShouldAutoRedirectAfterPayment(true);
+            if (checkBill.data.data.payment_complete)
+              setShouldAutoRedirectAfterPayment(true);
             return;
           }
         } catch (e) {}
-        setPayError(err?.response?.data?.detail || "Failed to process multiple payments");
+        setPayError(
+          err?.response?.data?.detail || "Failed to process multiple payments",
+        );
       } finally {
         setPaySubmitting(false);
       }
@@ -1491,10 +2104,10 @@ export default function CheckoutPage() {
     }
 
     if (payMethod === "credit") {
-        if (!orderMeta?.customer_id && !selectedCustomerId) {
-            setPayError("Select a customer for credit payment");
-            return;
-        }
+      if (!orderMeta?.customer_id && !selectedCustomerId) {
+        setPayError("Select a customer for credit payment");
+        return;
+      }
     }
 
     if (payMethod === "digital" && staticPaymentQrs.length === 0) {
@@ -1506,12 +2119,22 @@ export default function CheckoutPage() {
       setPayError(cardConfigHelpText);
       return;
     }
-    if (payMethod === "digital" && !staticPaymentQrs[selectedStaticQrIndex]?.isSelectable) {
-      setPayError("This QR is saved in settings but not synced as an active accounting instrument yet.");
+    if (
+      payMethod === "digital" &&
+      !staticPaymentQrs[selectedStaticQrIndex]?.isSelectable
+    ) {
+      setPayError(
+        "This QR is saved in settings but not synced as an active accounting instrument yet.",
+      );
       return;
     }
-    if (payMethod === "card" && !staticPaymentCards[selectedCardIndex]?.isSelectable) {
-      setPayError("This card is saved in settings but not synced as an active accounting instrument yet.");
+    if (
+      payMethod === "card" &&
+      !staticPaymentCards[selectedCardIndex]?.isSelectable
+    ) {
+      setPayError(
+        "This card is saved in settings but not synced as an active accounting instrument yet.",
+      );
       return;
     }
 
@@ -1522,15 +2145,18 @@ export default function CheckoutPage() {
     setPaySubmitting(true);
     setPayError(null);
     try {
-      if (selectedCustomerId && String(orderMeta?.customer_id || "") !== selectedCustomerId) {
+      if (
+        selectedCustomerId &&
+        String(orderMeta?.customer_id || "") !== selectedCustomerId
+      ) {
         await apiClient.patch(OrderApis.updateOrder(orderId), {
           customer_id: parseInt(selectedCustomerId, 10),
         });
-        setOrderMeta((prev) => (
+        setOrderMeta((prev) =>
           prev
             ? { ...prev, customer_id: parseInt(selectedCustomerId, 10) }
-            : prev
-        ));
+            : prev,
+        );
       }
 
       if (payMethod === "fonepay") {
@@ -1538,7 +2164,11 @@ export default function CheckoutPage() {
         return;
       }
 
-      const instrument = buildPaymentInstrument(payMethod, selectedStaticQrIndex, selectedCardIndex);
+      const instrument = buildPaymentInstrument(
+        payMethod,
+        selectedStaticQrIndex,
+        selectedCardIndex,
+      );
 
       const res = await apiClient.post(OrderApis.addPayment(orderId), {
         payment: {
@@ -1554,7 +2184,7 @@ export default function CheckoutPage() {
       setPayReference("");
       setPayMethod("cash");
       await Promise.all([fetchBill(), fetchCustomers()]);
-      
+
       if (res.data?.data?.payment_complete) {
         setShouldAutoRedirectAfterPayment(true);
       }
@@ -1568,11 +2198,20 @@ export default function CheckoutPage() {
           setPayReference("");
           setPayMethod("cash");
           await Promise.all([fetchBill(), fetchCustomers()]);
-          if (checkBill.data.data.payment_complete) setShouldAutoRedirectAfterPayment(true);
+          if (checkBill.data.data.payment_complete)
+            setShouldAutoRedirectAfterPayment(true);
           return;
         }
       } catch (e) {}
-      setPayError(err?.response?.data?.detail || "Failed to add payment");
+      // FastAPI's shared exception handler returns `{ message }`, while a few
+      // endpoint-specific responses still use `{ detail }`. Preserve either so
+      // a cashier sees the actionable drawer/settlement reason rather than a
+      // generic failure.
+      setPayError(
+        err?.response?.data?.detail ||
+          err?.response?.data?.message ||
+          "Failed to add payment",
+      );
     } finally {
       setPaySubmitting(false);
     }
@@ -1586,19 +2225,23 @@ export default function CheckoutPage() {
     }
 
     if (hasSuccessfulPayments) {
-      setSplitError("Cannot split a bill that already has successful payments.");
+      setSplitError(
+        "Cannot split a bill that already has successful payments.",
+      );
       return;
     }
 
-    const partsPayload = splitParts.map(part => ({
-      label: part.label.trim() || "Guest",
-      lines: (Object.entries(part.items) as Array<[string, number]>)
-        .filter(([_, qty]) => qty > 0)
-        .map(([itemId, qty]) => ({
-          order_item_id: Number(itemId),
-          qty: qty
-        }))
-    })).filter(part => part.lines.length > 0);
+    const partsPayload = splitParts
+      .map((part) => ({
+        label: part.label.trim() || "Guest",
+        lines: (Object.entries(part.items) as Array<[string, number]>)
+          .filter(([_, qty]) => qty > 0)
+          .map(([itemId, qty]) => ({
+            order_item_id: Number(itemId),
+            qty: qty,
+          })),
+      }))
+      .filter((part) => part.lines.length > 0);
 
     if (partsPayload.length < 2) {
       setSplitError("At least two guests must have items assigned to them");
@@ -1611,7 +2254,7 @@ export default function CheckoutPage() {
       await apiClient.post(OrderApis.splitBill(orderId), {
         source_order_id: orderId,
         parts: partsPayload,
-        keep_unassigned_in_parent: true
+        keep_unassigned_in_parent: true,
       });
       toast.success("Bill split successfully");
       setSplitBillOpen(false);
@@ -1624,7 +2267,9 @@ export default function CheckoutPage() {
   };
 
   const handleCancelSplit = async () => {
-    const confirmCancel = window.confirm("Are you sure you want to revert the split? This will merge all guest bills back into the main order.");
+    const confirmCancel = window.confirm(
+      "Are you sure you want to revert the split? This will merge all guest bills back into the main order.",
+    );
     if (!confirmCancel) return;
 
     try {
@@ -1644,14 +2289,16 @@ export default function CheckoutPage() {
     try {
       await apiClient.post(OrderApis.payAllGuestBills(orderId), {
         method: payAllMethod,
-        reference: payAllReference.trim() || null
+        reference: payAllReference.trim() || null,
       });
       toast.success("All guest bills paid successfully");
       setPayAllOpen(false);
       setPayAllReference("");
       await fetchBill();
     } catch (err: any) {
-      toast.error(err?.response?.data?.detail || "Failed to pay all guest bills");
+      toast.error(
+        err?.response?.data?.detail || "Failed to pay all guest bills",
+      );
     } finally {
       setPayAllSubmitting(false);
     }
@@ -1664,7 +2311,9 @@ export default function CheckoutPage() {
       return;
     }
     if (entered > bill!.total_paid) {
-      setRefundError(`Amount cannot exceed total paid: ${formatCurrency(bill!.total_paid, curr)}`);
+      setRefundError(
+        `Amount cannot exceed total paid: ${formatCurrency(bill!.total_paid, curr)}`,
+      );
       return;
     }
     if (!refundReason.trim()) {
@@ -1699,11 +2348,16 @@ export default function CheckoutPage() {
 
     setFonepayVerifying(true);
     try {
-      const statusRes = await apiClient.get(PaymentApis.fonepayStatus(fonepayPrn), {
-        params: { order_id: orderId, restaurant_id: user?.restaurant_id },
-      });
+      const statusRes = await apiClient.get(
+        PaymentApis.fonepayStatus(fonepayPrn),
+        {
+          params: { order_id: orderId, restaurant_id: user?.restaurant_id },
+        },
+      );
       const payload = statusRes?.data?.data || statusRes?.data || {};
-      const statusRaw = String(payload?.status ?? payload?.payment_status ?? payload?.state ?? "").toLowerCase();
+      const statusRaw = String(
+        payload?.status ?? payload?.payment_status ?? payload?.state ?? "",
+      ).toLowerCase();
       const isSuccess = Boolean(
         payload?.is_paid ||
         payload?.paid ||
@@ -1712,17 +2366,19 @@ export default function CheckoutPage() {
         statusRaw === "success" ||
         statusRaw === "paid" ||
         statusRaw === "completed" ||
-        statusRaw === "settled"
+        statusRaw === "settled",
       );
 
       setFonepayStatus(statusRaw || (isSuccess ? "success" : "pending"));
 
       if (!isSuccess) return;
 
-      const paidAmountRaw = Number(payload?.amount ?? payload?.paid_amount ?? payload?.total_amount ?? 0);
+      const paidAmountRaw = Number(
+        payload?.amount ?? payload?.paid_amount ?? payload?.total_amount ?? 0,
+      );
       const amountToApply = Math.min(
         paidAmountRaw > 0 ? paidAmountRaw : displayBalanceDue,
-        displayBalanceDue
+        displayBalanceDue,
       );
 
       // Only attempt to record the payment if there's still a balance due.
@@ -1746,7 +2402,9 @@ export default function CheckoutPage() {
             throw payErr;
           }
           // 400/409 etc — payment already posted, continue to sync bill
-          console.warn("[Fonepay] Payment already recorded by webhook, skipping duplicate post.");
+          console.warn(
+            "[Fonepay] Payment already recorded by webhook, skipping duplicate post.",
+          );
         }
       }
 
@@ -1771,7 +2429,15 @@ export default function CheckoutPage() {
     } finally {
       setFonepayVerifying(false);
     }
-  }, [bill, fetchBill, fetchContext, fonepayPrn, fonepayVerifying, orderId, user?.restaurant_id]);
+  }, [
+    bill,
+    fetchBill,
+    fetchContext,
+    fonepayPrn,
+    fonepayVerifying,
+    orderId,
+    user?.restaurant_id,
+  ]);
 
   useEffect(() => {
     if (!fonepayDialogOpen || !fonepayPrn) return;
@@ -1833,7 +2499,9 @@ export default function CheckoutPage() {
           <div className="flex items-center gap-2 text-sm font-semibold">
             <Banknote className="h-4 w-4 text-emerald-600" />
             Cash drawer
-            {drawerLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" /> : null}
+            {drawerLoading ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+            ) : null}
           </div>
           {!cashDrawerControlsEnabled ? (
             <p className="text-xs text-muted-foreground">
@@ -1841,7 +2509,8 @@ export default function CheckoutPage() {
             </p>
           ) : hasCurrentCashierDrawer ? (
             <p className="text-xs text-muted-foreground">
-              Open: {currentCashierDrawer?.station} / {currentCashierDrawer?.drawer_key}
+              Open: {currentCashierDrawer?.station} /{" "}
+              {currentCashierDrawer?.drawer_key}
               {currentCashierDrawer?.counted_opening_cash != null
                 ? ` - Opening ${formatCurrency(Number(currentCashierDrawer.counted_opening_cash), curr)}`
                 : ""}
@@ -1850,9 +2519,13 @@ export default function CheckoutPage() {
             <p className="text-xs text-destructive">
               {CHECKOUT_MULTIPLE_ACTIVE_CASH_DRAWERS_MESSAGE}
             </p>
-          ) : (
+          ) : cashDrawerWillAutoOpen ? (
             <p className="text-xs text-muted-foreground">
               {CHECKOUT_OPEN_CASH_DRAWER_MESSAGE}
+            </p>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              Cash drawer status will be resolved when payment is recorded.
             </p>
           )}
         </div>
@@ -1865,7 +2538,9 @@ export default function CheckoutPage() {
             disabled={drawerLoading}
             className="h-8 gap-1.5"
           >
-            <RefreshCw className={cn("h-3.5 w-3.5", drawerLoading && "animate-spin")} />
+            <RefreshCw
+              className={cn("h-3.5 w-3.5", drawerLoading && "animate-spin")}
+            />
             Refresh
           </Button>
           <Button asChild size="sm" className="h-8">
@@ -1883,7 +2558,7 @@ export default function CheckoutPage() {
       {!cashDrawerControlsEnabled ? (
         <div className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs font-medium text-emerald-700 dark:text-emerald-300">
           <CheckCircle className="h-4 w-4" />
-          Cash payments will post without drawer attribution.
+          Cash payments can continue without selecting a drawer.
         </div>
       ) : hasCurrentCashierDrawer ? (
         <div className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs font-medium text-emerald-700 dark:text-emerald-300">
@@ -1894,9 +2569,11 @@ export default function CheckoutPage() {
         <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs font-medium text-destructive">
           {CHECKOUT_MULTIPLE_ACTIVE_CASH_DRAWERS_MESSAGE}
         </div>
-      ) : !hasCashDrawerConflict ? (
-        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
-          No active cash drawer is available to you. Open one in Cash Drawers, then return here to take cash.
+      ) : cashDrawerWillAutoOpen ? (
+        <div className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs font-medium text-emerald-700 dark:text-emerald-300">
+          <CheckCircle className="h-4 w-4" />
+          The drawer will open automatically and this payment will be its first
+          activity.
         </div>
       ) : null}
     </div>
@@ -1916,18 +2593,110 @@ export default function CheckoutPage() {
           setDiscountSubmitting(false);
           return;
         }
+        // Try Growth offer validation first
+        try {
+          // First, attach customer if one is selected but not yet assigned to order
+          let currentCustomerId = orderMeta?.customer_id;
+          if (selectedCustomerId && String(currentCustomerId || "") !== selectedCustomerId) {
+            await apiClient.patch(OrderApis.updateOrder(orderId), {
+              customer_id: parseInt(selectedCustomerId, 10),
+            });
+            currentCustomerId = parseInt(selectedCustomerId, 10);
+            setOrderMeta((prev) => (
+              prev ? { ...prev, customer_id: currentCustomerId } : prev
+            ));
+          }
+
+          const validateRes = await apiClient.post(GrowthApis.validateOffer, {
+            order_id: orderId,
+            offer_code: discountCode.trim(),
+            customer_id: currentCustomerId || null,
+          });
+          
+          if (validateRes.data?.data?.valid) {
+            // Apply as Growth offer
+            await apiClient.patch(OrderApis.updateOrder(orderId), {
+              growth_offer_code: discountCode.trim(),
+            });
+            toast.success(
+              `Growth offer applied: ${validateRes.data.data.offer_name || "Discount"}`,
+            );
+          } else {
+            const errorMsg = validateRes.data?.data?.message || "Invalid offer code";
+            // Enhance customer mismatch error with helpful instruction
+            if (validateRes.data?.data?.reason === "customer_mismatch") {
+              setDiscountError(
+                `${errorMsg} Please select the correct customer from the "Loyalty & Customer" section above before applying this coupon.`,
+              );
+            } else {
+              setDiscountError(errorMsg);
+            }
+            setDiscountSubmitting(false);
+            return;
+          }
+        } catch (growthErr: any) {
+          // If Growth validation fails, try as legacy discount code
+          const growthStatus = growthErr?.response?.status;
+          const errorData = growthErr?.response?.data?.data;
+          
+          // Enhanced error message for customer mismatch
+          if (errorData?.reason === "customer_mismatch") {
+            setDiscountError(
+              `${errorData.message || "This offer belongs to a different customer."} Please select the correct customer from the "Loyalty & Customer" section above before applying this coupon.`,
+            );
+            setDiscountSubmitting(false);
+            return;
+          }
+          
+          if (growthStatus === 403 || growthStatus === 404) {
+            // Grow might not be enabled, try legacy discount
+            try {
+              await apiClient.patch(OrderApis.updateOrder(orderId), {
+                discount_code: discountCode.trim(),
+              });
+            } catch (legacyErr: any) {
+              setDiscountError(
+                extractApiErrorMessage(legacyErr, "Invalid discount code"),
+              );
+              setDiscountSubmitting(false);
+              return;
+            }
+          } else {
+            setDiscountError(
+              extractApiErrorMessage(
+                growthErr,
+                "Failed to validate offer code",
+              ),
+            );
+            setDiscountSubmitting(false);
+            return;
+          }
+        }
+      } else if (discountType === "staff") {
+        const staffId = parseInt(selectedStaffId, 10);
+        if (!staffId) {
+          setDiscountError("Select a staff member");
+          setDiscountSubmitting(false);
+          return;
+        }
         await apiClient.patch(OrderApis.updateOrder(orderId), {
-          discount_code: discountCode.trim(),
+          staff_order_for_id: staffId,
         });
       } else {
-        const dueAmountForManualDiscount = Math.max(0, Number(bill?.balance_due || 0));
+        const dueAmountForManualDiscount = Math.max(
+          0,
+          Number(bill?.balance_due || 0),
+        );
         const amt = parseFloat(manualDiscountAmount);
         if (!amt || amt <= 0) {
           setDiscountError("Enter a valid amount");
           setDiscountSubmitting(false);
           return;
         }
-        if (dueAmountForManualDiscount > 0 && amt > dueAmountForManualDiscount) {
+        if (
+          dueAmountForManualDiscount > 0 &&
+          amt > dueAmountForManualDiscount
+        ) {
           setDiscountError("Discount cannot exceed balance due");
           setDiscountSubmitting(false);
           return;
@@ -1940,9 +2709,12 @@ export default function CheckoutPage() {
       setDiscountCode("");
       setManualDiscountAmount("");
       setManualDiscountPercent("");
+      setSelectedStaffId("");
       await fetchBill();
     } catch (err: any) {
-      setDiscountError(err?.response?.data?.detail || "Failed to apply discount");
+      setDiscountError(
+        err?.response?.data?.detail || "Failed to apply discount",
+      );
     } finally {
       setDiscountSubmitting(false);
     }
@@ -1956,9 +2728,12 @@ export default function CheckoutPage() {
     }
 
     try {
-      await apiClient.patch(OrderApis.updateOrder(orderId), {
-        discount_code: "",
-      });
+      await apiClient.patch(
+        OrderApis.updateOrder(orderId),
+        orderMeta?.staff_order_for_id
+          ? { staff_order_for_id: 0 }
+          : { discount_code: "", growth_offer_code: "" },
+      );
       await fetchBill();
     } catch (err: any) {
       console.error("Failed to remove discount:", err);
@@ -1967,7 +2742,9 @@ export default function CheckoutPage() {
 
   // ── Print Receipt ─────────────────────────────────
   const handlePrintReceipt = () => {
-    const receiptUrl = `/orders/${orderId}/receipt${returnTo ? `?returnTo=${encodeURIComponent(returnTo)}` : ""}`;
+    const receiptUrl = `/orders/${orderId}/receipt?autoPrint=1${
+      returnTo ? `&returnTo=${encodeURIComponent(returnTo)}` : ""
+    }`;
     router.push(receiptUrl);
   };
 
@@ -1996,6 +2773,12 @@ export default function CheckoutPage() {
 
   const computedDiscount = getRecordedOrderDiscount(bill);
   const hasDiscount = computedDiscount > 0;
+  const discountStaffMember = orderMeta?.staff_order_for_id
+    ? staffOptions.find((s) => s.id === orderMeta.staff_order_for_id)
+    : undefined;
+  const discountLabel = orderMeta?.staff_order_for_id
+    ? `Staff discount${discountStaffMember ? ` (${staffDisplayName(discountStaffMember)})` : ""}`
+    : "Discount";
   const displayBillItems = bill.items.map((item) => {
     const overrides = itemOverrides[item.id] || {};
     const displayItem = {
@@ -2010,58 +2793,149 @@ export default function CheckoutPage() {
       line_total: getItemEffectiveLineTotal(displayItem),
     };
   });
-  const displaySubtotal = Number(displayBillItems.reduce((sum, item) => sum + Number(item.line_total || 0), 0).toFixed(2));
+  const displaySubtotal = Number(
+    displayBillItems
+      .reduce((sum, item) => sum + Number(item.line_total || 0), 0)
+      .toFixed(2),
+  );
   // The backend stores tax-inclusive menu prices. VAT is a breakdown of the
   // subtotal, not an extra amount to add to the customer's total.
-  const displayGrandTotal = Number((displaySubtotal + Number(bill.service_charge || 0) - computedDiscount).toFixed(2));
-  const displayBalanceDue = Math.max(0, Number((displayGrandTotal - Number(bill.total_paid || 0)).toFixed(2)));
+  const displayGrandTotal = Number(
+    (
+      displaySubtotal +
+      Number(bill.service_charge || 0) -
+      computedDiscount
+    ).toFixed(2),
+  );
+  const displayBalanceDue = Math.max(
+    0,
+    Number((displayGrandTotal - Number(bill.total_paid || 0)).toFixed(2)),
+  );
   const displayIsFullyPaid = displayBalanceDue <= 0;
-  const showCheckoutControls = !displayIsFullyPaid
-    || hasNcItems
-    || (guestBills?.orders?.length > 0 && guestBills?.split_group_id);
+  const invoiceBalanceDue = Number(invoiceSettlement?.balance_due || 0);
+  const isCustomerBalanceOutstanding = invoiceBalanceDue > 0.004;
+  const totalRefunded = bill.payments.reduce(
+    (total, payment) => total + Math.max(0, -Number(payment.amount || 0)),
+    0,
+  );
+  const isRoomServiceOrder = orderMeta?.channel === "room_service";
+  // A return/refund is a separate audited cash movement.  It must never make
+  // the original completed sale editable or invite another customer payment.
+  const showCheckoutControls =
+    !isRoomServiceOrder &&
+    !orderEditLocked &&
+    (!displayIsFullyPaid ||
+      hasNcItems ||
+      (guestBills?.orders?.length > 0 && guestBills?.split_group_id));
   const dueAmountForManualDiscount = displayBalanceDue;
-  const checkoutCustomerId = selectedCheckoutCustomerId ?? orderMeta?.customer_id;
+  const checkoutCustomerId =
+    selectedCheckoutCustomerId ?? orderMeta?.customer_id;
   const checkoutCustomer = checkoutCustomerId
     ? customers.find((c: any) => Number(c?.id) === Number(checkoutCustomerId))
     : null;
   const availableLoyaltyPoints = Number(checkoutCustomer?.loyalty_points || 0);
-  const customerTotalSpent = Number(checkoutCustomer?.total_spent ?? checkoutCustomer?.totalSpent ?? checkoutCustomer?.lifetime_spent ?? 0);
-  const customerCredit = Number(checkoutCustomer?.credit ?? checkoutCustomer?.outstanding_credit ?? 0);
+  const customerTotalSpent = Number(
+    checkoutCustomer?.total_spent ??
+      checkoutCustomer?.totalSpent ??
+      checkoutCustomer?.lifetime_spent ??
+      0,
+  );
+  const customerCredit = Number(
+    checkoutCustomer?.credit ?? checkoutCustomer?.outstanding_credit ?? 0,
+  );
   const customerMaxDiscount = Number(
     checkoutCustomer?.max_discount ??
-    checkoutCustomer?.max_discount_amount ??
-    checkoutCustomer?.loyalty_max_discount ??
-    0
+      checkoutCustomer?.max_discount_amount ??
+      checkoutCustomer?.loyalty_max_discount ??
+      0,
   );
   const orderLabel = orderMeta?.table_name
     ? `${orderMeta.table_name} • Order #${orderMeta.restaurant_order_id || orderId}`
     : `Order #${orderMeta?.restaurant_order_id || orderId}`;
+  const mobileAppBarTitle = orderMeta?.table_name
+    ? /^table\b/i.test(orderMeta.table_name)
+      ? orderMeta.table_name
+      : `Table ${orderMeta.table_name}`
+    : isRoomServiceOrder
+      ? "Room delivery"
+      : "Checkout";
 
   return (
     <div className="flex flex-col gap-6 max-w-7xl mx-auto pb-8">
+      <CheckoutAppBarTitle title={mobileAppBarTitle} />
       {/* ── Header ── */}
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={() => {
-            if (returnTo) router.push(returnTo);
-            else if (orderMeta?.channel === "room_service") router.push("/rooms/checkin");
-             else router.back();
-            }} className="rounded-xl">
+        <div className="hidden items-center gap-4 md:flex">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => {
+              if (returnTo) router.push(returnTo);
+              else if (orderMeta?.channel === "room_service")
+                router.push("/hotel");
+              else router.back();
+            }}
+            className="rounded-xl"
+          >
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div>
             <h1 className="text-2xl font-bold tracking-tight">
-              {orderMeta?.channel === "room_service" ? "Room Folio & Checkout" : "Bill & Payment"}
+              {orderMeta?.channel === "room_service"
+                ? "Room Service Delivery"
+                : "Bill & Payment"}
             </h1>
             <p className="text-sm text-muted-foreground">{orderLabel}</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={fetchBill} className="gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={fetchBill}
+            className="gap-2"
+          >
             <RefreshCw className="h-3.5 w-3.5" /> Refresh
           </Button>
-          {displayIsFullyPaid && (
-            <Button variant="outline" size="sm" onClick={handlePrintReceipt} className="gap-2">
+          {orderMeta?.channel === "room_service" &&
+            !["completed", "canceled"].includes(orderMeta.status) && (
+              <div className="space-y-3 rounded-xl border border-blue-200 bg-blue-50/60 p-4 dark:border-blue-900 dark:bg-blue-950/20">
+                <div>
+                  <p className="font-semibold">Complete room delivery</p>
+                  <p className="text-sm text-muted-foreground">
+                    This order is already included in room{" "}
+                    {orderMeta.room_order_context?.room_number || "the guest"}
+                    &apos;s bill. Mark it delivered when service is complete.
+                  </p>
+                </div>
+                <Button
+                  className="w-full"
+                  onClick={handleComplete}
+                  disabled={completing || !roomOrderCanPost}
+                >
+                  {completing ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <CheckCircle className="mr-2 h-4 w-4" />
+                  )}
+                  Mark delivered
+                </Button>
+                {kotFulfillmentRequired && !allKotsServed ? (
+                  <p className="text-xs text-amber-700">
+                    Mark all kitchen items as served before completing this
+                    delivery.
+                  </p>
+                ) : null}
+              </div>
+            )}
+
+          {displayIsFullyPaid && !isRoomServiceOrder && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handlePrintReceipt}
+              className="gap-2"
+            >
               <Printer className="h-3.5 w-3.5" /> Print
             </Button>
           )}
@@ -2069,13 +2943,35 @@ export default function CheckoutPage() {
       </div>
 
       {/* ── Fully Paid Banner ── */}
-      {displayIsFullyPaid && (!guestBills?.split_group_id || guestBills.orders.every((g: any) => g.is_fully_paid)) && (
-        <div className="flex items-center gap-3 p-4 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 rounded-xl">
-          <CheckCircle className="h-5 w-5 text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
+      {displayIsFullyPaid &&
+        !isCustomerBalanceOutstanding &&
+        !isRoomServiceOrder &&
+        (!guestBills?.split_group_id ||
+          guestBills.orders.every((g: any) => g.is_fully_paid)) && (
+          <div className="flex items-center gap-3 p-4 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 rounded-xl">
+            <CheckCircle className="h-5 w-5 text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
+            <div>
+              <p className="font-semibold text-emerald-700 dark:text-emerald-300">
+                Bill Fully Paid
+              </p>
+              <p className="text-sm text-emerald-600/80 dark:text-emerald-400/80">
+                {orderMeta?.table_name
+                  ? `${orderMeta.table_name} has been freed.`
+                  : "Order completed successfully."}
+              </p>
+            </div>
+          </div>
+        )}
+      {isCustomerBalanceOutstanding && !isRoomServiceOrder && (
+        <div className="flex items-center gap-3 rounded-xl border border-orange-200 bg-orange-50 p-4 dark:border-orange-900/60 dark:bg-orange-950/20">
+          <Clock3 className="h-5 w-5 shrink-0 text-orange-600" />
           <div>
-            <p className="font-semibold text-emerald-700 dark:text-emerald-300">Bill Fully Paid</p>
-            <p className="text-sm text-emerald-600/80 dark:text-emerald-400/80">
-              {orderMeta?.table_name ? `${orderMeta.table_name} has been freed.` : "Order completed successfully."}
+            <p className="font-semibold text-orange-800 dark:text-orange-200">
+              Sold on credit
+            </p>
+            <p className="text-sm text-orange-700/80 dark:text-orange-300/80">
+              The order is complete. The customer still owes{" "}
+              {formatCurrency(invoiceBalanceDue, curr)}.
             </p>
           </div>
         </div>
@@ -2092,28 +2988,44 @@ export default function CheckoutPage() {
                 <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
                   {orderMeta.table_category_name && (
                     <div className="flex items-center gap-1.5 text-muted-foreground">
-                      <span className="font-medium text-foreground">{orderMeta.table_category_name}</span>
+                      <span className="font-medium text-foreground">
+                        {orderMeta.table_category_name}
+                      </span>
                     </div>
                   )}
                   <div className="flex items-center gap-1.5 text-muted-foreground">
-                    Channel: <span className="font-medium text-foreground capitalize">{orderMeta.channel.replace("_", " ")}</span>
+                    Channel:{" "}
+                    <span className="font-medium text-foreground capitalize">
+                      {orderMeta.channel.replace("_", " ")}
+                    </span>
                   </div>
                   {orderMeta.customer_name && (
                     <div className="flex items-center gap-1.5 text-muted-foreground">
-                      Customer: <span className="font-medium text-foreground">{orderMeta.customer_name}</span>
+                      Customer:{" "}
+                      <span className="font-medium text-foreground">
+                        {orderMeta.customer_name}
+                      </span>
                     </div>
                   )}
                   {orderMeta.number_of_guests && (
                     <div className="flex items-center gap-1.5 text-muted-foreground">
-                      Guests: <span className="font-medium text-foreground">{orderMeta.number_of_guests}</span>
+                      Guests:{" "}
+                      <span className="font-medium text-foreground">
+                        {orderMeta.number_of_guests}
+                      </span>
                     </div>
                   )}
                   <div className="flex items-center gap-1.5 text-muted-foreground">
-                    Created: <span className="font-medium text-foreground">{new Date(orderMeta.created_at).toLocaleString()}</span>
+                    Created:{" "}
+                    <span className="font-medium text-foreground">
+                      {new Date(orderMeta.created_at).toLocaleString()}
+                    </span>
                   </div>
                 </div>
                 {orderMeta.notes && (
-                  <p className="mt-2 text-sm text-muted-foreground italic">Notes: {orderMeta.notes}</p>
+                  <p className="mt-2 text-sm text-muted-foreground italic">
+                    Notes: {orderMeta.notes}
+                  </p>
                 )}
               </CardContent>
             </Card>
@@ -2122,116 +3034,193 @@ export default function CheckoutPage() {
           {/* Items table */}
           <Card className="border-border/40">
             <CardContent className="p-0">
-              <div className="overflow-x-auto">
+              <div className="divide-y md:hidden">
+                {displayBillItems.map((displayItem) => {
+                  const item =
+                    bill.items.find((source) => source.id === displayItem.id) ||
+                    displayItem;
+                  return (
+                    <div key={item.id} className="space-y-2 p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="font-medium">
+                            {displayItem.name_snapshot}
+                          </p>
+                          {displayItem.category_name_snapshot ? (
+                            <p className="text-xs text-muted-foreground">
+                              {displayItem.category_name_snapshot}
+                            </p>
+                          ) : null}
+                        </div>
+                        <p className="shrink-0 font-semibold tabular-nums">
+                          {formatCurrency(displayItem.line_total, curr)}
+                        </p>
+                      </div>
+                      {displayItem.modifiers.length > 0 ? (
+                        <div className="flex flex-wrap gap-1">
+                          {displayItem.modifiers.map((modifier) => (
+                            <Badge
+                              key={modifier.id}
+                              variant="secondary"
+                              className="text-[10px] font-normal"
+                            >
+                              {modifier.modifier_name_snapshot}
+                            </Badge>
+                          ))}
+                        </div>
+                      ) : null}
+                      {displayItem.notes ? (
+                        <p className="text-xs italic text-muted-foreground">
+                          {displayItem.notes}
+                        </p>
+                      ) : null}
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-sm text-muted-foreground">
+                          {displayItem.qty} ×{" "}
+                          {formatCurrency(displayItem.unit_price, curr)}
+                        </span>
+                        {!orderEditLocked ? (
+                          <Button
+                            type="button"
+                            variant={displayItem.is_nc ? "default" : "outline"}
+                            size="sm"
+                            className={cn(
+                              "h-9 gap-1.5 text-xs",
+                              displayItem.is_nc &&
+                                "bg-orange-500 hover:bg-orange-600 text-white",
+                            )}
+                            disabled={itemUpdating || !canMarkNc}
+                            onClick={() => handleNcToggle(item)}
+                          >
+                            <Award className="h-3.5 w-3.5" />
+                            NC
+                          </Button>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">
+                            Locked
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="hidden overflow-x-auto md:block">
                 <table className="w-full">
                   <thead>
                     <tr className="border-b bg-muted/30">
-                      <th className="text-left p-4 text-xs font-bold uppercase tracking-wider text-muted-foreground">Item</th>
-                      <th className="text-center p-4 text-xs font-bold uppercase tracking-wider text-muted-foreground w-40">Qty</th>
-                      <th className="text-right p-4 text-xs font-bold uppercase tracking-wider text-muted-foreground w-28">Price</th>
-                      <th className="text-right p-4 text-xs font-bold uppercase tracking-wider text-muted-foreground w-32">Total</th>
-                      <th className="text-right p-4 text-xs font-bold uppercase tracking-wider text-muted-foreground w-44">Actions</th>
+                      <th className="text-left p-4 text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                        Item
+                      </th>
+                      <th className="text-center p-4 text-xs font-bold uppercase tracking-wider text-muted-foreground w-40">
+                        Qty
+                      </th>
+                      <th className="text-right p-4 text-xs font-bold uppercase tracking-wider text-muted-foreground w-28">
+                        Price
+                      </th>
+                      <th className="text-right p-4 text-xs font-bold uppercase tracking-wider text-muted-foreground w-32">
+                        Total
+                      </th>
+                      <th className="text-right p-4 text-xs font-bold uppercase tracking-wider text-muted-foreground w-44">
+                        Actions
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
                     {displayBillItems.map((displayItem) => {
-                      const item = bill.items.find((source) => source.id === displayItem.id) || displayItem;
+                      const item =
+                        bill.items.find(
+                          (source) => source.id === displayItem.id,
+                        ) || displayItem;
                       return (
-                      <tr key={item.id} className="border-b border-border/30 hover:bg-muted/10 transition-colors">
-                        <td className="p-4">
-                          <p className="font-medium text-sm">{displayItem.name_snapshot}</p>
-                          {displayItem.category_name_snapshot && (
-                            <p className="text-xs text-muted-foreground">{displayItem.category_name_snapshot}</p>
-                          )}
-                          {displayItem.modifiers.length > 0 && (
-                            <div className="mt-1 flex flex-wrap gap-1">
-                              {displayItem.modifiers.map((m) => (
-                                <Badge key={m.id} variant="secondary" className="text-[10px] font-normal">
-                                  {m.modifier_name_snapshot}
-                                  {m.price_adjustment_snapshot !== 0 && (
-                                    <span className="ml-1">+{formatCurrency(m.price_adjustment_snapshot, curr)}</span>
-                                  )}
-                                </Badge>
-                              ))}
-                            </div>
-                          )}
-                          {displayItem.notes && (
-                            <p className="text-xs text-muted-foreground mt-1 italic">{displayItem.notes}</p>
-                          )}
-                          {displayItem.is_nc && (
-                            <Badge variant="outline" className="mt-2 h-5 text-[10px] font-semibold text-orange-600 border-orange-500/40">
-                              NC
-                            </Badge>
-                          )}
-                        </td>
-                        <td className="p-4">
-                          <div className="flex items-center justify-center gap-1">
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="icon"
-                              className="h-8 w-8"
-                              disabled={orderEditLocked || itemUpdating || (displayItem.qty <= 1 && !canVoidItem)}
-                              onClick={() => void handleQtyChange(item, -1)}
-                            >
-                              <Minus className="h-3.5 w-3.5" />
-                            </Button>
-                            <div className="min-w-[2.5rem] text-center font-semibold tabular-nums">
+                        <tr
+                          key={item.id}
+                          className="border-b border-border/30 hover:bg-muted/10 transition-colors"
+                        >
+                          <td className="p-4">
+                            <p className="font-medium text-sm">
+                              {displayItem.name_snapshot}
+                            </p>
+                            {displayItem.category_name_snapshot && (
+                              <p className="text-xs text-muted-foreground">
+                                {displayItem.category_name_snapshot}
+                              </p>
+                            )}
+                            {displayItem.modifiers.length > 0 && (
+                              <div className="mt-1 flex flex-wrap gap-1">
+                                {displayItem.modifiers.map((m) => (
+                                  <Badge
+                                    key={m.id}
+                                    variant="secondary"
+                                    className="text-[10px] font-normal"
+                                  >
+                                    {m.modifier_name_snapshot}
+                                    {m.price_adjustment_snapshot !== 0 && (
+                                      <span className="ml-1">
+                                        +
+                                        {formatCurrency(
+                                          m.price_adjustment_snapshot,
+                                          curr,
+                                        )}
+                                      </span>
+                                    )}
+                                  </Badge>
+                                ))}
+                              </div>
+                            )}
+                            {displayItem.notes && (
+                              <p className="text-xs text-muted-foreground mt-1 italic">
+                                {displayItem.notes}
+                              </p>
+                            )}
+                            {displayItem.is_nc && (
+                              <Badge
+                                variant="outline"
+                                className="mt-2 h-5 text-[10px] font-semibold text-orange-600 border-orange-500/40"
+                              >
+                                NC
+                              </Badge>
+                            )}
+                          </td>
+                          <td className="p-4">
+                            <div className="text-center font-semibold tabular-nums">
                               {displayItem.qty}
                             </div>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="icon"
-                              className="h-8 w-8"
-                              disabled={orderEditLocked || itemUpdating}
-                              onClick={() => void handleQtyChange(item, 1)}
-                            >
-                              <Plus className="h-3.5 w-3.5" />
-                            </Button>
-                          </div>
-                        </td>
-                        <td className="p-4 text-right text-sm tabular-nums text-muted-foreground">
-                          {formatCurrency(displayItem.unit_price, curr)}
-                        </td>
-                        <td className="p-4 text-right font-semibold tabular-nums">
-                          {formatCurrency(displayItem.line_total, curr)}
-                        </td>
-                        <td className="p-4 text-right">
-                          {!orderEditLocked ? (
-                            <div className="flex justify-end gap-2">
-                              <Button
-                                type="button"
-                                variant={displayItem.is_nc ? "default" : "outline"}
-                                size="sm"
-                                className={cn(
-                                  "h-8 gap-1.5 px-2 text-xs font-semibold",
-                                  displayItem.is_nc && "bg-orange-500 hover:bg-orange-600 text-white"
-                                )}
-                                disabled={itemUpdating || !canMarkNc}
-                                onClick={() => handleNcToggle(item)}
-                              >
-                                <Award className="h-3.5 w-3.5" />
-                                NC
-                              </Button>
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                className="h-8 gap-1.5 px-2 text-xs font-semibold"
-                                onClick={() => handleOpenItemEdit(item)}
-                              >
-                                <Pencil className="h-3.5 w-3.5" />
-                                Note
-                              </Button>
-                            </div>
-                          ) : (
-                            <span className="text-[11px] text-muted-foreground">
-                              Locked
-                            </span>
-                          )}
-                        </td>
-                      </tr>
+                          </td>
+                          <td className="p-4 text-right text-sm tabular-nums text-muted-foreground">
+                            {formatCurrency(displayItem.unit_price, curr)}
+                          </td>
+                          <td className="p-4 text-right font-semibold tabular-nums">
+                            {formatCurrency(displayItem.line_total, curr)}
+                          </td>
+                          <td className="p-4 text-right">
+                            {!orderEditLocked ? (
+                              <div className="flex justify-end gap-2">
+                                <Button
+                                  type="button"
+                                  variant={
+                                    displayItem.is_nc ? "default" : "outline"
+                                  }
+                                  size="sm"
+                                  className={cn(
+                                    "h-8 gap-1.5 px-2 text-xs font-semibold",
+                                    displayItem.is_nc &&
+                                      "bg-orange-500 hover:bg-orange-600 text-white",
+                                  )}
+                                  disabled={itemUpdating || !canMarkNc}
+                                  onClick={() => handleNcToggle(item)}
+                                >
+                                  <Award className="h-3.5 w-3.5" />
+                                  NC
+                                </Button>
+                              </div>
+                            ) : (
+                              <span className="text-[11px] text-muted-foreground">
+                                Locked
+                              </span>
+                            )}
+                          </td>
+                        </tr>
                       );
                     })}
                   </tbody>
@@ -2241,7 +3230,8 @@ export default function CheckoutPage() {
           </Card>
           {orderEditLocked && (
             <p className="text-xs text-muted-foreground">
-              Item quantity changes are available until the order is completed or canceled. Completed-order item changes need backend support.
+              Item quantity changes are available until the order is completed
+              or canceled. Completed-order item changes need backend support.
             </p>
           )}
           <Dialog
@@ -2254,7 +3244,9 @@ export default function CheckoutPage() {
               <DialogHeader>
                 <DialogTitle>Edit Note</DialogTitle>
                 <DialogDescription>
-                  {editingItem ? editingItem.name_snapshot : "Update the item note."}
+                  {editingItem
+                    ? editingItem.name_snapshot
+                    : "Update the item note."}
                 </DialogDescription>
               </DialogHeader>
 
@@ -2268,13 +3260,17 @@ export default function CheckoutPage() {
               </div>
 
               <DialogFooter>
-                <Button variant="outline" onClick={handleCloseItemEdit}>Cancel</Button>
+                <Button variant="outline" onClick={handleCloseItemEdit}>
+                  Cancel
+                </Button>
                 <Button
                   onClick={handleSaveItemEdit}
                   disabled={!editingItem || itemUpdating}
                   className="gap-2"
                 >
-                  {itemUpdating ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                  {itemUpdating ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : null}
                   Save Note
                 </Button>
               </DialogFooter>
@@ -2286,9 +3282,12 @@ export default function CheckoutPage() {
                 <div className="flex items-start gap-2">
                   <AlertCircle className="mt-0.5 h-4 w-4 text-amber-500" />
                   <div>
-                    <p className="font-semibold text-foreground">Customer required before checkout</p>
+                    <p className="font-semibold text-foreground">
+                      Customer required before checkout
+                    </p>
                     <p className="text-xs text-muted-foreground mt-1">
-                      NC items can be marked here, but you must select a customer in checkout before payment or completion.
+                      NC items can be marked here, but you must select a
+                      customer in checkout before payment or completion.
                     </p>
                   </div>
                 </div>
@@ -2302,27 +3301,40 @@ export default function CheckoutPage() {
           {/* Bill Summary */}
           <Card className="border-border/40">
             <CardContent className="p-5 space-y-3">
-              <h3 className="font-bold text-sm uppercase tracking-wider text-muted-foreground mb-4">Summary</h3>
+              <h3 className="font-bold text-sm uppercase tracking-wider text-muted-foreground mb-4">
+                Summary
+              </h3>
 
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Subtotal</span>
-                <span className="tabular-nums">{formatCurrency(displaySubtotal, curr)}</span>
+                <span className="tabular-nums">
+                  {formatCurrency(displaySubtotal, curr)}
+                </span>
               </div>
 
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">
-                  Tax {(bill as any).tax_rate !== undefined ? `(${(bill as any).tax_rate * 100}%)` : ""}
+                  Tax{" "}
+                  {(bill as any).tax_rate !== undefined
+                    ? `(${(bill as any).tax_rate * 100}%)`
+                    : ""}
                   {bill.tax_breakdown_note && (
-                    <span className="text-xs ml-1">({bill.tax_breakdown_note})</span>
+                    <span className="text-xs ml-1">
+                      ({bill.tax_breakdown_note})
+                    </span>
                   )}
                 </span>
-                <span className="tabular-nums">{formatCurrency(bill.tax_total, curr)}</span>
+                <span className="tabular-nums">
+                  {formatCurrency(bill.tax_total, curr)}
+                </span>
               </div>
 
               {bill.service_charge > 0 && (
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Service Charge</span>
-                  <span className="tabular-nums">{formatCurrency(bill.service_charge, curr)}</span>
+                  <span className="tabular-nums">
+                    {formatCurrency(bill.service_charge, curr)}
+                  </span>
                 </div>
               )}
 
@@ -2330,14 +3342,23 @@ export default function CheckoutPage() {
                 <div className="flex justify-between text-sm items-center">
                   <div className="flex items-center gap-1.5">
                     <Percent className="h-3.5 w-3.5 text-emerald-600" />
-                    <span className="text-emerald-600 font-medium">Discount</span>
-                    {!displayIsFullyPaid && canApplyDiscount && (
-                      <button onClick={handleRemoveDiscount} className="text-destructive hover:text-destructive/80 ml-1">
-                        <X className="h-3.5 w-3.5" />
-                      </button>
-                    )}
+                    <span className="text-emerald-600 font-medium">
+                      {discountLabel}
+                    </span>
+                    {!orderEditLocked &&
+                      !displayIsFullyPaid &&
+                      canApplyDiscount && (
+                        <button
+                          onClick={handleRemoveDiscount}
+                          className="text-destructive hover:text-destructive/80 ml-1"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      )}
                   </div>
-                  <span className="tabular-nums text-emerald-600 font-medium">-{formatCurrency(computedDiscount, curr)}</span>
+                  <span className="tabular-nums text-emerald-600 font-medium">
+                    -{formatCurrency(computedDiscount, curr)}
+                  </span>
                 </div>
               )}
 
@@ -2345,24 +3366,59 @@ export default function CheckoutPage() {
 
               <div className="flex justify-between font-bold text-lg">
                 <span>Grand Total</span>
-                <span className="tabular-nums">{formatCurrency(displayGrandTotal, curr)}</span>
+                <span className="tabular-nums">
+                  {formatCurrency(displayGrandTotal, curr)}
+                </span>
               </div>
 
               <Separator />
 
-              {bill.total_paid > 0 && (
+              {bill.total_paid > 0 && !isCustomerBalanceOutstanding && (
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Paid</span>
-                  <span className="tabular-nums text-emerald-600 font-medium">{formatCurrency(bill.total_paid, curr)}</span>
+                  <span className="tabular-nums text-emerald-600 font-medium">
+                    {formatCurrency(bill.total_paid, curr)}
+                  </span>
+                </div>
+              )}
+
+              {totalRefunded > 0 && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Refunded</span>
+                  <span className="tabular-nums text-rose-600 font-medium">
+                    -{formatCurrency(totalRefunded, curr)}
+                  </span>
                 </div>
               )}
 
               <div className="flex justify-between font-bold text-base">
-                <span className={displayBalanceDue > 0 ? "text-destructive" : "text-emerald-600"}>
-                  {displayBalanceDue > 0 ? "Balance Due" : "Settled"}
+                <span
+                  className={
+                    isCustomerBalanceOutstanding || displayBalanceDue > 0
+                      ? "text-orange-600"
+                      : "text-emerald-600"
+                  }
+                >
+                  {isCustomerBalanceOutstanding
+                    ? "Recorded on credit"
+                    : displayBalanceDue > 0
+                      ? "Balance Due"
+                      : "Paid"}
                 </span>
-                <span className={cn("tabular-nums", displayBalanceDue > 0 ? "text-destructive" : "text-emerald-600")}>
-                  {formatCurrency(displayBalanceDue, curr)}
+                <span
+                  className={cn(
+                    "tabular-nums",
+                    isCustomerBalanceOutstanding || displayBalanceDue > 0
+                      ? "text-orange-600"
+                      : "text-emerald-600",
+                  )}
+                >
+                  {formatCurrency(
+                    isCustomerBalanceOutstanding
+                      ? displayGrandTotal
+                      : displayBalanceDue,
+                    curr,
+                  )}
                 </span>
               </div>
             </CardContent>
@@ -2372,39 +3428,68 @@ export default function CheckoutPage() {
           {bill.payments.length > 0 && (
             <Card className="border-border/40">
               <CardContent className="p-5 space-y-3">
-                <h3 className="font-bold text-sm uppercase tracking-wider text-muted-foreground mb-2">Payments</h3>
+                <h3 className="font-bold text-sm uppercase tracking-wider text-muted-foreground mb-2">
+                  Checkout record
+                </h3>
                 {bill.payments.map((p) => {
-                  const method = PAYMENT_METHODS.find((m) => m.value === p.method);
+                  const method = PAYMENT_METHODS.find(
+                    (m) => m.value === p.method,
+                  );
                   const Icon = method?.icon || Banknote;
                   const instrument = readPaymentInstrument(p);
                   const isRemoving = removingPaymentId === p.id;
+                  const isRefund = Number(p.amount || 0) < 0;
                   const canRemovePayment = Number(p.amount || 0) >= 0;
                   return (
-                    <div key={p.id} className="flex items-center justify-between py-2 border-b border-border/20 last:border-0">
+                    <div
+                      key={p.id}
+                      className="flex items-center justify-between py-2 border-b border-border/20 last:border-0"
+                    >
                       <div className="flex items-center gap-3">
-                        <div className={cn("p-2 rounded-lg bg-muted/50", method?.color)}>
+                        <div
+                          className={cn(
+                            "p-2 rounded-lg bg-muted/50",
+                            method?.color,
+                          )}
+                        >
                           <Icon className="h-4 w-4" />
                         </div>
                         <div>
-                          <p className="text-sm font-medium capitalize">{p.method}</p>
+                          <p className="text-sm font-medium capitalize">
+                            {isRefund ? "Refund issued" : p.method}
+                          </p>
                           {instrument?.name && (
                             <p className="text-xs text-muted-foreground">
                               {instrument.name}
                             </p>
                           )}
                           {p.reference && (
-                            <p className="text-xs text-muted-foreground">Ref: {p.reference}</p>
+                            <p className="text-xs text-muted-foreground">
+                              Ref: {p.reference}
+                            </p>
                           )}
                           {p.created_at && (
                             <p className="text-xs text-muted-foreground">
-                              {new Date(p.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                              {new Date(p.created_at).toLocaleTimeString([], {
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })}
                             </p>
                           )}
                         </div>
                       </div>
                       <div className="flex items-center gap-3">
-                        <span className="font-semibold tabular-nums">{formatCurrency(p.amount, curr)}</span>
-                        {canEditPayment && (
+                        <span
+                          className={cn(
+                            "font-semibold tabular-nums",
+                            isRefund && "text-rose-600",
+                          )}
+                        >
+                          {isRefund
+                            ? `-${formatCurrency(Math.abs(Number(p.amount || 0)), curr)}`
+                            : formatCurrency(p.amount, curr)}
+                        </span>
+                        {canEditPayment && !orderEditLocked && (
                           <Button
                             type="button"
                             variant="outline"
@@ -2416,7 +3501,7 @@ export default function CheckoutPage() {
                             Edit
                           </Button>
                         )}
-                        {canDeletePayment && (
+                        {canDeletePayment && !orderEditLocked && (
                           <Button
                             type="button"
                             variant="outline"
@@ -2441,6 +3526,10 @@ export default function CheckoutPage() {
             </Card>
           )}
 
+          {invoiceSettlement ? (
+            <InvoiceSettlementCard settlement={invoiceSettlement} />
+          ) : null}
+
           {/* Action Buttons */}
           {showCheckoutControls && (
             <div className="space-y-3">
@@ -2449,10 +3538,14 @@ export default function CheckoutPage() {
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <Award className="h-4 w-4 text-orange-600" />
-                      <span className="text-sm font-semibold">Loyalty & Customer</span>
+                      <span className="text-sm font-semibold">
+                        Loyalty & Customer
+                      </span>
                     </div>
                     <span className="text-xs text-muted-foreground">
-                      {checkoutCustomer ? "Customer selected" : "Select customer"}
+                      {checkoutCustomer
+                        ? "Customer selected"
+                        : "Select customer"}
                     </span>
                   </div>
 
@@ -2461,7 +3554,9 @@ export default function CheckoutPage() {
                       label="Customer"
                       placeholder="Select customer to view loyalty details"
                       customers={customers}
-                      value={checkoutCustomerId ? String(checkoutCustomerId) : ""}
+                      value={
+                        checkoutCustomerId ? String(checkoutCustomerId) : ""
+                      }
                       currency={curr}
                       onValueChange={setSelectedCustomerId}
                       onQuickAdd={() => setQuickAddOpen(true)}
@@ -2470,9 +3565,12 @@ export default function CheckoutPage() {
 
                   {hasNcItems && !pendingCheckoutCustomerId && (
                     <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs">
-                      <p className="font-semibold text-foreground">NC items are on this order.</p>
+                      <p className="font-semibold text-foreground">
+                        NC items are on this order.
+                      </p>
                       <p className="mt-1 text-muted-foreground">
-                        Select a customer here before taking payment or completing the order.
+                        Select a customer here before taking payment or
+                        completing the order.
                       </p>
                     </div>
                   )}
@@ -2482,19 +3580,27 @@ export default function CheckoutPage() {
                       <div className="grid grid-cols-2 gap-2 text-xs">
                         <div className="rounded-lg border p-2">
                           <p className="text-muted-foreground">Points</p>
-                          <p className="font-bold tabular-nums">{availableLoyaltyPoints}</p>
+                          <p className="font-bold tabular-nums">
+                            {availableLoyaltyPoints}
+                          </p>
                         </div>
                         <div className="rounded-lg border p-2">
                           <p className="text-muted-foreground">Total Spent</p>
-                          <p className="font-bold tabular-nums">{formatCurrency(customerTotalSpent, curr)}</p>
+                          <p className="font-bold tabular-nums">
+                            {formatCurrency(customerTotalSpent, curr)}
+                          </p>
                         </div>
                         <div className="rounded-lg border p-2">
                           <p className="text-muted-foreground">Credit</p>
-                          <p className="font-bold tabular-nums">{formatCurrency(customerCredit, curr)}</p>
+                          <p className="font-bold tabular-nums">
+                            {formatCurrency(customerCredit, curr)}
+                          </p>
                         </div>
                         <div className="rounded-lg border p-2">
                           <p className="text-muted-foreground">Max Discount</p>
-                          <p className="font-bold tabular-nums">{formatCurrency(customerMaxDiscount, curr)}</p>
+                          <p className="font-bold tabular-nums">
+                            {formatCurrency(customerMaxDiscount, curr)}
+                          </p>
                         </div>
                       </div>
 
@@ -2521,134 +3627,162 @@ export default function CheckoutPage() {
                     </>
                   ) : (
                     <p className="text-xs text-muted-foreground">
-                      Select a customer to view loyalty details and redeem points before payment.
+                      Select a customer to view loyalty details and redeem
+                      points before payment.
                     </p>
                   )}
                 </CardContent>
               </Card>
 
               {/* Guest Bills Section */}
-              {guestBills?.orders?.length > 0 && guestBills?.split_group_id && String(guestBills.anchor_order_id) === String(orderId) && (
-                <div className="space-y-3 mb-4">
-                  <Card className="border-orange-200 bg-orange-50/20 dark:bg-orange-950/10">
-                    <CardContent className="p-4 space-y-3">
-                      <div className="flex items-center justify-between border-b border-orange-100 dark:border-orange-900/50 pb-2">
-                        <h3 className="font-bold text-sm text-orange-600 dark:text-orange-400 uppercase tracking-wider flex items-center gap-1.5">
-                          <Users className="h-4 w-4" /> Guest Bills ({guestBills.orders.length})
-                        </h3>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={handleCancelSplit}
-                          className="h-8 text-xs text-muted-foreground hover:text-destructive gap-1 px-2"
-                        >
-                          <X className="h-3 w-3" /> Revert Split
-                        </Button>
-                      </div>
+              {guestBills?.orders?.length > 0 &&
+                guestBills?.split_group_id &&
+                String(guestBills.anchor_order_id) === String(orderId) && (
+                  <div className="space-y-3 mb-4">
+                    <Card className="border-orange-200 bg-orange-50/20 dark:bg-orange-950/10">
+                      <CardContent className="p-4 space-y-3">
+                        <div className="flex items-center justify-between border-b border-orange-100 dark:border-orange-900/50 pb-2">
+                          <h3 className="font-bold text-sm text-orange-600 dark:text-orange-400 uppercase tracking-wider flex items-center gap-1.5">
+                            <Users className="h-4 w-4" /> Guest Bills (
+                            {guestBills.orders.length})
+                          </h3>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={handleCancelSplit}
+                            className="h-8 text-xs text-muted-foreground hover:text-destructive gap-1 px-2"
+                          >
+                            <X className="h-3 w-3" /> Revert Split
+                          </Button>
+                        </div>
 
-                      <div className="space-y-2">
-                        {guestBills.orders.map((gOrder: any) => (
-                          <div key={gOrder.order_id} className="flex items-center justify-between p-2 rounded-lg border bg-background/50 text-sm">
-                            <div>
-                              <p className="font-semibold text-xs sm:text-sm">{gOrder.split_label || `Guest ${gOrder.split_sequence}`}</p>
-                              <p className="text-[10px] text-muted-foreground">Order #{gOrder.order_id}</p>
-                            </div>
-                            <div className="text-right flex items-center gap-2 sm:gap-3">
+                        <div className="space-y-2">
+                          {guestBills.orders.map((gOrder: any) => (
+                            <div
+                              key={gOrder.order_id}
+                              className="flex items-center justify-between p-2 rounded-lg border bg-background/50 text-sm"
+                            >
                               <div>
-                                <p className="font-bold tabular-nums text-xs sm:text-sm">{formatCurrency(gOrder.grand_total, curr)}</p>
-                                {gOrder.is_fully_paid ? (
-                                  <Badge className="bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300 text-[10px] px-1.5 py-0">Paid</Badge>
-                                ) : (
-                                  <Badge variant="outline" className="text-orange-600 border-orange-200 text-[10px] px-1.5 py-0">Pending</Badge>
+                                <p className="font-semibold text-xs sm:text-sm">
+                                  {gOrder.split_label ||
+                                    `Guest ${gOrder.split_sequence}`}
+                                </p>
+                                <p className="text-[10px] text-muted-foreground">
+                                  Order #{gOrder.order_id}
+                                </p>
+                              </div>
+                              <div className="text-right flex items-center gap-2 sm:gap-3">
+                                <div>
+                                  <p className="font-bold tabular-nums text-xs sm:text-sm">
+                                    {formatCurrency(gOrder.grand_total, curr)}
+                                  </p>
+                                  {gOrder.is_fully_paid ? (
+                                    <Badge className="bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300 text-[10px] px-1.5 py-0">
+                                      Paid
+                                    </Badge>
+                                  ) : (
+                                    <Badge
+                                      variant="outline"
+                                      className="text-orange-600 border-orange-200 text-[10px] px-1.5 py-0"
+                                    >
+                                      Pending
+                                    </Badge>
+                                  )}
+                                </div>
+                                {!gOrder.is_fully_paid && (
+                                  <Button
+                                    size="sm"
+                                    className="h-8 px-2.5 font-semibold text-xs"
+                                    onClick={() => {
+                                      if (
+                                        String(gOrder.order_id) ===
+                                        String(orderId)
+                                      ) {
+                                        setPayAmount(
+                                          displayBalanceDue.toFixed(2),
+                                        );
+                                        setPaymentOpen(true);
+                                      } else {
+                                        router.push(
+                                          `/orders/${gOrder.order_id}/checkout?returnTo=${encodeURIComponent(window.location.pathname)}`,
+                                        );
+                                      }
+                                    }}
+                                  >
+                                    Pay
+                                  </Button>
                                 )}
                               </div>
-                              {!gOrder.is_fully_paid && (
-                                <Button
-                                  size="sm"
-                                  className="h-8 px-2.5 font-semibold text-xs"
-                                  onClick={() => {
-                                    if (String(gOrder.order_id) === String(orderId)) {
-                                      setPayAmount(displayBalanceDue.toFixed(2));
-                                      setPaymentOpen(true);
-                                    } else {
-                                      router.push(`/orders/${gOrder.order_id}/checkout?returnTo=${encodeURIComponent(window.location.pathname)}`);
-                                    }
-                                  }}
-                                >
-                                  Pay
-                                </Button>
-                              )}
                             </div>
-                          </div>
-                        ))}
-                      </div>
+                          ))}
+                        </div>
 
-                      {!guestBills.orders.every((g: any) => g.is_fully_paid) && (
-                        <Button
-                          type="button"
-                          className="w-full h-10 bg-orange-600 hover:bg-orange-700 text-white font-semibold text-xs sm:text-sm gap-2"
-                          onClick={() => {
-                            setPayAllMethod("cash");
-                            setPayAllReference("");
-                            setPayAllOpen(true);
-                          }}
-                        >
-                          <CreditCard className="h-4 w-4" /> Pay All Guest Bills
-                        </Button>
-                      )}
-                    </CardContent>
-                  </Card>
-                </div>
-              )}
+                        {!guestBills.orders.every(
+                          (g: any) => g.is_fully_paid,
+                        ) && (
+                          <Button
+                            type="button"
+                            className="w-full h-10 bg-orange-600 hover:bg-orange-700 text-white font-semibold text-xs sm:text-sm gap-2"
+                            onClick={() => {
+                              setPayAllMethod("cash");
+                              setPayAllReference("");
+                              setPayAllOpen(true);
+                            }}
+                          >
+                            <CreditCard className="h-4 w-4" /> Pay All Guest
+                            Bills
+                          </Button>
+                        )}
+                      </CardContent>
+                    </Card>
+                  </div>
+                )}
 
               {canProcessPayment && displayBalanceDue > 0 ? (
                 <Button
                   className="w-full h-12 text-base font-semibold shadow-lg gap-2"
                   onClick={async () => {
                     if (hasNcItems) {
-                      const customerId = await attachSelectedCustomerToOrderIfNeeded();
+                      const customerId =
+                        await attachSelectedCustomerToOrderIfNeeded();
                       if (!customerId) {
-                        setPayError("Select a customer before taking payment for an order with NC items.");
-                        toast.error("Select a customer before taking payment for an order with NC items.");
+                        setPayError(
+                          "Select a customer before taking payment for an order with NC items.",
+                        );
+                        toast.error(
+                          "Select a customer before taking payment for an order with NC items.",
+                        );
                         return;
                       }
                     }
                     setPayAmount(displayBalanceDue.toFixed(2));
                     setPaymentOpen(true);
                   }}
-                  disabled={guestBills?.orders?.length > 0 && guestBills?.split_group_id && String(guestBills.anchor_order_id) === String(orderId) && !guestBills.orders.every((g: any) => g.is_fully_paid)}
+                  disabled={
+                    guestBills?.orders?.length > 0 &&
+                    guestBills?.split_group_id &&
+                    String(guestBills.anchor_order_id) === String(orderId) &&
+                    !guestBills.orders.every((g: any) => g.is_fully_paid)
+                  }
                 >
                   <CreditCard className="h-4 w-4" />
                   Take Payment ({formatCurrency(displayBalanceDue, curr)})
-                  </Button>
+                </Button>
               ) : displayBalanceDue > 0 ? (
                 <p className="text-xs text-muted-foreground text-center px-2">
-                  Payment processing requires the billing.payment.process permission.
+                  Payment processing requires the billing.payment.process
+                  permission.
                 </p>
               ) : null}
 
-              {guestBills?.orders?.length > 0 && guestBills?.split_group_id && String(guestBills.anchor_order_id) === String(orderId) && !guestBills.orders.every((g: any) => g.is_fully_paid) && (
-                <p className="text-[11px] text-orange-600 dark:text-orange-400 text-center mt-1">
-                  Please settle individual Guest Bills above.
-                </p>
-              )}
-
-              {canProcessRefund && bill.total_paid > 0 && !displayIsFullyPaid && (
-                <Button
-                  variant="destructive"
-                  className="w-full h-12 text-base font-semibold shadow-lg gap-2 mt-3"
-                  onClick={() => {
-                    setRefundAmount("");
-                    setRefundReason("");
-                    setRefundReference("");
-                    setRefundError(null);
-                    setRefundOpen(true);
-                  }}
-                >
-                  <RefreshCw className="h-4 w-4" />
-                  Issue Refund
-                </Button>
-              )}
+              {guestBills?.orders?.length > 0 &&
+                guestBills?.split_group_id &&
+                String(guestBills.anchor_order_id) === String(orderId) &&
+                !guestBills.orders.every((g: any) => g.is_fully_paid) && (
+                  <p className="text-[11px] text-orange-600 dark:text-orange-400 text-center mt-1">
+                    Please pay the individual guest bills above.
+                  </p>
+                )}
 
               <div className="grid grid-cols-2 gap-3 mt-3">
                 {canApplyDiscount && (
@@ -2669,12 +3803,17 @@ export default function CheckoutPage() {
                     const initialItems = buildSplitInitialItems();
                     setSplitParts([
                       { label: "Guest 1", items: { ...initialItems } },
-                      { label: "Guest 2", items: { ...initialItems } }
+                      { label: "Guest 2", items: { ...initialItems } },
                     ]);
                     setSplitError(null);
                     setSplitBillOpen(true);
                   }}
-                  disabled={displayIsFullyPaid || hasSuccessfulPayments || (guestBills?.orders?.length > 0 && guestBills?.split_group_id)}
+                  disabled={
+                    displayIsFullyPaid ||
+                    hasSuccessfulPayments ||
+                    (guestBills?.orders?.length > 0 &&
+                      guestBills?.split_group_id)
+                  }
                 >
                   <RefreshCw className="h-4 w-4" />
                   Split Bill
@@ -2685,7 +3824,7 @@ export default function CheckoutPage() {
                 <Button
                   variant="outline"
                   className="gap-2 text-xs sm:text-sm"
-                  onClick={() => router.push(`/orders/${orderId}/edit`)}
+                  onClick={() => router.push(`/orders/${orderId}/add-items`)}
                 >
                   <Receipt className="h-4 w-4" />
                   Edit Order
@@ -2693,7 +3832,15 @@ export default function CheckoutPage() {
                 <Button
                   variant="outline"
                   className="gap-2 text-xs sm:text-sm"
-                  onClick={() => router.push(`/orders/${orderId}/receipt${returnTo ? '?returnTo=' + encodeURIComponent(returnTo) : ''}`)}
+                  onClick={() =>
+                    router.push(
+                      `/orders/${orderId}/receipt?autoPrint=1${
+                        returnTo
+                          ? `&returnTo=${encodeURIComponent(returnTo)}`
+                          : ""
+                      }`,
+                    )
+                  }
                 >
                   <Printer className="h-4 w-4" />
                   Pre-Bill
@@ -2704,16 +3851,20 @@ export default function CheckoutPage() {
 
           {displayIsFullyPaid && (
             <div className="space-y-3">
-              {(allKotsServed || orderMeta?.channel === "room_service") && orderMeta?.status !== 'completed' && (
-                <Button 
+              {allKotsServed && orderMeta?.status !== "completed" && (
+                <Button
                   className="w-full h-12 text-base font-bold rounded-xl bg-emerald-600 hover:bg-emerald-700 shadow-emerald-500/20 shadow-lg gap-2"
                   onClick={handleComplete}
                   disabled={completing || ncNeedsCustomer}
                 >
-                  {completing ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
+                  {completing ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <CheckCircle className="h-4 w-4" />
+                  )}
                   {ncNeedsCustomer
                     ? "Select Customer For NC"
-                    : `Complete ${orderMeta?.channel === "room_service" ? "Stay & Checkout" : "Order"}`}
+                    : "Complete Order"}
                 </Button>
               )}
 
@@ -2721,16 +3872,23 @@ export default function CheckoutPage() {
                 <Button
                   variant="destructive"
                   className="w-full h-12 text-base font-semibold shadow-lg gap-2"
-                  onClick={() => {
-                    setRefundAmount("");
-                    setRefundReason("");
-                    setRefundReference("");
-                    setRefundError(null);
-                    setRefundOpen(true);
-                  }}
+                  onClick={() =>
+                    router.push(`/finance/sales/returns?order_id=${orderId}`)
+                  }
                 >
                   <RefreshCw className="h-4 w-4" />
-                  Issue Refund
+                  Return items / issue credit note
+                </Button>
+              )}
+
+              {canEditPayment && orderMeta?.status === "completed" && (
+                <Button
+                  variant="outline"
+                  className="w-full h-12 text-base font-semibold gap-2"
+                  onClick={() => setSettlementCorrectionOpen(true)}
+                >
+                  <Pencil className="h-4 w-4" />
+                  Correct payment allocation
                 </Button>
               )}
 
@@ -2739,12 +3897,15 @@ export default function CheckoutPage() {
                 className="w-full h-12 text-base font-semibold gap-2"
                 onClick={() => {
                   if (returnTo) router.push(returnTo);
-                  else if (orderMeta?.channel === "room_service") router.push("/rooms/checkin");
+                  else if (orderMeta?.channel === "room_service")
+                    router.push("/hotel");
                   else router.push("/orders/active");
                 }}
               >
                 <CheckCircle className="h-4 w-4" />
-                {orderMeta?.channel === "room_service" ? "Back to Rooms" : "Back to Orders"}
+                {orderMeta?.channel === "room_service"
+                  ? "Back to Hotel PMS"
+                  : "Back to Orders"}
               </Button>
               <Button
                 variant="outline"
@@ -2759,7 +3920,10 @@ export default function CheckoutPage() {
         </div>
       </div>
 
-      <Dialog open={!!editingItem} onOpenChange={(open) => !open && setEditingItem(null)}>
+      <Dialog
+        open={!!editingItem}
+        onOpenChange={(open) => !open && setEditingItem(null)}
+      >
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>Edit Note</DialogTitle>
@@ -2769,7 +3933,9 @@ export default function CheckoutPage() {
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label className="text-xs font-bold uppercase text-muted-foreground">Notes</Label>
+              <Label className="text-xs font-bold uppercase text-muted-foreground">
+                Notes
+              </Label>
               <Input
                 placeholder="e.g., Less spicy, no onions"
                 value={editItemNotes}
@@ -2782,7 +3948,9 @@ export default function CheckoutPage() {
               Cancel
             </Button>
             <Button onClick={handleSaveItemEdit} disabled={itemUpdating}>
-              {itemUpdating ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              {itemUpdating ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              ) : null}
               Save Note
             </Button>
           </DialogFooter>
@@ -2790,54 +3958,65 @@ export default function CheckoutPage() {
       </Dialog>
 
       {/* ── Payment Dialog ── */}
-      <Dialog open={paymentOpen} onOpenChange={(open) => {
-        setPaymentOpen(open);
-        if (!open) {
-          setIsMultiPayment(false);
-          setMultiPayments([{ method: "cash", amount: "", reference: "", selectedStaticQrIndex: 0, selectedCardIndex: 0 }]);
-        }
-      }}>
+      <Dialog
+        open={paymentOpen}
+        onOpenChange={(open) => {
+          setPaymentOpen(open);
+          if (!open) {
+            setIsMultiPayment(false);
+            setMultiPayments([
+              {
+                method: "cash",
+                amount: "",
+                reference: "",
+                selectedStaticQrIndex: 0,
+                selectedCardIndex: 0,
+              },
+            ]);
+          }
+        }}
+      >
         <DialogContent className="w-[96vw] sm:w-[92vw] sm:max-w-2xl max-h-[90vh] overflow-x-hidden overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Add Payment</DialogTitle>
             <DialogDescription>
-              Balance due: <span className="font-bold text-foreground">{formatCurrency(displayBalanceDue, curr)}</span>
+              Balance due:{" "}
+              <span className="font-bold text-foreground">
+                {formatCurrency(displayBalanceDue, curr)}
+              </span>
             </DialogDescription>
           </DialogHeader>
 
-          {/* Toggle for Single vs Multiple */}
-          <div className="flex gap-2 border-b pb-3">
-            <button
-              type="button"
-              onClick={() => setIsMultiPayment(false)}
-              className={cn(
-                "flex-1 py-2 text-sm font-semibold border-b-2 transition-all",
-                !isMultiPayment ? "border-primary text-primary" : "border-transparent text-muted-foreground"
-              )}
-            >
-              Single Payment
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setIsMultiPayment(true);
+          <PaymentModeTabs
+            multiple={isMultiPayment}
+            onChange={(multiple) => {
+              setIsMultiPayment(multiple);
+              if (multiple) {
                 setMultiPayments([
-                  { method: "cash", amount: (displayBalanceDue / 2).toFixed(2), reference: "", selectedStaticQrIndex: 0, selectedCardIndex: 0 },
-                  { method: "digital", amount: (displayBalanceDue / 2).toFixed(2), reference: "", selectedStaticQrIndex: 0, selectedCardIndex: 0 }
+                  {
+                    method: "cash",
+                    amount: (displayBalanceDue / 2).toFixed(2),
+                    reference: "",
+                    selectedStaticQrIndex: 0,
+                    selectedCardIndex: 0,
+                  },
+                  {
+                    method: "digital",
+                    amount: (displayBalanceDue / 2).toFixed(2),
+                    reference: "",
+                    selectedStaticQrIndex: 0,
+                    selectedCardIndex: 0,
+                  },
                 ]);
-              }}
-              className={cn(
-                "flex-1 py-2 text-sm font-semibold border-b-2 transition-all",
-                isMultiPayment ? "border-primary text-primary" : "border-transparent text-muted-foreground"
-              )}
-            >
-              Multiple Payments
-            </button>
-          </div>
+              }
+            }}
+          />
 
           <div className="space-y-4 py-2 min-w-0">
             {payError && (
-              <div className="p-3 rounded-lg bg-destructive/10 text-destructive text-sm font-medium">{payError}</div>
+              <div className="p-3 rounded-lg bg-destructive/10 text-destructive text-sm font-medium">
+                {payError}
+              </div>
             )}
 
             {cashMethodSelected ? cashDrawerReadinessPanel : null}
@@ -2847,24 +4026,11 @@ export default function CheckoutPage() {
                 {/* Payment Method */}
                 <div className="space-y-2">
                   <Label>Payment Method</Label>
-                  <div className="grid grid-cols-2 gap-2 min-w-0">
-                    {PAYMENT_METHODS.map((m) => (
-                      <button
-                        key={m.value}
-                        type="button"
-                        onClick={() => setPayMethod(m.value)}
-                        className={cn(
-                          "flex items-center gap-2 p-3 rounded-xl border-2 transition-all text-sm font-medium min-w-0",
-                          payMethod === m.value
-                            ? "border-primary bg-primary/5 text-primary"
-                            : "border-border/50 hover:border-border text-muted-foreground hover:text-foreground"
-                        )}
-                      >
-                        <m.icon className="h-4 w-4 shrink-0" />
-                        <span className="truncate">{m.label}</span>
-                      </button>
-                    ))}
-                  </div>
+                  <PaymentMethodGrid
+                    methods={PAYMENT_METHODS}
+                    value={payMethod}
+                    onChange={setPayMethod}
+                  />
                 </div>
 
                 {/* Customer Selection for Credit Method */}
@@ -2881,12 +4047,15 @@ export default function CheckoutPage() {
                     />
                   </div>
                 )}
-                
+
                 {payMethod === "credit" && orderMeta?.customer_id && (
-                   <div className="p-3 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 rounded-lg text-sm flex items-center gap-2 border border-blue-100 dark:border-blue-900">
-                      <User className="h-4 w-4" />
-                      Charging to order&apos;s customer: <span className="font-bold">{orderMeta.customer_name || "Guest"}</span>
-                   </div>
+                  <div className="p-3 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 rounded-lg text-sm flex items-center gap-2 border border-blue-100 dark:border-blue-900">
+                    <User className="h-4 w-4" />
+                    Charging to order&apos;s customer:{" "}
+                    <span className="font-bold">
+                      {orderMeta.customer_name || "Guest"}
+                    </span>
+                  </div>
                 )}
 
                 {payMethod === "digital" && (
@@ -2915,17 +4084,22 @@ export default function CheckoutPage() {
                                 "rounded-lg border px-3 py-2 text-left text-sm",
                                 selectedStaticQrIndex === idx
                                   ? "border-primary bg-primary/5 text-primary"
-                                  : "border-border/50 text-muted-foreground hover:text-foreground"
+                                  : "border-border/50 text-muted-foreground hover:text-foreground",
                               )}
                             >
-                              <div className="font-medium truncate">{qr.name}</div>
+                              <div className="font-medium truncate">
+                                {qr.name}
+                              </div>
                             </button>
                           ))}
                         </div>
                         <div className="mx-auto h-[210px] w-[210px] rounded-xl border bg-white p-2">
                           <img
                             src={`https://api.qrserver.com/v1/create-qr-code/?size=420x420&data=${encodeURIComponent(staticPaymentQrs[selectedStaticQrIndex]?.payload || "")}`}
-                            alt={staticPaymentQrs[selectedStaticQrIndex]?.name || "Static payment QR"}
+                            alt={
+                              staticPaymentQrs[selectedStaticQrIndex]?.name ||
+                              "Static payment QR"
+                            }
                             className="h-full w-full object-contain"
                           />
                         </div>
@@ -2954,38 +4128,44 @@ export default function CheckoutPage() {
                     ) : (
                       <div className="space-y-2">
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                        {staticPaymentCards.map((card, idx) => (
-                          <button
-                            key={`${card.name}-${idx}`}
-                            type="button"
-                            onClick={() => {
-                              if (!card.isSelectable) return;
-                              setSelectedCardIndex(idx);
-                            }}
-                            disabled={!card.isSelectable}
-                            className={cn(
-                              "rounded-lg border px-3 py-2 text-left text-sm",
-                              !card.isSelectable && "opacity-60 cursor-not-allowed",
-                              selectedCardIndex === idx
-                                ? "border-primary bg-primary/5 text-primary"
-                                : "border-border/50 text-muted-foreground hover:text-foreground"
-                            )}
-                          >
-                            <div className="font-medium truncate">{card.name}</div>
-                            <div className="text-[11px] text-muted-foreground truncate">
-                              {card.identifier || "No identifier"}
-                            </div>
-                            {!card.isSelectable && (
-                              <div className="text-[11px] text-amber-600 mt-1">
-                                Saved in settings only. Sync it in Accounting Setup to use it here.
+                          {staticPaymentCards.map((card, idx) => (
+                            <button
+                              key={`${card.name}-${idx}`}
+                              type="button"
+                              onClick={() => {
+                                if (!card.isSelectable) return;
+                                setSelectedCardIndex(idx);
+                              }}
+                              disabled={!card.isSelectable}
+                              className={cn(
+                                "rounded-lg border px-3 py-2 text-left text-sm",
+                                !card.isSelectable &&
+                                  "opacity-60 cursor-not-allowed",
+                                selectedCardIndex === idx
+                                  ? "border-primary bg-primary/5 text-primary"
+                                  : "border-border/50 text-muted-foreground hover:text-foreground",
+                              )}
+                            >
+                              <div className="font-medium truncate">
+                                {card.name}
                               </div>
-                            )}
-                          </button>
-                        ))}
+                              <div className="text-[11px] text-muted-foreground truncate">
+                                {card.identifier || "No identifier"}
+                              </div>
+                              {!card.isSelectable && (
+                                <div className="text-[11px] text-amber-600 mt-1">
+                                  Saved in settings only. Sync it in Accounting
+                                  Setup to use it here.
+                                </div>
+                              )}
+                            </button>
+                          ))}
                         </div>
                         {hasUnsyncedLegacyCards && (
                           <p className="text-xs text-amber-600">
-                            Some cards are visible from settings but disabled because they are not active accounting instruments yet.
+                            Some cards are visible from settings but disabled
+                            because they are not active accounting instruments
+                            yet.
                           </p>
                         )}
                       </div>
@@ -2997,26 +4177,38 @@ export default function CheckoutPage() {
                 <div className="space-y-2">
                   <Label htmlFor="pay-amount">Amount</Label>
                   <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm font-medium">{curr}</span>
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm font-medium">
+                      {curr}
+                    </span>
                     <Input
                       id="pay-amount"
                       type="number"
-                      step="0.01"
+                      step={PAYMENT_AMOUNT_STEP}
                       min="0"
                       value={payAmount}
                       onChange={(e) => setPayAmount(e.target.value)}
+                      onWheel={(event) =>
+                        preventPaymentAmountWheelChange(event.currentTarget)
+                      }
                       className="pl-12 text-lg font-semibold tabular-nums"
                       autoFocus
                     />
                   </div>
                   {(() => {
                     const entered = parseFloat(payAmount) || 0;
-                    const change = entered > displayBalanceDue ? entered - displayBalanceDue : 0;
+                    const change =
+                      entered > displayBalanceDue
+                        ? entered - displayBalanceDue
+                        : 0;
                     if (change > 0) {
                       return (
                         <div className="flex justify-between text-sm px-1">
-                          <span className="text-muted-foreground">Change to return</span>
-                          <span className="font-bold text-orange-600">{formatCurrency(change, curr)}</span>
+                          <span className="text-muted-foreground">
+                            Change to return
+                          </span>
+                          <span className="font-bold text-orange-600">
+                            {formatCurrency(change, curr)}
+                          </span>
                         </div>
                       );
                     }
@@ -3040,7 +4232,10 @@ export default function CheckoutPage() {
               <div className="space-y-4">
                 <div className="space-y-3">
                   {multiPayments.map((row, idx) => (
-                    <div key={idx} className="flex flex-col gap-3 p-3 border rounded-xl bg-muted/20 relative">
+                    <div
+                      key={idx}
+                      className="flex flex-col gap-3 p-3 border rounded-xl bg-muted/20 relative"
+                    >
                       <button
                         type="button"
                         onClick={() => {
@@ -3071,8 +4266,12 @@ export default function CheckoutPage() {
                             <SelectContent>
                               <SelectItem value="cash">Cash</SelectItem>
                               <SelectItem value="card">Card</SelectItem>
-                              <SelectItem value="digital">Digital (Static QR)</SelectItem>
-                              <SelectItem value="credit">Credit / Charge Customer</SelectItem>
+                              <SelectItem value="digital">
+                                Digital (Static QR)
+                              </SelectItem>
+                              <SelectItem value="credit">
+                                Credit / Charge Customer
+                              </SelectItem>
                             </SelectContent>
                           </Select>
                         </div>
@@ -3080,28 +4279,50 @@ export default function CheckoutPage() {
                         <div className="flex-1 space-y-2">
                           <Label>Amount</Label>
                           <div className="relative">
-                            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">{curr}</span>
+                            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">
+                              {curr}
+                            </span>
                             <Input
                               type="number"
-                              step="0.01"
+                              step={PAYMENT_AMOUNT_STEP}
+                              min="0"
                               placeholder="0.00"
                               value={row.amount}
+                              onWheel={(event) =>
+                                preventPaymentAmountWheelChange(
+                                  event.currentTarget,
+                                )
+                              }
                               onChange={(e) => {
                                 const newRows = [...multiPayments];
                                 const newValStr = e.target.value;
                                 newRows[idx].amount = newValStr;
 
                                 if (newRows.length >= 2) {
-                                  const targetAdjustIdx = idx === newRows.length - 1 ? 0 : newRows.length - 1;
+                                  const targetAdjustIdx =
+                                    idx === newRows.length - 1
+                                      ? 0
+                                      : newRows.length - 1;
                                   const newValNum = parseFloat(newValStr) || 0;
-                                  
-                                  const otherSum = newRows.reduce((sum, r, rIdx) => {
-                                    if (rIdx === idx || rIdx === targetAdjustIdx) return sum;
-                                    return sum + (parseFloat(r.amount) || 0);
-                                  }, 0);
 
-                                  const remaining = Math.max(0, displayBalanceDue - otherSum - newValNum);
-                                  newRows[targetAdjustIdx].amount = remaining.toFixed(2);
+                                  const otherSum = newRows.reduce(
+                                    (sum, r, rIdx) => {
+                                      if (
+                                        rIdx === idx ||
+                                        rIdx === targetAdjustIdx
+                                      )
+                                        return sum;
+                                      return sum + (parseFloat(r.amount) || 0);
+                                    },
+                                    0,
+                                  );
+
+                                  const remaining = Math.max(
+                                    0,
+                                    displayBalanceDue - otherSum - newValNum,
+                                  );
+                                  newRows[targetAdjustIdx].amount =
+                                    remaining.toFixed(2);
                                 }
 
                                 setMultiPayments(newRows);
@@ -3129,7 +4350,9 @@ export default function CheckoutPage() {
                       {row.method === "card" && (
                         <div className="space-y-3 mt-1 pt-1">
                           <div className="flex items-center justify-between">
-                            <Label className="text-xs">Select Card Terminal</Label>
+                            <Label className="text-xs">
+                              Select Card Terminal
+                            </Label>
                           </div>
                           {staticPaymentCards.length === 0 ? (
                             <div className="rounded-lg border border-dashed p-2 text-xs text-muted-foreground">
@@ -3138,33 +4361,36 @@ export default function CheckoutPage() {
                           ) : (
                             <div className="space-y-2">
                               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                              {staticPaymentCards.map((card, cIdx) => (
-                                <button
-                                  key={`${card.name}-${cIdx}`}
-                                  type="button"
-                                  onClick={() => {
-                                    if (!card.isSelectable) return;
-                                    const newRows = [...multiPayments];
-                                    newRows[idx].selectedCardIndex = cIdx;
-                                    setMultiPayments(newRows);
-                                  }}
-                                  disabled={!card.isSelectable}
-                                  className={cn(
-                                    "rounded-lg border px-2 py-1.5 text-left text-xs",
-                                    !card.isSelectable && "opacity-60 cursor-not-allowed",
-                                    row.selectedCardIndex === cIdx
-                                      ? "border-primary bg-primary/5 text-primary"
-                                      : "border-border/50 text-muted-foreground hover:text-foreground"
-                                  )}
-                                >
-                                  <div className="font-medium truncate">{card.name}</div>
-                                  {!card.isSelectable && (
-                                    <div className="text-[10px] text-amber-600 mt-1 truncate">
-                                      Not synced
+                                {staticPaymentCards.map((card, cIdx) => (
+                                  <button
+                                    key={`${card.name}-${cIdx}`}
+                                    type="button"
+                                    onClick={() => {
+                                      if (!card.isSelectable) return;
+                                      const newRows = [...multiPayments];
+                                      newRows[idx].selectedCardIndex = cIdx;
+                                      setMultiPayments(newRows);
+                                    }}
+                                    disabled={!card.isSelectable}
+                                    className={cn(
+                                      "rounded-lg border px-2 py-1.5 text-left text-xs",
+                                      !card.isSelectable &&
+                                        "opacity-60 cursor-not-allowed",
+                                      row.selectedCardIndex === cIdx
+                                        ? "border-primary bg-primary/5 text-primary"
+                                        : "border-border/50 text-muted-foreground hover:text-foreground",
+                                    )}
+                                  >
+                                    <div className="font-medium truncate">
+                                      {card.name}
                                     </div>
-                                  )}
-                                </button>
-                              ))}
+                                    {!card.isSelectable && (
+                                      <div className="text-[10px] text-amber-600 mt-1 truncate">
+                                        Not synced
+                                      </div>
+                                    )}
+                                  </button>
+                                ))}
                               </div>
                               {hasUnsyncedLegacyCards && (
                                 <p className="text-[11px] text-amber-600">
@@ -3200,10 +4426,12 @@ export default function CheckoutPage() {
                                     "rounded-lg border px-2 py-1.5 text-left text-xs",
                                     row.selectedStaticQrIndex === qIdx
                                       ? "border-primary bg-primary/5 text-primary"
-                                      : "border-border/50 text-muted-foreground hover:text-foreground"
+                                      : "border-border/50 text-muted-foreground hover:text-foreground",
                                   )}
                                 >
-                                  <div className="font-medium truncate">{qr.name}</div>
+                                  <div className="font-medium truncate">
+                                    {qr.name}
+                                  </div>
                                 </button>
                               ))}
                             </div>
@@ -3219,11 +4447,23 @@ export default function CheckoutPage() {
                   variant="outline"
                   size="sm"
                   onClick={() => {
-                    const totalAllocated = multiPayments.reduce((sum, r) => sum + (parseFloat(r.amount) || 0), 0);
-                    const remaining = Math.max(0, displayBalanceDue - totalAllocated);
+                    const totalAllocated = multiPayments.reduce(
+                      (sum, r) => sum + (parseFloat(r.amount) || 0),
+                      0,
+                    );
+                    const remaining = Math.max(
+                      0,
+                      displayBalanceDue - totalAllocated,
+                    );
                     setMultiPayments([
                       ...multiPayments,
-                      { method: "cash", amount: remaining > 0 ? remaining.toFixed(2) : "", reference: "", selectedStaticQrIndex: 0, selectedCardIndex: 0 }
+                      {
+                        method: "cash",
+                        amount: remaining > 0 ? remaining.toFixed(2) : "",
+                        reference: "",
+                        selectedStaticQrIndex: 0,
+                        selectedCardIndex: 0,
+                      },
                     ]);
                   }}
                   className="w-full gap-2 border-dashed"
@@ -3233,7 +4473,9 @@ export default function CheckoutPage() {
 
                 {/* Customer Selection for Credit in Multi Payment */}
                 {(() => {
-                  const hasCreditInMulti = multiPayments.some(r => r.method === "credit");
+                  const hasCreditInMulti = multiPayments.some(
+                    (r) => r.method === "credit",
+                  );
                   if (!hasCreditInMulti) return null;
 
                   return (
@@ -3251,7 +4493,10 @@ export default function CheckoutPage() {
                       ) : (
                         <div className="p-3 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 rounded-lg text-sm flex items-center gap-2 border border-blue-100 dark:border-blue-900">
                           <User className="h-4 w-4" />
-                          Charging to order&apos;s customer: <span className="font-bold">{orderMeta.customer_name || "Guest"}</span>
+                          Charging to order&apos;s customer:{" "}
+                          <span className="font-bold">
+                            {orderMeta.customer_name || "Guest"}
+                          </span>
                         </div>
                       )}
                     </div>
@@ -3262,18 +4507,29 @@ export default function CheckoutPage() {
                 <div className="p-3 bg-muted/40 rounded-xl space-y-1.5 text-sm">
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Balance Due:</span>
-                    <span className="font-bold">{formatCurrency(displayBalanceDue, curr)}</span>
+                    <span className="font-bold">
+                      {formatCurrency(displayBalanceDue, curr)}
+                    </span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-muted-foreground">Allocated:</span>
+                    <span className="text-muted-foreground">
+                      Payment total:
+                    </span>
                     {(() => {
-                      const totalAllocated = multiPayments.reduce((sum, r) => sum + (parseFloat(r.amount) || 0), 0);
+                      const totalAllocated = multiPayments.reduce(
+                        (sum, r) => sum + (parseFloat(r.amount) || 0),
+                        0,
+                      );
                       const difference = totalAllocated - displayBalanceDue;
                       return (
-                        <span className={cn(
-                          "font-bold",
-                          Math.abs(difference) < 0.01 ? "text-emerald-600" : "text-orange-600"
-                        )}>
+                        <span
+                          className={cn(
+                            "font-bold",
+                            Math.abs(difference) < 0.01
+                              ? "text-emerald-600"
+                              : "text-orange-600",
+                          )}
+                        >
                           {formatCurrency(totalAllocated, curr)}
                         </span>
                       );
@@ -3285,10 +4541,26 @@ export default function CheckoutPage() {
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setPaymentOpen(false)}>Cancel</Button>
-            <Button onClick={handleAddPayment} disabled={paySubmitting} className="gap-2">
-              {paySubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <CreditCard className="h-4 w-4" />}
-              {paySubmitting ? "Processing..." : (isMultiPayment ? "Process Multiple Payments" : (payMethod === "fonepay" ? "Generate Fonepay QR" : "Add Payment"))}
+            <Button variant="outline" onClick={() => setPaymentOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleAddPayment}
+              disabled={paySubmitting}
+              className="gap-2"
+            >
+              {paySubmitting ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <CreditCard className="h-4 w-4" />
+              )}
+              {paySubmitting
+                ? "Processing..."
+                : isMultiPayment
+                  ? "Process Multiple Payments"
+                  : payMethod === "fonepay"
+                    ? "Generate Fonepay QR"
+                    : "Add Payment"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -3299,39 +4571,32 @@ export default function CheckoutPage() {
           <DialogHeader>
             <DialogTitle>Edit Payment</DialogTitle>
             <DialogDescription>
-              Update payment method/reference after settlement. Amount is fixed for this payment record.
+              Update the payment method or reference. The amount cannot be
+              changed.
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 py-2 min-w-0">
             {editPayError && (
-              <div className="p-3 rounded-lg bg-destructive/10 text-destructive text-sm font-medium">{editPayError}</div>
+              <div className="p-3 rounded-lg bg-destructive/10 text-destructive text-sm font-medium">
+                {editPayError}
+              </div>
             )}
 
             <div className="rounded-lg border bg-muted/20 p-3 text-sm">
-              Amount: <span className="font-semibold">{formatCurrency(Number(editingPayment?.amount || 0), curr)}</span>
+              Amount:{" "}
+              <span className="font-semibold">
+                {formatCurrency(Number(editingPayment?.amount || 0), curr)}
+              </span>
             </div>
 
             <div className="space-y-2">
               <Label>Payment Method</Label>
-              <div className="grid grid-cols-2 gap-2 min-w-0">
-                {PAYMENT_METHODS.map((m) => (
-                  <button
-                    key={`edit-${m.value}`}
-                    type="button"
-                    onClick={() => setEditPayMethod(m.value)}
-                    className={cn(
-                      "flex items-center gap-2 p-3 rounded-xl border-2 transition-all text-sm font-medium min-w-0",
-                      editPayMethod === m.value
-                        ? "border-primary bg-primary/5 text-primary"
-                        : "border-border/50 hover:border-border text-muted-foreground hover:text-foreground"
-                    )}
-                  >
-                    <m.icon className="h-4 w-4 shrink-0" />
-                    <span className="truncate">{m.label}</span>
-                  </button>
-                ))}
-              </div>
+              <PaymentMethodGrid
+                methods={PAYMENT_METHODS}
+                value={editPayMethod}
+                onChange={setEditPayMethod}
+              />
             </div>
 
             {editPayMethod === "digital" && (
@@ -3359,7 +4624,7 @@ export default function CheckoutPage() {
                           "rounded-lg border px-3 py-2 text-left text-sm",
                           editSelectedStaticQrIndex === idx
                             ? "border-primary bg-primary/5 text-primary"
-                            : "border-border/50 text-muted-foreground hover:text-foreground"
+                            : "border-border/50 text-muted-foreground hover:text-foreground",
                         )}
                       >
                         <div className="font-medium truncate">{qr.name}</div>
@@ -3387,34 +4652,38 @@ export default function CheckoutPage() {
                 ) : (
                   <div className="space-y-2">
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {staticPaymentCards.map((card, idx) => (
-                      <button
-                        key={`edit-card-${card.name}-${idx}`}
-                        type="button"
-                        onClick={() => {
-                          if (!card.isSelectable) return;
-                          setEditSelectedCardIndex(idx);
-                        }}
-                        disabled={!card.isSelectable}
-                        className={cn(
-                          "rounded-lg border px-3 py-2 text-left text-sm",
-                          !card.isSelectable && "opacity-60 cursor-not-allowed",
-                          editSelectedCardIndex === idx
-                            ? "border-primary bg-primary/5 text-primary"
-                            : "border-border/50 text-muted-foreground hover:text-foreground"
-                        )}
-                      >
-                        <div className="font-medium truncate">{card.name}</div>
-                        <div className="text-[11px] text-muted-foreground truncate">
-                          {card.identifier || "No identifier"}
-                        </div>
-                        {!card.isSelectable && (
-                          <div className="text-[11px] text-amber-600 mt-1">
-                            Saved in settings only. Sync it in Accounting Setup to use it here.
+                      {staticPaymentCards.map((card, idx) => (
+                        <button
+                          key={`edit-card-${card.name}-${idx}`}
+                          type="button"
+                          onClick={() => {
+                            if (!card.isSelectable) return;
+                            setEditSelectedCardIndex(idx);
+                          }}
+                          disabled={!card.isSelectable}
+                          className={cn(
+                            "rounded-lg border px-3 py-2 text-left text-sm",
+                            !card.isSelectable &&
+                              "opacity-60 cursor-not-allowed",
+                            editSelectedCardIndex === idx
+                              ? "border-primary bg-primary/5 text-primary"
+                              : "border-border/50 text-muted-foreground hover:text-foreground",
+                          )}
+                        >
+                          <div className="font-medium truncate">
+                            {card.name}
                           </div>
-                        )}
-                      </button>
-                    ))}
+                          <div className="text-[11px] text-muted-foreground truncate">
+                            {card.identifier || "No identifier"}
+                          </div>
+                          {!card.isSelectable && (
+                            <div className="text-[11px] text-amber-600 mt-1">
+                              Saved in settings only. Sync it in Accounting
+                              Setup to use it here.
+                            </div>
+                          )}
+                        </button>
+                      ))}
                     </div>
                     {hasUnsyncedLegacyCards && (
                       <p className="text-xs text-amber-600">
@@ -3438,9 +4707,19 @@ export default function CheckoutPage() {
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setEditPaymentOpen(false)}>Cancel</Button>
-            <Button onClick={handleUpdatePayment} disabled={editPaySubmitting} className="gap-2">
-              {editPaySubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <CreditCard className="h-4 w-4" />}
+            <Button variant="outline" onClick={() => setEditPaymentOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleUpdatePayment}
+              disabled={editPaySubmitting}
+              className="gap-2"
+            >
+              {editPaySubmitting ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <CreditCard className="h-4 w-4" />
+              )}
               {editPaySubmitting ? "Updating..." : "Update Payment"}
             </Button>
           </DialogFooter>
@@ -3453,17 +4732,22 @@ export default function CheckoutPage() {
           <DialogHeader>
             <DialogTitle>Split Bill</DialogTitle>
             <DialogDescription>
-              Assign item quantities to different guests to generate separate child bills.
+              Assign item quantities to different guests to generate separate
+              child bills.
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-6 py-2 min-w-0">
             {splitError && (
-              <div className="p-3 rounded-lg bg-destructive/10 text-destructive text-sm font-medium">{splitError}</div>
+              <div className="p-3 rounded-lg bg-destructive/10 text-destructive text-sm font-medium">
+                {splitError}
+              </div>
             )}
 
             <div className="flex items-center justify-between">
-              <span className="text-sm font-medium text-muted-foreground">Guests: {splitParts.length}</span>
+              <span className="text-sm font-medium text-muted-foreground">
+                Guests: {splitParts.length}
+              </span>
               <div className="flex gap-2">
                 <Button
                   type="button"
@@ -3486,7 +4770,10 @@ export default function CheckoutPage() {
                   onClick={() => {
                     setSplitParts([
                       ...splitParts,
-                      { label: `Guest ${splitParts.length + 1}`, items: buildSplitInitialItems() }
+                      {
+                        label: `Guest ${splitParts.length + 1}`,
+                        items: buildSplitInitialItems(),
+                      },
                     ]);
                   }}
                 >
@@ -3503,7 +4790,10 @@ export default function CheckoutPage() {
                     <tr className="border-b bg-muted/40 text-left">
                       <th className="p-3 font-semibold">Item & Qty</th>
                       {splitParts.map((part, idx) => (
-                        <th key={idx} className="p-3 font-semibold min-w-[140px]">
+                        <th
+                          key={idx}
+                          className="p-3 font-semibold min-w-[140px]"
+                        >
                           <Input
                             className="h-8 py-1 px-2 font-bold"
                             value={part.label}
@@ -3515,25 +4805,39 @@ export default function CheckoutPage() {
                           />
                         </th>
                       ))}
-                      <th className="p-3 font-semibold text-right text-muted-foreground">Unassigned</th>
+                      <th className="p-3 font-semibold text-right text-muted-foreground">
+                        Unassigned
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
                     {splitSourceItems.map((item: any) => {
-                      const totalAllocated = splitParts.reduce((sum, part) => sum + (part.items[item.id] || 0), 0);
+                      const totalAllocated = splitParts.reduce(
+                        (sum, part) => sum + (part.items[item.id] || 0),
+                        0,
+                      );
                       const unassigned = item.qty - totalAllocated;
-                      const itemName = item.name_snapshot || item.name || "Item";
+                      const itemName =
+                        item.name_snapshot || item.name || "Item";
                       const modifierText = item.modifiers?.length
                         ? ` • ${item.modifiers.map((mod: any) => mod.modifier_name_snapshot).join(", ")}`
                         : "";
-                      const noteText = item.notes ? ` • Note: ${item.notes}` : "";
+                      const noteText = item.notes
+                        ? ` • Note: ${item.notes}`
+                        : "";
 
                       return (
-                        <tr key={item.id} className="border-b last:border-0 bg-background/30 hover:bg-muted/5">
+                        <tr
+                          key={item.id}
+                          className="border-b last:border-0 bg-background/30 hover:bg-muted/5"
+                        >
                           <td className="p-3 font-medium">
                             <div>{itemName}</div>
                             <div className="text-xs text-muted-foreground">
-                              Total: {item.qty} • {formatCurrency(item.unit_price, curr)} each{modifierText}{noteText}
+                              Total: {item.qty} •{" "}
+                              {formatCurrency(item.unit_price, curr)} each
+                              {modifierText}
+                              {noteText}
                             </div>
                           </td>
                           {splitParts.map((part, partIdx) => (
@@ -3548,14 +4852,17 @@ export default function CheckoutPage() {
                                     const currentQty = part.items[item.id] || 0;
                                     if (currentQty <= 0) return;
                                     const newParts = [...splitParts];
-                                    newParts[partIdx].items[item.id] = currentQty - 1;
+                                    newParts[partIdx].items[item.id] =
+                                      currentQty - 1;
                                     setSplitParts(newParts);
                                   }}
                                   disabled={(part.items[item.id] || 0) <= 0}
                                 >
                                   -
                                 </Button>
-                                <span className="w-8 text-center font-bold">{part.items[item.id] || 0}</span>
+                                <span className="w-8 text-center font-bold">
+                                  {part.items[item.id] || 0}
+                                </span>
                                 <Button
                                   type="button"
                                   variant="outline"
@@ -3565,7 +4872,8 @@ export default function CheckoutPage() {
                                     const currentQty = part.items[item.id] || 0;
                                     if (unassigned <= 0) return;
                                     const newParts = [...splitParts];
-                                    newParts[partIdx].items[item.id] = currentQty + 1;
+                                    newParts[partIdx].items[item.id] =
+                                      currentQty + 1;
                                     setSplitParts(newParts);
                                   }}
                                   disabled={unassigned <= 0}
@@ -3575,10 +4883,14 @@ export default function CheckoutPage() {
                               </div>
                             </td>
                           ))}
-                          <td className={cn(
-                            "p-3 text-right font-bold tabular-nums",
-                            unassigned > 0 ? "text-orange-600" : "text-muted-foreground"
-                          )}>
+                          <td
+                            className={cn(
+                              "p-3 text-right font-bold tabular-nums",
+                              unassigned > 0
+                                ? "text-orange-600"
+                                : "text-muted-foreground",
+                            )}
+                          >
                             {unassigned}
                           </td>
                         </tr>
@@ -3591,9 +4903,19 @@ export default function CheckoutPage() {
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setSplitBillOpen(false)}>Cancel</Button>
-            <Button onClick={handleSplitBill} disabled={splitSubmitting} className="gap-2">
-              {splitSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+            <Button variant="outline" onClick={() => setSplitBillOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSplitBill}
+              disabled={splitSubmitting}
+              className="gap-2"
+            >
+              {splitSubmitting ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCw className="h-4 w-4" />
+              )}
               {splitSubmitting ? "Splitting..." : "Perform Split"}
             </Button>
           </DialogFooter>
@@ -3606,7 +4928,7 @@ export default function CheckoutPage() {
           <DialogHeader>
             <DialogTitle>Pay All Guest Bills</DialogTitle>
             <DialogDescription>
-              Record a single bulk payment to settle all outstanding guest bills.
+              Record one payment for all outstanding guest bills.
             </DialogDescription>
           </DialogHeader>
 
@@ -3621,7 +4943,9 @@ export default function CheckoutPage() {
                   <SelectItem value="cash">Cash</SelectItem>
                   <SelectItem value="card">Card</SelectItem>
                   <SelectItem value="digital">Digital (Fonepay/QR)</SelectItem>
-                  <SelectItem value="credit">Credit (Charge Customer)</SelectItem>
+                  <SelectItem value="credit">
+                    Credit (Charge Customer)
+                  </SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -3640,9 +4964,19 @@ export default function CheckoutPage() {
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setPayAllOpen(false)}>Cancel</Button>
-            <Button onClick={handlePayAllGuestBills} disabled={payAllSubmitting} className="gap-2 bg-orange-600 hover:bg-orange-700 text-white">
-              {payAllSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <CreditCard className="h-4 w-4" />}
+            <Button variant="outline" onClick={() => setPayAllOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handlePayAllGuestBills}
+              disabled={payAllSubmitting}
+              className="gap-2 bg-orange-600 hover:bg-orange-700 text-white"
+            >
+              {payAllSubmitting ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <CreditCard className="h-4 w-4" />
+              )}
               {payAllSubmitting ? "Paying..." : "Pay All Guest Bills"}
             </Button>
           </DialogFooter>
@@ -3666,7 +5000,8 @@ export default function CheckoutPage() {
               </div>
             )}
             <div className="rounded-lg border bg-muted/20 p-3 text-sm">
-              Available points: <span className="font-semibold">{availableLoyaltyPoints}</span>
+              Available points:{" "}
+              <span className="font-semibold">{availableLoyaltyPoints}</span>
             </div>
             <div className="space-y-2">
               <Label htmlFor="loyalty-points">Points to redeem</Label>
@@ -3681,7 +5016,11 @@ export default function CheckoutPage() {
             </div>
           </div>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setLoyaltyOpen(false)}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setLoyaltyOpen(false)}
+            >
               Cancel
             </Button>
             <Button
@@ -3689,7 +5028,9 @@ export default function CheckoutPage() {
               disabled={loyaltySubmitting || !checkoutCustomerId}
               onClick={async () => {
                 if (!canApplyDiscount) {
-                  setLoyaltyError("You do not have permission to apply discounts.");
+                  setLoyaltyError(
+                    "You do not have permission to apply discounts.",
+                  );
                   return;
                 }
                 if (!checkoutCustomerId) {
@@ -3705,15 +5046,21 @@ export default function CheckoutPage() {
                   setLoyaltyError("Enter valid points to redeem");
                   return;
                 }
-                if (availableLoyaltyPoints > 0 && points > availableLoyaltyPoints) {
+                if (
+                  availableLoyaltyPoints > 0 &&
+                  points > availableLoyaltyPoints
+                ) {
                   setLoyaltyError("Cannot redeem more points than available");
                   return;
                 }
-                const maxAllowedByProfile = customerMaxDiscount > 0 ? customerMaxDiscount : Number.MAX_SAFE_INTEGER;
+                const maxAllowedByProfile =
+                  customerMaxDiscount > 0
+                    ? customerMaxDiscount
+                    : Number.MAX_SAFE_INTEGER;
                 const redeemAmount = Math.min(
                   points, // 1 point = 1 currency unit
                   displayGrandTotal || 0,
-                  maxAllowedByProfile
+                  maxAllowedByProfile,
                 );
                 if (!Number.isFinite(redeemAmount) || redeemAmount <= 0) {
                   setLoyaltyError("Redeem amount is not valid for this order");
@@ -3725,27 +5072,40 @@ export default function CheckoutPage() {
                   const beforeGrandTotal = Number(displayGrandTotal || 0);
 
                   // Ensure order has selected customer before applying loyalty discount.
-                  if (String(orderMeta?.customer_id || "") !== String(checkoutCustomerId)) {
+                  if (
+                    String(orderMeta?.customer_id || "") !==
+                    String(checkoutCustomerId)
+                  ) {
                     await apiClient.patch(OrderApis.updateOrder(orderId), {
                       customer_id: Number(checkoutCustomerId),
                     });
-                    setOrderMeta((prev) => (
+                    setOrderMeta((prev) =>
                       prev
                         ? { ...prev, customer_id: Number(checkoutCustomerId) }
-                        : prev
-                    ));
+                        : prev,
+                    );
                   }
 
-                  await apiClient.post(CustomerApis.redeemLoyaltyPoints(checkoutCustomerId), {
-                    points,
-                    order_id: orderId,
-                  });
+                  await apiClient.post(
+                    CustomerApis.redeemLoyaltyPoints(checkoutCustomerId),
+                    {
+                      points,
+                      order_id: orderId,
+                    },
+                  );
 
                   // Check whether backend already reflected loyalty discount in order totals.
-                  const postRedeemBillRes = await apiClient.get(OrderApis.getOrderBill(orderId));
+                  const postRedeemBillRes = await apiClient.get(
+                    OrderApis.getOrderBill(orderId),
+                  );
                   const postRedeemBill = postRedeemBillRes?.data?.data;
-                  const afterGrandTotal = Number(postRedeemBill?.grand_total ?? beforeGrandTotal);
-                  const reducedBy = Math.max(0, beforeGrandTotal - afterGrandTotal);
+                  const afterGrandTotal = Number(
+                    postRedeemBill?.grand_total ?? beforeGrandTotal,
+                  );
+                  const reducedBy = Math.max(
+                    0,
+                    beforeGrandTotal - afterGrandTotal,
+                  );
 
                   // Apply fallback discount only if backend did not reduce totals.
                   if (reducedBy < 0.009) {
@@ -3760,9 +5120,15 @@ export default function CheckoutPage() {
                   await Promise.all([fetchBill(), fetchCustomers()]);
                   setLoyaltyOpen(false);
                   setLoyaltyPoints("");
-                  toast.success(`Loyalty points redeemed. ${formatCurrency(redeemAmount, curr)} applied to bill.`);
+                  toast.success(
+                    `Loyalty points redeemed. ${formatCurrency(redeemAmount, curr)} applied to bill.`,
+                  );
                 } catch (err: any) {
-                  setLoyaltyError(err?.response?.data?.detail || err?.response?.data?.message || "Failed to redeem loyalty points");
+                  setLoyaltyError(
+                    err?.response?.data?.detail ||
+                      err?.response?.data?.message ||
+                      "Failed to redeem loyalty points",
+                  );
                 } finally {
                   setLoyaltySubmitting(false);
                 }
@@ -3779,37 +5145,66 @@ export default function CheckoutPage() {
           <DialogHeader>
             <DialogTitle className="text-lg">Fonepay Payment</DialogTitle>
             <DialogDescription>
-              PRN: <span className="font-semibold text-foreground">{fonepayPrn || "-"}</span>
+              PRN:{" "}
+              <span className="font-semibold text-foreground">
+                {fonepayPrn || "-"}
+              </span>
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="rounded-lg border bg-muted/20 p-3 text-sm flex items-center justify-between">
               <div>
-                Status: <span className={cn("font-semibold capitalize", fonepayStatus === "success" ? "text-emerald-600" : "text-orange-600")}>{fonepayStatus}</span>
+                Status:{" "}
+                <span
+                  className={cn(
+                    "font-semibold capitalize",
+                    fonepayStatus === "success"
+                      ? "text-emerald-600"
+                      : "text-orange-600",
+                  )}
+                >
+                  {fonepayStatus}
+                </span>
               </div>
-              {fonepayStatus === "pending" && <Loader2 className="h-5 w-5 animate-spin text-orange-500" />}
+              {fonepayStatus === "pending" && (
+                <Loader2 className="h-5 w-5 animate-spin text-orange-500" />
+              )}
             </div>
-            
+
             {fonepayStatus === "success" ? (
               <div className="mx-auto w-[300px] h-[300px] rounded-xl border bg-emerald-50 dark:bg-emerald-900/20 p-2 flex flex-col items-center justify-center gap-4">
                 <div className="h-24 w-24 rounded-full bg-emerald-100 dark:bg-emerald-800/40 flex items-center justify-center">
                   <CheckCircle className="h-14 w-14 text-emerald-600 dark:text-emerald-400" />
                 </div>
-                <p className="font-bold text-lg text-emerald-700 dark:text-emerald-400">Payment Successful</p>
-                <p className="text-sm text-emerald-600/80">Redirecting to receipt...</p>
+                <p className="font-bold text-lg text-emerald-700 dark:text-emerald-400">
+                  Payment Successful
+                </p>
+                <p className="text-sm text-emerald-600/80">
+                  Redirecting to receipt...
+                </p>
               </div>
             ) : fonepayQr ? (
               <div className="mx-auto w-[300px] h-[300px] rounded-xl border bg-white p-3 relative shadow-md">
-                <img src={fonepayQr} alt="Fonepay QR" className={cn("h-full w-full object-contain transition-opacity", fonepayStatus === "success" ? "opacity-0" : "opacity-100")} />
+                <img
+                  src={fonepayQr}
+                  alt="Fonepay QR"
+                  className={cn(
+                    "h-full w-full object-contain transition-opacity",
+                    fonepayStatus === "success" ? "opacity-0" : "opacity-100",
+                  )}
+                />
               </div>
             ) : (
               <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground text-center">
-                QR image not returned by backend. Use PRN/reference for payment confirmation.
+                QR image not returned by backend. Use PRN/reference for payment
+                confirmation.
               </div>
             )}
-            
+
             {fonepayPayloadText && fonepayStatus !== "success" && (
-              <div className="rounded-lg border bg-muted/20 p-3 text-xs break-all text-center">{fonepayPayloadText}</div>
+              <div className="rounded-lg border bg-muted/20 p-3 text-xs break-all text-center">
+                {fonepayPayloadText}
+              </div>
             )}
           </div>
           <DialogFooter>
@@ -3823,12 +5218,24 @@ export default function CheckoutPage() {
                   setFonepayLoading(false);
                 }
               }}
-              disabled={fonepayLoading || fonepayVerifying || fonepayStatus === "success"}
+              disabled={
+                fonepayLoading ||
+                fonepayVerifying ||
+                fonepayStatus === "success"
+              }
             >
               {fonepayLoading ? "Refreshing QR..." : "Refresh QR"}
             </Button>
-            <Button onClick={handleVerifyFonepay} disabled={fonepayVerifying || fonepayStatus === "success"} className="gap-2">
-              {fonepayVerifying ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
+            <Button
+              onClick={handleVerifyFonepay}
+              disabled={fonepayVerifying || fonepayStatus === "success"}
+              className="gap-2"
+            >
+              {fonepayVerifying ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <CheckCircle className="h-4 w-4" />
+              )}
               {fonepayVerifying ? "Verifying..." : "Verify Payment"}
             </Button>
           </DialogFooter>
@@ -3855,7 +5262,9 @@ export default function CheckoutPage() {
               <Input
                 id="qa-name"
                 value={quickAddForm.name}
-                onChange={(e) => setQuickAddForm((s) => ({ ...s, name: e.target.value }))}
+                onChange={(e) =>
+                  setQuickAddForm((s) => ({ ...s, name: e.target.value }))
+                }
                 placeholder="Customer name"
                 required
               />
@@ -3865,7 +5274,9 @@ export default function CheckoutPage() {
               <Input
                 id="qa-phone"
                 value={quickAddForm.phone}
-                onChange={(e) => setQuickAddForm((s) => ({ ...s, phone: e.target.value }))}
+                onChange={(e) =>
+                  setQuickAddForm((s) => ({ ...s, phone: e.target.value }))
+                }
                 placeholder="+977 98..."
                 required
               />
@@ -3876,9 +5287,49 @@ export default function CheckoutPage() {
                 id="qa-email"
                 type="email"
                 value={quickAddForm.email}
-                onChange={(e) => setQuickAddForm((s) => ({ ...s, email: e.target.value }))}
+                onChange={(e) =>
+                  setQuickAddForm((s) => ({ ...s, email: e.target.value }))
+                }
                 placeholder="customer@example.com"
               />
+            </div>
+            <div className="rounded-lg border bg-muted/40 p-3">
+              <p className="text-sm font-semibold">Marketing offers (optional)</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Record only the channels the customer explicitly agrees to.
+              </p>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <label className="flex cursor-pointer items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={quickAddMarketingConsent.email}
+                    onChange={(event) =>
+                      setQuickAddMarketingConsent((current) => ({
+                        ...current,
+                        email: event.target.checked,
+                      }))
+                    }
+                    className="h-4 w-4 rounded border-input accent-primary"
+                  />
+                  <Mail className="h-4 w-4 text-muted-foreground" />
+                  Email
+                </label>
+                <label className="flex cursor-pointer items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={quickAddMarketingConsent.whatsapp}
+                    onChange={(event) =>
+                      setQuickAddMarketingConsent((current) => ({
+                        ...current,
+                        whatsapp: event.target.checked,
+                      }))
+                    }
+                    className="h-4 w-4 rounded border-input accent-primary"
+                  />
+                  <MessageCircle className="h-4 w-4 text-muted-foreground" />
+                  WhatsApp
+                </label>
+              </div>
             </div>
             <div className="rounded-lg border p-3 space-y-3">
               <p className="text-sm font-semibold">
@@ -3915,9 +5366,7 @@ export default function CheckoutPage() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="qa-billing-address">
-                  Billing Address
-                </Label>
+                <Label htmlFor="qa-billing-address">Billing Address</Label>
                 <Input
                   id="qa-billing-address"
                   value={quickAddForm.billing_address}
@@ -3932,11 +5381,21 @@ export default function CheckoutPage() {
               </div>
             </div>
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setQuickAddOpen(false)}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setQuickAddOpen(false)}
+              >
                 Cancel
               </Button>
-              <Button type="submit" disabled={quickAddSubmitting} className="gap-2">
-                {quickAddSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              <Button
+                type="submit"
+                disabled={quickAddSubmitting}
+                className="gap-2"
+              >
+                {quickAddSubmitting ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : null}
                 {quickAddSubmitting ? "Adding..." : "Add Customer"}
               </Button>
             </DialogFooter>
@@ -3948,15 +5407,20 @@ export default function CheckoutPage() {
       <Dialog open={discountOpen} onOpenChange={setDiscountOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>{hasDiscount ? "Change Discount" : "Apply Discount"}</DialogTitle>
+            <DialogTitle>
+              {hasDiscount ? "Change Discount" : "Apply Discount"}
+            </DialogTitle>
             <DialogDescription>
-              Apply a promo code or manual discount to this order.
+              Apply a promo code, manual discount, or staff purchase discount to
+              this order.
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 py-2">
             {discountError && (
-              <div className="p-3 rounded-lg bg-destructive/10 text-destructive text-sm font-medium">{discountError}</div>
+              <div className="p-3 rounded-lg bg-destructive/10 text-destructive text-sm font-medium">
+                {discountError}
+              </div>
             )}
 
             {/* Discount Type Toggle */}
@@ -3968,7 +5432,7 @@ export default function CheckoutPage() {
                   "flex-1 p-3 rounded-xl border-2 text-sm font-medium transition-all",
                   discountType === "code"
                     ? "border-primary bg-primary/5 text-primary"
-                    : "border-border/50 text-muted-foreground hover:border-border"
+                    : "border-border/50 text-muted-foreground hover:border-border",
                 )}
               >
                 <Tag className="h-4 w-4 inline mr-2" />
@@ -3981,15 +5445,41 @@ export default function CheckoutPage() {
                   "flex-1 p-3 rounded-xl border-2 text-sm font-medium transition-all",
                   discountType === "manual"
                     ? "border-primary bg-primary/5 text-primary"
-                    : "border-border/50 text-muted-foreground hover:border-border"
+                    : "border-border/50 text-muted-foreground hover:border-border",
                 )}
               >
                 <Percent className="h-4 w-4 inline mr-2" />
                 Manual Amount
               </button>
+              <button
+                type="button"
+                onClick={() => setDiscountType("staff")}
+                className={cn(
+                  "flex-1 p-3 rounded-xl border-2 text-sm font-medium transition-all",
+                  discountType === "staff"
+                    ? "border-primary bg-primary/5 text-primary"
+                    : "border-border/50 text-muted-foreground hover:border-border",
+                )}
+              >
+                <User className="h-4 w-4 inline mr-2" />
+                Staff
+              </button>
             </div>
 
-            {discountType === "code" ? (
+            {discountType === "staff" ? (
+              <div className="space-y-2">
+                <Label>Staff member</Label>
+                <StaffSearchSelect
+                  staff={staffOptions}
+                  value={selectedStaffId}
+                  onValueChange={setSelectedStaffId}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Their staff purchase discount applies automatically and
+                  replaces any other discount on this order.
+                </p>
+              </div>
+            ) : discountType === "code" ? (
               <div className="space-y-2">
                 <Label htmlFor="discount-code">Discount Code</Label>
                 <Input
@@ -4004,13 +5494,18 @@ export default function CheckoutPage() {
             ) : (
               <div className="space-y-2">
                 <div className="text-xs text-muted-foreground">
-                  Balance due: <span className="font-semibold text-foreground">{formatCurrency(dueAmountForManualDiscount, curr)}</span>
+                  Balance due:{" "}
+                  <span className="font-semibold text-foreground">
+                    {formatCurrency(dueAmountForManualDiscount, curr)}
+                  </span>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="space-y-2">
                     <Label htmlFor="manual-discount">Discount Amount</Label>
                     <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm font-medium">{curr}</span>
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm font-medium">
+                        {curr}
+                      </span>
                       <Input
                         id="manual-discount"
                         type="number"
@@ -4026,11 +5521,16 @@ export default function CheckoutPage() {
                             return;
                           }
                           const amount = parseFloat(trimmed);
-                          if (!Number.isFinite(amount) || amount < 0 || dueAmountForManualDiscount <= 0) {
+                          if (
+                            !Number.isFinite(amount) ||
+                            amount < 0 ||
+                            dueAmountForManualDiscount <= 0
+                          ) {
                             setManualDiscountPercent("");
                             return;
                           }
-                          const pct = (amount / dueAmountForManualDiscount) * 100;
+                          const pct =
+                            (amount / dueAmountForManualDiscount) * 100;
                           setManualDiscountPercent(pct.toFixed(2));
                         }}
                         className="pl-12"
@@ -4039,7 +5539,9 @@ export default function CheckoutPage() {
                     </div>
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="manual-discount-percent">Discount Percent (%)</Label>
+                    <Label htmlFor="manual-discount-percent">
+                      Discount Percent (%)
+                    </Label>
                     <div className="relative">
                       <Input
                         id="manual-discount-percent"
@@ -4057,15 +5559,22 @@ export default function CheckoutPage() {
                             return;
                           }
                           const pct = parseFloat(trimmed);
-                          if (!Number.isFinite(pct) || pct < 0 || dueAmountForManualDiscount <= 0) {
+                          if (
+                            !Number.isFinite(pct) ||
+                            pct < 0 ||
+                            dueAmountForManualDiscount <= 0
+                          ) {
                             setManualDiscountAmount("");
                             return;
                           }
-                          const amount = dueAmountForManualDiscount * (pct / 100);
+                          const amount =
+                            dueAmountForManualDiscount * (pct / 100);
                           setManualDiscountAmount(amount.toFixed(2));
                         }}
                       />
-                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm font-medium">%</span>
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm font-medium">
+                        %
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -4074,16 +5583,39 @@ export default function CheckoutPage() {
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDiscountOpen(false)}>Cancel</Button>
-            <Button onClick={handleApplyDiscount} disabled={discountSubmitting} className="gap-2">
-              {discountSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Tag className="h-4 w-4" />}
+            <Button variant="outline" onClick={() => setDiscountOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleApplyDiscount}
+              disabled={discountSubmitting}
+              className="gap-2"
+            >
+              {discountSubmitting ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Tag className="h-4 w-4" />
+              )}
               {discountSubmitting ? "Applying..." : "Apply Discount"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* ── Issue Refund Dialog ── */}
+      {bill ? (
+        <CompletedSettlementCorrectionDialog
+          open={settlementCorrectionOpen}
+          onOpenChange={setSettlementCorrectionOpen}
+          orderId={orderId}
+          total={bill.grand_total}
+          payments={bill.payments}
+          onCorrected={async () => {
+            await Promise.all([fetchBill(), fetchContext(), fetchCustomers()]);
+          }}
+        />
+      ) : null}
+
+      {/* Legacy pre-completion refund dialog. Completed sales use the credit-note workflow above. */}
       <Dialog open={refundOpen} onOpenChange={setRefundOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -4092,7 +5624,8 @@ export default function CheckoutPage() {
               Process a refund for this order. Maximum refundable amount is{" "}
               <span className="font-bold text-foreground">
                 {bill ? formatCurrency(bill.total_paid, curr) : ""}
-              </span>.
+              </span>
+              .
             </DialogDescription>
           </DialogHeader>
 
@@ -4155,7 +5688,9 @@ export default function CheckoutPage() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="refund-reference">Reference / Notes (Optional)</Label>
+              <Label htmlFor="refund-reference">
+                Reference / Notes (Optional)
+              </Label>
               <Input
                 id="refund-reference"
                 placeholder="Transaction ID, customer notes, etc."

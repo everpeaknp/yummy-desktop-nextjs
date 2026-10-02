@@ -1,14 +1,22 @@
 "use client";
 
 import { useState } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Plus, Loader2 } from "lucide-react";
+import { Plus, Loader2, Mail, MessageCircle } from "lucide-react";
 import apiClient from "@/lib/api-client";
-import { CustomerApis } from "@/lib/api/endpoints";
+import { CustomerApis, GrowthApis } from "@/lib/api/endpoints";
 import { useAuth } from "@/hooks/use-auth";
+import { cn } from "@/lib/utils";
 import {
   customerPanValidationMessage,
   optionalCustomerText,
@@ -16,14 +24,31 @@ import {
 
 interface AddCustomerDialogProps {
   onCustomerAdded: () => void;
+  triggerClassName?: string;
+  iconOnly?: boolean;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  hideTrigger?: boolean;
 }
 
-export function AddCustomerDialog({ onCustomerAdded }: AddCustomerDialogProps) {
-  const [open, setOpen] = useState(false);
+export function AddCustomerDialog({
+  onCustomerAdded,
+  triggerClassName,
+  iconOnly = false,
+  open: controlledOpen,
+  onOpenChange,
+  hideTrigger = false,
+}: AddCustomerDialogProps) {
+  const [internalOpen, setInternalOpen] = useState(false);
+  const open = controlledOpen ?? internalOpen;
+  const setOpen = (nextOpen: boolean) => {
+    if (controlledOpen === undefined) setInternalOpen(nextOpen);
+    onOpenChange?.(nextOpen);
+  };
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const user = useAuth((state) => state.user);
-  
+
   const [formData, setFormData] = useState({
     name: "",
     phone: "",
@@ -32,10 +57,14 @@ export function AddCustomerDialog({ onCustomerAdded }: AddCustomerDialogProps) {
     pan_number: "",
     billing_address: "",
   });
+  const [marketingConsent, setMarketingConsent] = useState({
+    email: false,
+    whatsapp: false,
+  });
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+    setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -58,11 +87,33 @@ export function AddCustomerDialog({ onCustomerAdded }: AddCustomerDialogProps) {
         pan_number: optionalCustomerText(formData.pan_number),
         billing_address: optionalCustomerText(formData.billing_address),
         restaurant_id: user.restaurant_id,
-        is_active: true
+        is_active: true,
       };
 
       const res = await apiClient.post(CustomerApis.createCustomer, payload);
       if (res.data.status === "success") {
+        const customerId = res.data.data?.id;
+        if (
+          customerId &&
+          (marketingConsent.email || marketingConsent.whatsapp)
+        ) {
+          try {
+            await apiClient.post(
+              GrowthApis.staffConsentCapture,
+              {},
+              {
+                params: {
+                  customer_id: customerId,
+                  restaurant_id: user.restaurant_id,
+                  email_opted_in: marketingConsent.email,
+                  whatsapp_opted_in: marketingConsent.whatsapp,
+                },
+              },
+            );
+          } catch (consentError) {
+            console.warn("Customer created, but consent capture failed", consentError);
+          }
+        }
         setOpen(false);
         setFormData({
           name: "",
@@ -72,6 +123,7 @@ export function AddCustomerDialog({ onCustomerAdded }: AddCustomerDialogProps) {
           pan_number: "",
           billing_address: "",
         });
+        setMarketingConsent({ email: false, whatsapp: false });
         onCustomerAdded();
       }
     } catch (requestError: any) {
@@ -94,11 +146,21 @@ export function AddCustomerDialog({ onCustomerAdded }: AddCustomerDialogProps) {
         if (nextOpen) setError(null);
       }}
     >
-      <DialogTrigger asChild>
-        <Button className="bg-orange-600 hover:bg-orange-700 text-white">
-          <Plus className="w-4 h-4 mr-2" /> Add Customer
-        </Button>
-      </DialogTrigger>
+      {!hideTrigger ? (
+        <DialogTrigger asChild>
+          <Button
+            className={cn(
+              "bg-orange-600 text-white hover:bg-orange-700",
+              triggerClassName,
+            )}
+            size={iconOnly ? "icon" : "default"}
+            aria-label={iconOnly ? "Add customer" : undefined}
+          >
+            <Plus className={cn("h-4 w-4", !iconOnly && "mr-2")} />
+            {!iconOnly ? "Add Customer" : null}
+          </Button>
+        </DialogTrigger>
+      ) : null}
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-[520px]">
         <DialogHeader>
           <DialogTitle>Add New Customer</DialogTitle>
@@ -132,15 +194,53 @@ export function AddCustomerDialog({ onCustomerAdded }: AddCustomerDialogProps) {
             />
           </div>
           <div className="grid gap-2">
-             <Label htmlFor="email">Email (Optional)</Label>
-             <Input
-               id="email"
-               name="email"
-               type="email"
-               value={formData.email}
-               onChange={handleChange}
-               placeholder="john@example.com"
-             />
+            <Label htmlFor="email">Email (Optional)</Label>
+            <Input
+              id="email"
+              name="email"
+              type="email"
+              value={formData.email}
+              onChange={handleChange}
+              placeholder="john@example.com"
+            />
+          </div>
+          <div className="rounded-lg border bg-muted/40 p-4">
+            <p className="text-sm font-semibold">Marketing offers (optional)</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Record only the channels the customer explicitly agrees to.
+            </p>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <label className="flex cursor-pointer items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={marketingConsent.email}
+                  onChange={(event) =>
+                    setMarketingConsent((current) => ({
+                      ...current,
+                      email: event.target.checked,
+                    }))
+                  }
+                  className="h-4 w-4 rounded border-input accent-primary"
+                />
+                <Mail className="h-4 w-4 text-muted-foreground" />
+                Email
+              </label>
+              <label className="flex cursor-pointer items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={marketingConsent.whatsapp}
+                  onChange={(event) =>
+                    setMarketingConsent((current) => ({
+                      ...current,
+                      whatsapp: event.target.checked,
+                    }))
+                  }
+                  className="h-4 w-4 rounded border-input accent-primary"
+                />
+                <MessageCircle className="h-4 w-4 text-muted-foreground" />
+                WhatsApp
+              </label>
+            </div>
           </div>
           <div className="rounded-lg border p-4">
             <p className="mb-4 text-sm font-semibold">
@@ -189,11 +289,21 @@ export function AddCustomerDialog({ onCustomerAdded }: AddCustomerDialogProps) {
             </div>
           </div>
           <DialogFooter>
-             <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-             <Button type="submit" disabled={loading} className="bg-orange-600 hover:bg-orange-700">
-               {loading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-               Create Customer
-             </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              disabled={loading}
+              className="bg-orange-600 hover:bg-orange-700"
+            >
+              {loading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              Create Customer
+            </Button>
           </DialogFooter>
         </form>
       </DialogContent>

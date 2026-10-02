@@ -16,26 +16,21 @@ export function mapAnalyticsTrends(
 ): TrendPoint[] {
   if (!payload) return [];
 
-  // Check V2 Tabbed Structure First
   const overviewTab = payload?.tabs?.overview;
-  const revenueTrends = overviewTab?.revenue_trends || overviewTab?.health_trends;
-  if (revenueTrends?.labels?.length && revenueTrends?.revenue?.length) {
-    return revenueTrends.labels.map((label: string, i: number) => ({
-      date: label,
-      value: revenueTrends.revenue[i] ?? 0,
+  const chart = overviewTab?.trends_chart || payload.trends_chart;
+  const selected = useHourly ? chart?.hourly : chart?.daily;
+  if (selected?.labels?.length && selected?.revenue?.length) {
+    return selected.labels.map((label: string, i: number) => ({
+      date: String(label),
+      value: Number(selected.revenue[i] ?? 0),
     }));
   }
 
-  // Legacy Fallback
-  const hourly = payload.trends_chart?.hourly;
-  if (
-    useHourly &&
-    hourly?.labels?.length &&
-    hourly?.revenue?.length
-  ) {
-    return hourly.labels.map((label: any, i: number) => ({
+  const revenueTrends = overviewTab?.revenue_trends || overviewTab?.health_trends;
+  if (revenueTrends?.labels?.length && revenueTrends?.revenue?.length) {
+    return revenueTrends.labels.map((label: string, i: number) => ({
       date: String(label),
-      value: hourly.revenue?.[i] ?? 0,
+      value: Number(revenueTrends.revenue[i] ?? 0),
     }));
   }
 

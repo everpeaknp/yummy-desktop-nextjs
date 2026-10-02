@@ -4,7 +4,7 @@ import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
 import { RoleGuard } from "@/components/auth/role-guard";
 import { GlobalKotPrinter } from "@/components/receipts/global-kot-printer";
-import { useEffect, useRef, useState, Suspense } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { useAuth, useAuthHydrated } from "@/hooks/use-auth";
 import { useRestaurant } from "@/hooks/use-restaurant";
@@ -13,6 +13,9 @@ import { hasStoredSession } from "@/lib/auth-storage";
 import { useSessionRestoreState } from "@/hooks/use-session-restore";
 import { ProductTourHost } from "@/components/onboarding/product-tour-host";
 import { canAccessOnboarding } from "@/lib/onboarding";
+import { MobileBottomNav } from "@/components/layout/mobile-bottom-nav";
+import { isMobileSecondaryModuleRoute } from "@/lib/mobile-module-navigation";
+import { cn } from "@/lib/utils";
 
 export default function DashboardLayout({
   children,
@@ -22,8 +25,6 @@ export default function DashboardLayout({
   // NOTE: Selecting individual fields avoids returning a new object snapshot each time,
   // which can trigger `useSyncExternalStore` infinite-loop warnings in React 18.
   const restaurant = useRestaurant((s) => s.restaurant);
-  const selectedModule = useRestaurant((s) => s.selectedModule);
-  const setSelectedModule = useRestaurant((s) => s.setSelectedModule);
   const fetchRestaurant = useRestaurant((s) => s.fetchRestaurant);
   const loading = useRestaurant((s) => s.loading);
   const user = useAuth((s) => s.user);
@@ -35,7 +36,6 @@ export default function DashboardLayout({
   const pathname = usePathname() || "";
   const [mounted, setMounted] = useState(false);
   const [storeHydrated, setStoreHydrated] = useState(false);
-  const gatewayRedirectedRef = useRef(false);
 
   usePermissionsSync();
 
@@ -82,48 +82,30 @@ export default function DashboardLayout({
   useEffect(() => {
     if (!mounted || !storeHydrated) return;
     if (loading || !restaurant) return;
-    if (gatewayRedirectedRef.current) return;
-
     const hotelEnabled = restaurant.hotel_enabled;
     const restEnabled = restaurant.restaurant_enabled;
-    const bothEnabled = hotelEnabled && restEnabled;
 
-    // --- Dual Mode ---
-    if (bothEnabled) {
-      if (!selectedModule) {
-        gatewayRedirectedRef.current = true;
-        router.replace("/gateway");
-        return;
-      }
-      return;
-    }
-
-    // --- Hotel Only ---
+    // Hotel-only properties land in PMS. Dual properties keep one shared shell.
     if (hotelEnabled && !restEnabled) {
-      if (selectedModule !== "hotel") setSelectedModule("hotel");
-      // Redirect away from restaurant-only pages
       if (["/dashboard", "/gateway"].includes(pathname)) {
-        router.replace("/rooms");
+        router.replace("/hotel");
       }
       return;
     }
 
-    // --- Restaurant Only (or default) ---
-    if (selectedModule !== "restaurant") setSelectedModule("restaurant");
-    // Redirect away from hotel-only / gateway pages
-    if (["/rooms", "/gateway"].includes(pathname)) {
+    // Restaurant-only properties cannot enter hotel routes from old bookmarks.
+    if (
+      !hotelEnabled &&
+      restEnabled &&
+      (pathname === "/hotel" ||
+        pathname.startsWith("/hotel/") ||
+        pathname === "/rooms" ||
+        pathname.startsWith("/rooms/") ||
+        pathname === "/gateway")
+    ) {
       router.replace("/dashboard");
     }
-  }, [
-    restaurant,
-    selectedModule,
-    pathname,
-    router,
-    setSelectedModule,
-    loading,
-    mounted,
-    storeHydrated,
-  ]);
+  }, [restaurant, pathname, router, loading, mounted, storeHydrated]);
 
   const showShell = mounted && !waitingForAuth && (restaurant || !loading);
 
@@ -144,7 +126,8 @@ export default function DashboardLayout({
   }
 
   if (!restaurant) {
-    if (canAccessOnboarding(user)) {
+    // Show spinner only while actively loading
+    if (loading) {
       return (
         <div className="flex h-screen items-center justify-center bg-background">
           <div className="h-8 w-8 animate-spin rounded-full border-b-2 border-primary" />
@@ -152,6 +135,7 @@ export default function DashboardLayout({
       );
     }
 
+    // If we've finished loading but still have no restaurant, show error
     return (
       <div className="flex h-screen flex-col items-center justify-center gap-4 p-6 text-center">
         <p className="text-sm text-muted-foreground">
@@ -169,15 +153,38 @@ export default function DashboardLayout({
     );
   }
 
+  const isHotelWorkspace =
+    pathname === "/hotel" || pathname.startsWith("/hotel/");
+  const isSecondaryMobileModule = isMobileSecondaryModuleRoute(pathname);
+  if (isHotelWorkspace) {
+    return (
+      <div className="h-screen w-full overflow-hidden bg-background">
+        <main className="flex h-full min-h-0 flex-col overflow-hidden">
+          <RoleGuard>{children}</RoleGuard>
+        </main>
+        <GlobalKotPrinter />
+      </div>
+    );
+  }
+
   return (
-    <div className="flex h-screen w-full flex-col bg-background md:flex-row overflow-hidden">
+    <div className="flex h-screen w-full flex-col overflow-hidden bg-background lg:flex-row">
       <Sidebar />
-      <div className="flex flex-col flex-1 h-full overflow-hidden">
+      <div className="flex min-w-0 flex-1 flex-col h-full overflow-hidden">
         <Header />
-        <main className="flex-1 overflow-y-auto p-4">
+        <main
+          className={cn(
+            "flex-1 overflow-y-auto p-4 lg:pb-4",
+            pathname === "/dashboard" && "lg:p-0",
+            isSecondaryMobileModule
+              ? "pb-[max(env(safe-area-inset-bottom),1rem)]"
+              : "pb-24",
+          )}
+        >
           <RoleGuard>{children}</RoleGuard>
         </main>
       </div>
+      <MobileBottomNav />
       <GlobalKotPrinter />
       <Suspense fallback={null}>
         <ProductTourHost />

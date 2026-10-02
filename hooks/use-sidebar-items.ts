@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import {
   LayoutDashboard,
+  LayoutGrid,
   UtensilsCrossed,
   ChefHat,
   ClipboardList,
@@ -19,16 +20,19 @@ import {
   Percent,
   MessageSquare,
   Zap,
-  Bed,
   BedDouble,
-  KeyRound,
   BarChart3,
   Briefcase,
   LucideIcon,
-  Layers,
   Banknote,
   Fingerprint,
   FileText,
+  ShoppingCart,
+  Truck,
+  BookOpenCheck,
+  BadgeDollarSign,
+  Sprout,
+  Megaphone,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import {
@@ -39,7 +43,6 @@ import {
 } from "@/lib/role-permissions";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import { useSubscriptionStore } from "@/hooks/use-subscription";
-import { isFinanceFeatureEnabled } from "@/lib/finance-feature-access";
 import { isSubscriptionEntitlementEnabled } from "@/lib/subscription/entitlements";
 export interface SidebarItem {
   title: string;
@@ -49,6 +52,9 @@ export interface SidebarItem {
   externalUrl?: string;
   subItems?: SidebarItem[];
   isNestedChild?: boolean;
+  /** Inline quick-create link rendered to the right of this item's label. */
+  quickCreateHref?: string;
+  quickCreateLabel?: string;
 }
 
 const RESTAURANT_ICON_MAP: Record<string, LucideIcon> = {
@@ -62,24 +68,38 @@ const RESTAURANT_ICON_MAP: Record<string, LucideIcon> = {
   "/cash-drawers": Banknote,
   "/transactions": ArrowDownUp,
   "/menu/items": UtensilsCrossed,
+  "/menu/categories": LayoutGrid,
+  "/menu/modifiers": Settings,
   "/kitchen": ChefHat,
   "/inventory": Package,
+  "/suppliers": Truck,
   "/finance/income": CreditCard,
+  "/finance": CreditCard,
+  "/finance/sales": Receipt,
+  "/finance/purchases": ShoppingCart,
+  "/inventory/purchases": ShoppingCart,
+  "/finance/income-expenses": CreditCard,
+  "/finance/transactions": ArrowDownUp,
+  "/finance/reports": FileText,
+  "/finance/setup": Settings,
+  "/finance/operations": Banknote,
   "/customers": Users,
+  "/grow": Sprout,
+  "/grow/campaigns": Megaphone,
+  "/grow/subscribers": Users,
   "/attendance": Fingerprint,
   "/staff": Users,
-  "/payroll": Banknote,
   "/workforce": Briefcase,
   "/tables": Armchair,
   "/reservations": Calendar,
   "/discounts": Percent,
-  "/manage": Settings,
+  "/settings": Settings,
   "/feedback": MessageSquare,
   "/premium": Zap,
 };
 
 const HOTEL_SIDEBAR_BASE: SidebarItem[] = [
-  { title: "Room Overview", href: "/rooms", icon: BedDouble, section: "Hotel" },
+  { title: "Hotel PMS", href: "/hotel", icon: BedDouble, section: "Hotel" },
   { title: "Orders", href: "/orders", icon: ClipboardList, section: "Hotel" },
   {
     title: "Order History",
@@ -89,25 +109,13 @@ const HOTEL_SIDEBAR_BASE: SidebarItem[] = [
   },
   { title: "New Order", href: "/orders/new", icon: Plus, section: "Hotel" },
   {
-    title: "Check In/Out",
-    href: "/rooms/checkin",
-    icon: KeyRound,
-    section: "Hotel",
-  },
-  {
-    title: "Reservations",
-    href: "/reservations",
-    icon: Calendar,
-    section: "Hotel",
-  },
-  {
     title: "Finance",
     href: "/finance/income",
     icon: CreditCard,
     section: "Hotel",
   },
   { title: "Customers", href: "/customers", icon: Users, section: "Hotel" },
-  { title: "Manage", href: "/manage", icon: Settings, section: "Hotel" },
+  { title: "Settings", href: "/settings", icon: Settings, section: "Hotel" },
 ];
 
 function getHotelSidebarItems(
@@ -138,8 +146,8 @@ function getHotelSidebarItems(
   }
 
   if (financeIndex < 0) {
-    const manageIndex = base.findIndex((item) => item.href === "/manage");
-    const insertAt = manageIndex >= 0 ? manageIndex : base.length;
+    const settingsIndex = base.findIndex((item) => item.href === "/settings");
+    const insertAt = settingsIndex >= 0 ? settingsIndex : base.length;
     return [...base.slice(0, insertAt), analyticsItem, ...base.slice(insertAt)];
   }
 
@@ -151,7 +159,7 @@ function getHotelSidebarItems(
 }
 
 const HOTEL_CASHIER_ITEMS: SidebarItem[] = [
-  { title: "Room Overview", href: "/rooms", icon: BedDouble, section: "Hotel" },
+  { title: "Hotel PMS", href: "/hotel", icon: BedDouble, section: "Hotel" },
   { title: "Orders", href: "/orders", icon: ClipboardList, section: "Hotel" },
   {
     title: "Order History",
@@ -160,12 +168,6 @@ const HOTEL_CASHIER_ITEMS: SidebarItem[] = [
     section: "Hotel",
   },
   { title: "New Order", href: "/orders/new", icon: Plus, section: "Hotel" },
-  {
-    title: "Check In/Out",
-    href: "/rooms/checkin",
-    icon: KeyRound,
-    section: "Hotel",
-  },
   {
     title: "Finance",
     href: "/finance/income",
@@ -178,29 +180,32 @@ const HOTEL_CASHIER_ITEMS: SidebarItem[] = [
 export function useSidebarItems(): SidebarItem[] {
   const user = useAuth((state) => state.user);
   const restaurant = useRestaurant((s) => s.restaurant);
-  const selectedModule = useRestaurant((s) => s.selectedModule);
   const currentSubscription = useSubscriptionStore((state) => state.current);
 
   return useMemo(() => {
-    const isExplicitlyLocked = (key: string) =>
+    const isExplicitlyLocked = (key: string, legacyFallback = true) =>
       Boolean(currentSubscription) &&
-      !isSubscriptionEntitlementEnabled(currentSubscription, key, true);
+      !isSubscriptionEntitlementEnabled(currentSubscription, key, legacyFallback);
     const roles = normalizeRolesForUser(user);
     const isAdminOrManager = roles.some(
       (r) => r === "admin" || r === "manager",
     );
     const isCashier = roles.some((r) => r === "cashier");
 
-    // --- HOTEL MODE ---
-    if (selectedModule === "hotel" && restaurant?.hotel_enabled) {
+    const hotelAvailable = Boolean(restaurant?.hotel_enabled);
+    const restaurantAvailable = Boolean(restaurant?.restaurant_enabled);
+
+    // Hotel-only properties keep hotel operations plus permitted shared tools.
+    if (hotelAvailable && !restaurantAvailable) {
       if (isAdminOrManager) return getHotelSidebarItems(user);
       if (isCashier)
         return filterSidebarLinksByAccess(HOTEL_CASHIER_ITEMS, user);
-      // Other staff in hotel mode see basic view
-      return [{ title: "Room Overview", href: "/rooms", icon: BedDouble }];
+      // Other hotel staff see the PMS entry point when their role permits it.
+      return [{ title: "Hotel PMS", href: "/hotel", icon: BedDouble }];
     }
 
-    // --- RESTAURANT MODE (or single-module restaurant) ---
+    // Restaurant and shared navigation. Dual properties add Hotel PMS below;
+    // there is no global workspace mode.
     const restaurantOnlyItems = [
       "/orders",
       "/orders/new",
@@ -208,14 +213,10 @@ export function useSidebarItems(): SidebarItem[] {
       "/tables",
       "/reservations",
     ];
-    const hotelOnlyHrefs = ["/rooms"];
-
     const flatItems = getSidebarItemsForRoles(roles, user)
       .filter((item) => {
         // Remove Feedback from sidebar entirely (it is accessed via profile dropdown)
         if (item.href === "/feedback") return false;
-        // Never show hotel-only items in restaurant mode
-        if (hotelOnlyHrefs.includes(item.href)) return false;
         // If restaurant not enabled, don't show restaurant-specific items
         if (
           !restaurant?.restaurant_enabled &&
@@ -233,13 +234,17 @@ export function useSidebarItems(): SidebarItem[] {
           "/finance/expenses": "finance.income_expense.enabled",
           "/cash-drawers": "finance.cash_drawer.enabled",
           "/customers": "customers.crm.enabled",
+          "/grow": "grow.enabled",
           "/day-close": "finance.daybook.enabled",
           "/period-reports": "finance.period_close.enabled",
           "/manage/receipt-designer": "designers.receipt.enabled",
           "/manage/kot-designer": "designers.kot.enabled",
         };
         const requiredEntitlement = entitlementByRoute[item.href];
-        if (requiredEntitlement && isExplicitlyLocked(requiredEntitlement))
+        if (
+          requiredEntitlement &&
+          isExplicitlyLocked(requiredEntitlement, item.href !== "/grow")
+        )
           return false;
         return true;
       })
@@ -268,7 +273,7 @@ export function useSidebarItems(): SidebarItem[] {
     };
 
     flatItems.forEach((item) => {
-      if (["/staff", "/attendance", "/payroll"].includes(item.href)) {
+      if (["/staff", "/attendance"].includes(item.href)) {
         // Workforce is assembled as one owner-oriented workflow below.
         return;
       } else if (item.href === "/orders/history") {
@@ -277,6 +282,17 @@ export function useSidebarItems(): SidebarItem[] {
       } else if (item.href === "/orders") {
         result.push(item);
       } else if (item.href === "/orders/new") {
+        result.push({ ...item, isNestedChild: true });
+      } else if (item.href === "/grow") {
+        result.push({
+          ...item,
+          ...(hasPermission(user, "grow.campaigns.manage")
+            ? { quickCreateHref: "/grow/campaigns/new", quickCreateLabel: "New campaign" }
+            : {}),
+        });
+      } else if (item.href === "/grow/campaigns") {
+        result.push({ ...item, isNestedChild: true });
+      } else if (item.href === "/grow/subscribers") {
         result.push({ ...item, isNestedChild: true });
       } else if (
         ["/menu/items", "/menu/categories", "/menu/modifiers"].includes(
@@ -298,6 +314,7 @@ export function useSidebarItems(): SidebarItem[] {
         group.subItems!.push(item);
       } else if (
         [
+          "/cash-drawers",
           "/finance/income",
           "/finance/expenses",
           "/finance/accounting",
@@ -312,12 +329,17 @@ export function useSidebarItems(): SidebarItem[] {
           "/finance/income",
         );
         group.subItems!.push(item);
-      } else if (["/manage", "/settings"].includes(item.href)) {
-        const group = getGroup("settings", "Settings", Settings, "/manage");
-        if (item.href !== "/manage") group.subItems!.push(item);
-      } else if (["/inventory", "/manage/suppliers"].includes(item.href)) {
-        const group = getGroup("inventory", "Inventory", Package, "/inventory");
-        if (item.href !== "/inventory") group.subItems!.push(item);
+      } else if (item.href === "/settings") {
+        result.push(item);
+      } else if (item.href === "/inventory") {
+        result.push(item);
+      } else if (["/suppliers", "/manage/suppliers"].includes(item.href)) {
+        result.push({
+          ...item,
+          title: "Suppliers",
+          href: "/suppliers",
+          icon: Truck,
+        });
       } else {
         result.push(item);
       }
@@ -332,28 +354,11 @@ export function useSidebarItems(): SidebarItem[] {
         isNestedChild: true,
       });
     }
-    if (
-      hasPermission(user, "attendance.manage") &&
-      !(
-        isExplicitlyLocked("attendance.mobile.enabled") &&
-        isExplicitlyLocked("attendance.biometric.enabled")
-      )
-    ) {
+    if (hasPermission(user, "attendance.manage")) {
       workforceItems.push({
         title: "Attendance",
         href: "/attendance",
         icon: Fingerprint,
-        isNestedChild: true,
-      });
-    }
-    if (
-      hasPermission(user, "finance.payroll.view") &&
-      !isExplicitlyLocked("payroll.enabled")
-    ) {
-      workforceItems.push({
-        title: "Payroll",
-        href: "/payroll",
-        icon: Banknote,
         isNestedChild: true,
       });
     }
@@ -363,9 +368,34 @@ export function useSidebarItems(): SidebarItem[] {
     }
 
     if (
-      hasPermission(user, "finance.income.view") &&
-      !isExplicitlyLocked("finance.income_expense.enabled")
+      (
+        [
+          "finance.daybook.view",
+          "finance.drawer.transfer.to_safe",
+          "finance.cash.transfer.to_bank",
+        ] as const
+      ).some((permission) => hasPermission(user, permission))
     ) {
+      const group = getGroup(
+        "finance",
+        "Finance",
+        CreditCard,
+        "/finance/operations",
+      );
+      group.href = "/finance/operations";
+      const subItems = group.subItems ?? [];
+      if (!subItems.some((item) => item.href === "/finance/operations")) {
+        subItems.unshift({
+          title: "Cash & Banks",
+          href: "/finance/operations",
+          icon: Banknote,
+          isNestedChild: true,
+        });
+      }
+      group.subItems = subItems;
+    }
+
+    if (hasPermission(user, "finance.income.view")) {
       const group = getGroup(
         "finance",
         "Finance",
@@ -381,10 +411,7 @@ export function useSidebarItems(): SidebarItem[] {
           isNestedChild: true,
         });
       }
-      if (
-        isFinanceFeatureEnabled(restaurant, "reports") &&
-        !subItems.some((item) => item.href === "/finance/reports")
-      ) {
+      if (!subItems.some((item) => item.href === "/finance/reports")) {
         subItems.push({
           title: "Reports",
           href: "/finance/reports",
@@ -392,25 +419,214 @@ export function useSidebarItems(): SidebarItem[] {
           isNestedChild: true,
         });
       }
-      if (
-        isFinanceFeatureEnabled(restaurant, "accounting") &&
-        !isExplicitlyLocked("finance.accounting.enabled") &&
-        !subItems.some((item) => item.href === "/finance/accounting")
-      ) {
+      group.subItems = subItems;
+    }
+
+    if (hasPermission(user, "finance.coa.view")) {
+      const group = getGroup(
+        "finance",
+        "Finance",
+        CreditCard,
+        "/finance/heads",
+      );
+      const subItems = group.subItems ?? [];
+      if (!subItems.some((item) => item.href === "/finance/heads")) {
         subItems.push({
-          title: "Accounting",
-          href: "/finance/accounting",
-          icon: Layers,
+          title: "Chart of Accounts",
+          href: "/finance/heads",
+          icon: FileText,
           isNestedChild: true,
         });
       }
       group.subItems = subItems;
     }
 
-    // Clean up empty subItems arrays
-    return result.map((r) => ({
+    // Finance navigation names the document/register being opened. Receivables
+    // belong to Customers and payables belong to Suppliers, so those party
+    // balances are not duplicated as Finance sidebar destinations.
+    const financeGroup = groups.finance;
+    if (financeGroup && hasPermission(user, "finance.income.view")) {
+      const financeItems: SidebarItem[] = [
+        {
+          title: "Overview",
+          href: "/finance",
+          icon: CreditCard,
+          isNestedChild: true,
+        },
+        {
+          title: "Sales",
+          href: "/finance/sales",
+          icon: Receipt,
+          isNestedChild: true,
+        },
+        {
+          title: "Purchases",
+          href: "/inventory/purchases",
+          icon: ShoppingCart,
+          isNestedChild: true,
+        },
+        {
+          title: "Other Income",
+          href: "/finance/other-income",
+          icon: CreditCard,
+          isNestedChild: true,
+        },
+        {
+          title: "Expenses",
+          href: "/finance/expenses",
+          icon: CreditCard,
+          isNestedChild: true,
+        },
+        {
+          title: "Payments",
+          href: "/finance/payments",
+          icon: BadgeDollarSign,
+          isNestedChild: true,
+        },
+        {
+          title: "Transactions",
+          href: "/finance/transactions",
+          icon: ArrowDownUp,
+          isNestedChild: true,
+        },
+      ];
+
+      if (
+        (
+          [
+            "finance.daybook.view",
+            "finance.drawer.transfer.to_safe",
+            "finance.cash.transfer.to_bank",
+          ] as const
+        ).some((permission) => hasPermission(user, permission))
+      ) {
+        financeItems.splice(6, 0, {
+          title: "Cash & Banks",
+          href: "/finance/operations",
+          icon: Banknote,
+          isNestedChild: true,
+        });
+      }
+
+      if (hasPermission(user, "day_close.drawer.open")) {
+        const cashBanksIndex = financeItems.findIndex(
+          (item) => item.href === "/finance/operations",
+        );
+        financeItems.splice(
+          cashBanksIndex >= 0 ? cashBanksIndex + 1 : financeItems.length,
+          0,
+          {
+            title: "Cash Drawers",
+            href: "/cash-drawers",
+            icon: Banknote,
+            isNestedChild: true,
+          },
+        );
+      }
+
+      if (hasPermission(user, "finance.daybook.view")) {
+        const cashDrawersIndex = financeItems.findIndex(
+          (item) => item.href === "/cash-drawers",
+        );
+        financeItems.splice(
+          cashDrawersIndex >= 0 ? cashDrawersIndex + 1 : financeItems.length,
+          0,
+          {
+            title: "Day Close",
+            href: "/day-close",
+            icon: Receipt,
+            isNestedChild: true,
+          },
+        );
+      }
+
+      if (hasPermission(user, "finance.journal.view")) {
+        financeItems.push({
+          title: "Journal Vouchers",
+          href: "/finance/journals",
+          icon: BookOpenCheck,
+          isNestedChild: true,
+        });
+      }
+
+      financeItems.push({
+        title: "Reports",
+        href: "/finance/reports",
+        icon: FileText,
+        isNestedChild: true,
+      });
+      if (
+        hasPermission(user, "finance.coa.view") ||
+        hasPermission(user, "finance.payment_instruments.manage")
+      ) {
+        financeItems.push({
+          title: "Setup",
+          href: "/finance/setup",
+          icon: Settings,
+          isNestedChild: true,
+        });
+      }
+
+      financeGroup.href = "/finance";
+      financeGroup.subItems = financeItems;
+    }
+
+    if (hotelAvailable) {
+      const hotelItem = filterSidebarLinksByAccess(
+        [
+          {
+            title: "Hotel PMS",
+            href: "/hotel",
+            icon: BedDouble,
+            section: "Hotel",
+          },
+        ],
+        user,
+      )[0];
+      if (hotelItem && !result.some((item) => item.href === hotelItem.href)) {
+        const dashboardIndex = result.findIndex(
+          (item) => item.href === "/dashboard",
+        );
+        result.splice(
+          dashboardIndex >= 0 ? dashboardIndex + 1 : 0,
+          0,
+          hotelItem,
+        );
+      }
+    }
+
+    // Keep the optional Grow product grouped after the current operational,
+    // finance, and hotel navigation.
+    const isGrow = (item: SidebarItem) => item.href === "/grow" || item.href.startsWith("/grow/");
+    const orderedResult = [
+      ...result.filter((item) => !isGrow(item)),
+      ...result.filter(isGrow),
+    ];
+
+    // Ensure Settings is always at the end of the operational navigation,
+    // immediately before the separately labelled Grow product.
+    const cleaned = orderedResult.map((r) => ({
       ...r,
-      subItems: r.subItems?.length ? r.subItems : undefined,
+      section: isGrow(r) ? "Yummy Grow" : "Yummy Operations",
+      subItems: r.subItems?.length
+        ? r.subItems.map((subItem) => ({
+            ...subItem,
+            section: "Yummy Operations",
+          }))
+        : undefined,
     }));
-  }, [currentSubscription, restaurant, user, selectedModule]);
+
+    const settingsIndex = cleaned.findIndex(
+      (item) => item.href === "/settings" || item.title.toLowerCase() === "settings",
+    );
+    const growIndex = cleaned.findIndex((item) => item.href === "/grow");
+    const desiredSettingsIndex = growIndex >= 0 ? growIndex - 1 : cleaned.length - 1;
+    if (settingsIndex >= 0 && settingsIndex !== desiredSettingsIndex) {
+      const [settingsItem] = cleaned.splice(settingsIndex, 1);
+      const nextGrowIndex = cleaned.findIndex((item) => item.href === "/grow");
+      cleaned.splice(nextGrowIndex >= 0 ? nextGrowIndex : cleaned.length, 0, settingsItem);
+    }
+
+    return cleaned;
+  }, [currentSubscription, restaurant, user]);
 }

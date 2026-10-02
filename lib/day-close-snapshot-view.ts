@@ -34,7 +34,93 @@ export type DayCloseSnapshotTab =
   | "sales-by-category"
   | "sales-by-table"
   | "drawer-and-safe"
-  | "accounting-checks";
+  | "accounting-checks"
+  | "stay-activity"
+  | "rooms-and-revenue"
+  | "collections"
+  | "guest-folios"
+  | "other-income"
+  | "front-desk-cash"
+  | "exceptions";
+
+export type HotelDaybookSection = {
+  [key: string]: unknown;
+};
+
+function record(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function amountFrom(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
+}
+
+/** Hotel snapshot sections are supplied by the Hotel Daybook backend contract. */
+export function hotelDaybookSection(
+  snapshot: DayCloseSnapshotData,
+  section: "stay_activity" | "rooms_and_revenue" | "collections" | "guest_folios" | "exceptions",
+): HotelDaybookSection | null {
+  const daybook = record(snapshot.hotel_daybook);
+  return record(daybook?.[section]);
+}
+
+export function hotelDaybookRows(
+  snapshot: DayCloseSnapshotData,
+  section: "stay_activity" | "rooms_and_revenue" | "collections" | "guest_folios" | "exceptions",
+): SnapshotListRow[] {
+  const source = hotelDaybookSection(snapshot, section);
+  if (!source) return [];
+  const labels: Record<string, string> = {
+    check_ins: "Check-ins",
+    check_outs: "Check-outs",
+    in_house_guests: "In-house guests",
+    cancelled_bookings: "Cancelled bookings",
+    no_shows: "No-shows",
+    room_nights: "Room nights charged",
+    accommodation_revenue: "Accommodation revenue",
+    room_night_charges: "Room-night charges",
+    other_hotel_revenue: "Other hotel revenue",
+    discounts: "Discounts",
+    booking_advances_collected: "Booking advances collected",
+    checkout_collections: "Checkout collections",
+    total_collections: "Total collected",
+    refunds_paid: "Refunds paid",
+    payment_count: "Payments received",
+    opening_balance: "Opening guest balance",
+    new_charges: "New guest charges",
+    payments_and_credits: "Payments and credits applied",
+    closing_outstanding: "Closing outstanding balance",
+    guest_credit: "Guest credit balance",
+    open_folios: "Open guest folios",
+    unpaid_guest_balance: "Unpaid guest balance",
+    unresolved_refunds: "Unresolved refunds",
+  };
+  return Object.entries(source)
+    .filter(([key]) => key !== "by_method")
+    .map(([key, value]) => {
+      const numeric = amountFrom(value);
+      const isCount = /(^check_|guests$|bookings$|no_shows|nights|folios|count|refunds$)/.test(key);
+      return {
+        label: labels[key] ?? key.replace(/_/g, " "),
+        amount: isCount ? undefined : numeric,
+        secondary: numeric === undefined ? String(value ?? "—") : (isCount ? String(numeric) : undefined),
+      };
+    });
+}
+
+export function hotelCollectionMethodRows(snapshot: DayCloseSnapshotData): SnapshotListRow[] {
+  const methods = hotelDaybookSection(snapshot, "collections")?.by_method;
+  const source = record(methods);
+  if (!source) return [];
+  return Object.entries(source).map(([label, value]) => ({ label, amount: amountFrom(value) }));
+}
 
 const FINANCIAL_SUMMARY_SNAPSHOT_TAB: Record<string, DayCloseSnapshotTab> = {
   "Gross Sales": "sales-by-category",
@@ -48,6 +134,11 @@ const FINANCIAL_SUMMARY_SNAPSHOT_TAB: Record<string, DayCloseSnapshotTab> = {
   "Outstanding Receivables": "receivables",
   "Expected Drawer": "drawer-and-safe",
   "Drawer (Actual)": "drawer-and-safe",
+  "Accommodation Revenue": "rooms-and-revenue",
+  "Booking Advances": "collections",
+  "Checkout Collections": "collections",
+  "Guest Balance": "guest-folios",
+  "Front-desk Drawer": "front-desk-cash",
 };
 
 export function financialSummarySnapshotTab(label: string): DayCloseSnapshotTab | null {
@@ -108,6 +199,20 @@ export function snapshotFinancialSummaryRows(
   snapshot: DayCloseSnapshotData,
   detail?: DayCloseDetail | null,
 ): SnapshotMetricRow[] {
+  if (isHotelDayClose(snapshot)) {
+    const rooms = hotelDaybookSection(snapshot, "rooms_and_revenue");
+    const collections = hotelDaybookSection(snapshot, "collections");
+    const folios = hotelDaybookSection(snapshot, "guest_folios");
+    const drawer = drawerControlAmount(snapshot, "expected_cash");
+    return [
+      { label: "Accommodation Revenue", value: amountFrom(rooms?.accommodation_revenue) ?? summaryAmount(snapshot.net_sales, detail?.net_sales) },
+      { label: "Other Hotel Income", value: amountFrom(rooms?.other_hotel_revenue) ?? 0 },
+      { label: "Booking Advances", value: amountFrom(collections?.booking_advances_collected) ?? 0 },
+      { label: "Checkout Collections", value: amountFrom(collections?.checkout_collections) ?? 0 },
+      { label: "Guest Balance", value: amountFrom(folios?.closing_outstanding) ?? 0 },
+      ...(drawer !== undefined ? [{ label: "Front-desk Drawer", value: drawer }] : []),
+    ];
+  }
   const netSales = summaryAmount(snapshot.net_sales, detail?.net_sales);
   const totalIncome = summaryAmount(snapshot.total_income, detail?.total_income);
   const openingDrawer = summaryAmount(

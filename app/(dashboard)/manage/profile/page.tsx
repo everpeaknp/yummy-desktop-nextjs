@@ -1,520 +1,205 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useAuth } from "@/hooks/use-auth";
-import { 
-    ChevronLeft,
-    Store,
-    MapPin,
-    Phone,
-    FileText,
-    Camera,
-    Upload,
-    Save,
-    RefreshCw,
-    Loader2,
-    Image as ImageIcon
+import Image from "next/image";
+import Link from "next/link";
+import {
+  Building2,
+  Camera,
+  CheckCircle2,
+  ChevronRight,
+  Clock3,
+  KeyRound,
+  Loader2,
+  LogOut,
+  Pencil,
+  Save,
+  ShieldCheck,
+  type LucideIcon,
 } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from "react";
+import { toast } from "sonner";
+
+import { StaffPerformanceCard } from "@/components/staff/staff-performance-card";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { toast } from "sonner";
-import apiClient from "@/lib/api-client";
-import { RestaurantApis } from "@/lib/api/endpoints";
-import { useRouter } from "next/navigation";
-import { getImageUrl } from "@/lib/utils";
-import LocationPicker from "@/components/manage/profile/location-picker";
-import { TimezoneSelect } from "@/components/ui/timezone-select";
-import { AppPhoneInput } from "@/components/ui/phone-input";
-import { FieldInfo } from "@/components/ui/field-info";
-import { useCallback, useRef } from "react";
-import { ImageService } from "@/services/image-service";
+import { useAuth } from "@/hooks/use-auth";
 import { useRestaurant } from "@/hooks/use-restaurant";
-import { forwardGeocode, reverseGeocode } from "@/lib/geocode";
+import { useEntitlement } from "@/hooks/use-subscription";
+import apiClient from "@/lib/api-client";
+import { AuthApis } from "@/lib/api/endpoints";
+import { attendanceApi } from "@/lib/attendance/api";
+import type { AttendanceEntry, MyAttendanceStatus } from "@/lib/attendance/types";
+import { attendanceApprovalLabel, attendanceStatusLabel } from "@/lib/presentation/workforce";
 
-function toHourMinute(value?: string | null) {
-    if (!value) return "00:00";
-    const match = String(value).trim().match(/^(\d{1,2}):(\d{1,2})/);
-    if (!match) return "00:00";
-    const hour = Math.max(0, Math.min(23, Number(match[1]) || 0));
-    const minute = Math.max(0, Math.min(59, Number(match[2]) || 0));
-    return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+const roleBadgeColors: Record<string, string> = {
+  admin: "border-red-200 bg-red-100 text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-400",
+  administrator: "border-red-200 bg-red-100 text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-400",
+  manager: "border-blue-200 bg-blue-100 text-blue-700 dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-400",
+  waiter: "border-emerald-200 bg-emerald-100 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-400",
+  chef: "border-orange-200 bg-orange-100 text-orange-700 dark:border-orange-900 dark:bg-orange-950/30 dark:text-orange-400",
+  cashier: "border-purple-200 bg-purple-100 text-purple-700 dark:border-purple-900 dark:bg-purple-950/30 dark:text-purple-400",
+};
+
+function formatDateTime(value?: string | null) {
+  if (!value) return "Not recorded";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Not recorded";
+  return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(date);
 }
 
-function toApiBusinessDayTime(value?: string | null) {
-    const normalized = toHourMinute(value);
-    return `${normalized}:00`;
+function workedHours(entry?: AttendanceEntry | null) {
+  if (!entry) return "0.0h";
+  return `${((entry.regular_minutes + entry.overtime_minutes) / 60).toFixed(1)}h`;
 }
 
-export default function RestaurantProfilePage() {
-    const user = useAuth(state => state.user);
-    const router = useRouter();
-    const fetchGlobalRestaurant = useRestaurant(state => state.fetchRestaurant);
-    const [loading, setLoading] = useState(true);
-    const [saving, setSaving] = useState(false);
-    const logoInputRef = useRef<HTMLInputElement>(null);
-    const coverInputRef = useRef<HTMLInputElement>(null);
-    const [uploadingLogo, setUploadingLogo] = useState(false);
-    const [uploadingCover, setUploadingCover] = useState(false);
-    const [formData, setFormData] = useState({
-        name: "",
-        address: "",
-        phone: "",
-        pan_number: "",
-        description: "",
-        profile_picture: "",
-        cover_photo: "",
-        timezone: "UTC",
-        business_day_start_time: "00:00",
-        latitude: "",
-        longitude: "",
-        local_pos_ip: "",
-    });
-    const [initialData, setInitialData] = useState<typeof formData | null>(null);
-    const reverseGeocodeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-    const forwardGeocodeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-    const geocodeRequestIdRef = useRef(0);
+function todayKey() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+}
 
-    const hasChanges = initialData ? JSON.stringify(formData) !== JSON.stringify(initialData) : false;
+export default function MyProfilePage() {
+  const user = useAuth((state) => state.user);
+  const restaurant = useRestaurant((state) => state.restaurant);
+  const attendanceAccess = useEntitlement("attendance.enabled", true);
+  const [name, setName] = useState(user?.full_name || "");
+  const [savingName, setSavingName] = useState(false);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [password, setPassword] = useState({ current: "", next: "", confirm: "" });
+  const [savingPassword, setSavingPassword] = useState(false);
+  const [editingProfile, setEditingProfile] = useState(false);
+  const [editingPassword, setEditingPassword] = useState(false);
+  const [attendanceStatus, setAttendanceStatus] = useState<MyAttendanceStatus | null>(null);
+  const [attendanceEntries, setAttendanceEntries] = useState<AttendanceEntry[]>([]);
+  const [attendanceLoading, setAttendanceLoading] = useState(true);
+  const [attendanceUnavailable, setAttendanceUnavailable] = useState(false);
+  const photoInput = useRef<HTMLInputElement>(null);
 
-    useEffect(() => {
-        const fetchRestaurant = async () => {
-            if (!user?.restaurant_id) return;
-            try {
-                const res = await apiClient.get(RestaurantApis.getById(user.restaurant_id));
-                if (res.data.status === "success") {
-                    const r = res.data.data;
-                    const data = {
-                        name: r.name || "",
-                        address: r.address || "",
-                        phone: r.phone || "",
-                        pan_number: r.pan_number || "",
-                        description: r.description || "",
-                        profile_picture: r.profile_picture || "",
-                        cover_photo: r.cover_photo || "",
-                        timezone: r.timezone || "UTC",
-                        business_day_start_time: toHourMinute(r.business_day_start_time),
-                        latitude: r.latitude || "",
-                        longitude: r.longitude || "",
-                        local_pos_ip: r.local_pos_ip || "",
-                    };
-                    setFormData(data);
-                    setInitialData(data);
-                }
-            } catch (err) {
-                console.error("Failed to fetch restaurant", err);
-                toast.error("Failed to load restaurant profile");
-            } finally {
-                setLoading(false);
-            }
-        };
-        fetchRestaurant();
-    }, [user?.restaurant_id]);
-
-    const handleLocationChange = useCallback((lat: string, lng: string) => {
-        setFormData((prev) => ({
-            ...prev,
-            latitude: lat,
-            longitude: lng,
-        }));
-
-        if (forwardGeocodeTimerRef.current) {
-            clearTimeout(forwardGeocodeTimerRef.current);
-            forwardGeocodeTimerRef.current = null;
-        }
-        if (reverseGeocodeTimerRef.current) clearTimeout(reverseGeocodeTimerRef.current);
-
-        const requestId = ++geocodeRequestIdRef.current;
-        reverseGeocodeTimerRef.current = setTimeout(async () => {
-            try {
-                const address = await reverseGeocode(lat, lng);
-                if (requestId !== geocodeRequestIdRef.current) return;
-                if (address) {
-                    setFormData((prev) => ({ ...prev, address }));
-                }
-            } catch {
-                // keep coordinates
-            }
-        }, 450);
-    }, []);
-
-    const handleAddressChange = useCallback((value: string) => {
-        setFormData((prev) => ({ ...prev, address: value }));
-
-        if (reverseGeocodeTimerRef.current) {
-            clearTimeout(reverseGeocodeTimerRef.current);
-            reverseGeocodeTimerRef.current = null;
-        }
-        if (forwardGeocodeTimerRef.current) clearTimeout(forwardGeocodeTimerRef.current);
-
-        const trimmed = value.trim();
-        if (trimmed.length < 8) return;
-
-        const requestId = ++geocodeRequestIdRef.current;
-        forwardGeocodeTimerRef.current = setTimeout(async () => {
-            try {
-                const result = await forwardGeocode(trimmed);
-                if (requestId !== geocodeRequestIdRef.current) return;
-                if (result) {
-                    setFormData((prev) => ({
-                        ...prev,
-                        latitude: result.lat,
-                        longitude: result.lng,
-                    }));
-                }
-            } catch {
-                // keep typed address
-            }
-        }, 700);
-    }, []);
-
-    const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>, type: 'logo' | 'cover') => {
-        const file = e.target.files?.[0];
-        if (!file || !user?.restaurant_id) return;
-
-        type === 'logo' ? setUploadingLogo(true) : setUploadingCover(true);
-        try {
-            const publicUrl = await ImageService.uploadRestaurantImage(file, type, user.restaurant_id);
-            
-            setFormData(prev => ({
-                ...prev,
-                [type === 'logo' ? 'profile_picture' : 'cover_photo']: publicUrl
-            }));
-            toast.success(`${type === 'logo' ? 'Logo' : 'Cover image'} uploaded`);
-        } catch (err: any) {
-            console.error(`Failed to upload ${type}`, err);
-            if (err.response) {
-                console.error("Error Response Data:", err.response.data);
-            }
-            toast.error(`Failed to upload ${type}`);
-        } finally {
-            type === 'logo' ? setUploadingLogo(false) : setUploadingCover(false);
-            // Reset input so the same file can be selected again if needed
-            e.target.value = '';
-        }
-    };
-
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!hasChanges) {
-            toast.info("No changes to save");
-            return;
-        }
-
-        console.log("Submitting Profile Data:", formData);
-
-        if (!user?.restaurant_id) {
-            toast.error("No restaurant ID found");
-            return;
-        }
-
-        setSaving(true);
-        try {
-            const payload = {
-                ...formData,
-                business_day_start_time: toApiBusinessDayTime(formData.business_day_start_time),
-            };
-            const res = await apiClient.put(RestaurantApis.update(user.restaurant_id), payload);
-            console.log("Update Response:", res.data);
-            if (res.data.status === "success") {
-                toast.success("Profile updated successfully");
-                setInitialData({ ...formData }); // Sync local state
-                fetchGlobalRestaurant(true); // Sync global branding state across app
-            } else {
-                toast.error(res.data.message || "Failed to update profile");
-            }
-        } catch (error: any) {
-            console.error("Failed to update profile", error);
-            const detail = error.response?.data?.detail;
-            const message = typeof detail === 'string' ? detail : (detail?.[0]?.msg || "Failed to update profile");
-            toast.error(message);
-        } finally {
-            setSaving(false);
-        }
-    };
-
-    if (loading) {
-        return (
-            <div className="flex items-center justify-center h-screen">
-                <RefreshCw className="w-8 h-8 animate-spin text-primary" />
-            </div>
-        );
+  useEffect(() => { setName(user?.full_name || ""); }, [user?.full_name]);
+  useEffect(() => {
+    if (!user || attendanceAccess.loading) return;
+    if (!attendanceAccess.allowed) {
+      setAttendanceStatus(null);
+      setAttendanceEntries([]);
+      setAttendanceUnavailable(true);
+      setAttendanceLoading(false);
+      return;
     }
+    let cancelled = false;
+    void (async () => {
+      setAttendanceLoading(true);
+      const [statusResult, entriesResult] = await Promise.allSettled([attendanceApi.myStatus(), attendanceApi.myEntries({ limit: 5 })]);
+      if (cancelled) return;
+      if (statusResult.status === "fulfilled") setAttendanceStatus(statusResult.value);
+      if (entriesResult.status === "fulfilled") setAttendanceEntries(entriesResult.value);
+      setAttendanceUnavailable(statusResult.status === "rejected" && entriesResult.status === "rejected");
+      setAttendanceLoading(false);
+    })();
+    return () => { cancelled = true; };
+  }, [attendanceAccess.allowed, attendanceAccess.loading, user?.id]);
 
-    return (
-        <div className="p-6 space-y-6 max-w-[1000px] mx-auto pb-24">
-            {/* Header */}
-            <div className="space-y-1">
-                <button 
-                    onClick={() => router.push('/manage')}
-                    className="flex items-center text-sm text-muted-foreground hover:text-primary transition-colors mb-2"
-                >
-                    <ChevronLeft className="w-4 h-4 mr-1" />
-                    Back to Manage
-                </button>
-                <h1 className="text-3xl font-bold tracking-tight">Restaurant Profile</h1>
-                <p className="text-muted-foreground text-sm">
-                    Manage your public identity, contact details, and branding.
-                </p>
-            </div>
+  const saveName = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const normalizedName = name.trim();
+    if (!normalizedName) return toast.error("Enter your name");
+    if (normalizedName === user?.full_name) return setEditingProfile(false);
+    try {
+      setSavingName(true);
+      await apiClient.patch(AuthApis.meProfile, { name: normalizedName });
+      await useAuth.getState().syncUserProfile();
+      setEditingProfile(false);
+      toast.success("Profile updated");
+    } catch (error: any) { toast.error(error?.response?.data?.detail || "Could not update your profile"); }
+    finally { setSavingName(false); }
+  };
 
-            <form onSubmit={handleSubmit} className="space-y-6">
-                <Card>
-                    <CardHeader>
-                        <CardTitle className="flex items-center gap-2">
-                            <Camera className="w-5 h-5 text-primary" />
-                            Branding & Media
-                        </CardTitle>
-                        <CardDescription>
-                            Upload your logo and cover image.
-                        </CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-6">
-                        <div className="relative w-full rounded-xl mb-16 border bg-slate-50 shadow-sm">
-                            {/* Cover Upload */}
-                            <div className="h-48 md:h-64 w-full relative group rounded-t-xl overflow-hidden">
-                                {uploadingCover ? (
-                                    <div className="absolute inset-0 flex items-center justify-center bg-slate-100">
-                                        <Loader2 className="w-8 h-8 animate-spin" />
-                                    </div>
-                                ) : formData.cover_photo ? (
-                                    <img 
-                                        src={getImageUrl(formData.cover_photo)} 
-                                        alt="Cover" 
-                                        className="w-full h-full object-cover"
-                                    />
-                                ) : (
-                                    <div className="absolute inset-0 flex flex-col items-center justify-center text-muted-foreground bg-slate-100">
-                                        <Camera className="w-8 h-8 mb-2" />
-                                        <span className="text-[10px]">16:9 Landscape</span>
-                                    </div>
-                                )}
-                                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                                    <button 
-                                        type="button"
-                                        onClick={() => coverInputRef.current?.click()}
-                                        className="cursor-pointer bg-white/20 p-2 rounded-full backdrop-blur-sm hover:bg-white/30"
-                                    >
-                                        <Upload className="w-6 h-6 text-white" />
-                                    </button>
-                                </div>
-                                <Input 
-                                    ref={coverInputRef}
-                                    type="file" 
-                                    className="hidden" 
-                                    accept="image/*"
-                                    onChange={(e) => handleImageUpload(e, 'cover')}
-                                />
-                            </div>
+  const uploadPhoto = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (!(["image/jpeg", "image/png"].includes(file.type) || /\.(jpe?g|png)$/i.test(file.name))) { toast.error("Choose a JPG or PNG image"); event.target.value = ""; return; }
+    if (file.size > 5 * 1024 * 1024) { toast.error("Image must be smaller than 5 MB"); event.target.value = ""; return; }
+    try {
+      setUploadingPhoto(true);
+      const form = new FormData(); form.append("file", file);
+      await apiClient.post(AuthApis.uploadProfilePicture, form, { headers: { "Content-Type": "multipart/form-data" } });
+      await useAuth.getState().syncUserProfile();
+      toast.success("Profile photo updated");
+    } catch (error: any) { toast.error(error?.response?.data?.detail || "Could not update your photo"); }
+    finally { setUploadingPhoto(false); event.target.value = ""; }
+  };
 
-                            {/* Logo Upload */}
-                            <div className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 z-10">
-                                <div className="w-32 h-32 rounded-full bg-white border-4 border-white shadow-md flex flex-col items-center justify-center text-muted-foreground relative group overflow-hidden">
-                                    {uploadingLogo ? (
-                                        <Loader2 className="w-8 h-8 animate-spin" />
-                                    ) : formData.profile_picture ? (
-                                        <img 
-                                            src={getImageUrl(formData.profile_picture)} 
-                                            alt="Logo" 
-                                            className="w-full h-full object-cover"
-                                        />
-                                    ) : (
-                                        <>
-                                            <Store className="w-8 h-8 mb-2" />
-                                            <span className="text-[10px]">1:1 Ratio</span>
-                                        </>
-                                    )}
-                                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                                        <button 
-                                            type="button"
-                                            onClick={() => logoInputRef.current?.click()}
-                                            className="cursor-pointer"
-                                        >
-                                            <Upload className="w-6 h-6 text-white" />
-                                        </button>
-                                    </div>
-                                </div>
-                                <Input 
-                                    ref={logoInputRef}
-                                    type="file" 
-                                    className="hidden" 
-                                    accept="image/*"
-                                    onChange={(e) => handleImageUpload(e, 'logo')}
-                                />
-                            </div>
-                        </div>
-                        <div className="flex justify-center gap-4 mt-8">
-                            <Button type="button" variant="outline" size="sm" onClick={() => coverInputRef.current?.click()} disabled={uploadingCover}>
-                                {uploadingCover ? "Uploading Cover..." : "Change Cover"}
-                            </Button>
-                            <Button type="button" variant="outline" size="sm" onClick={() => logoInputRef.current?.click()} disabled={uploadingLogo}>
-                                {uploadingLogo ? "Uploading Logo..." : "Change Logo"}
-                            </Button>
-                        </div>
-                    </CardContent>
-                </Card>
+  const savePassword = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!password.next || password.next !== password.confirm) return toast.error("Enter matching new passwords");
+    if (password.next.length < 8) return toast.error("Use at least 8 characters for your new password");
+    try {
+      setSavingPassword(true);
+      await apiClient.post(AuthApis.changePassword, { old_password: password.current || undefined, new_password: password.next, confirm_password: password.confirm });
+      setPassword({ current: "", next: "", confirm: "" }); setEditingPassword(false); toast.success("Password updated");
+    } catch (error: any) { toast.error(error?.response?.data?.detail || "Could not update your password"); }
+    finally { setSavingPassword(false); }
+  };
 
-                <Card>
-                    <CardHeader>
-                        <CardTitle className="flex items-center gap-2">
-                            <Store className="w-5 h-5 text-primary" />
-                            General Information
-                        </CardTitle>
-                        <CardDescription>
-                            These details appear on your receipts and public profile.
-                        </CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div className="space-y-2">
-                                <Label htmlFor="name">Business Name*</Label>
-                                <Input 
-                                    id="name" 
-                                    value={formData.name} 
-                                    onChange={(e) => setFormData(p => ({ ...p, name: e.target.value }))} 
-                                    required
-                                />
-                            </div>
-                            <div className="space-y-2">
-                                <Label htmlFor="phone">Phone Number*</Label>
-                                <AppPhoneInput
-                                    id="phone"
-                                    value={formData.phone}
-                                    onChange={(value) => setFormData((p) => ({ ...p, phone: value }))}
-                                    defaultCountry="NP"
-                                    placeholder="Enter phone number"
-                                />
-                            </div>
-                        </div>
+  const initials = (user?.full_name || user?.email || "U").trim().slice(0, 2).toUpperCase();
+  const roles = user?.roles?.length ? user.roles : [user?.role || "Staff"];
+  const recentEntries = useMemo(() => attendanceEntries.filter((entry) => entry.clock_in_at.slice(0, 10) !== todayKey()).slice(0, 3), [attendanceEntries]);
+  const todayEntry = attendanceStatus?.active_entry || attendanceEntries.find((entry) => entry.clock_in_at.slice(0, 10) === todayKey()) || attendanceStatus?.latest_entry;
+  const isClockedIn = Boolean(attendanceStatus?.is_clocked_in);
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div className="space-y-2">
-                                <div className="flex items-center gap-1.5">
-                                    <Label htmlFor="address">Physical Address*</Label>
-                                    <FieldInfo>
-                                        Type an address or set the map pin — both stay in sync. Format:
-                                        street, area, city, state, country.
-                                    </FieldInfo>
-                                </div>
-                                <Input 
-                                    id="address" 
-                                    value={formData.address} 
-                                    onChange={(e) => handleAddressChange(e.target.value)} 
-                                    required
-                                />
-                            </div>
-                            <div className="space-y-2">
-                                <Label htmlFor="pan_number">PAN / VAT Number</Label>
-                                <Input 
-                                    id="pan_number" 
-                                    value={formData.pan_number} 
-                                    onChange={(e) => setFormData(p => ({ ...p, pan_number: e.target.value }))} 
-                                    placeholder="Company registration number"
-                                />
-                            </div>
-                            <div className="space-y-2">
-                                <Label htmlFor="timezone">Timezone</Label>
-                                <TimezoneSelect
-                                    id="timezone"
-                                    value={formData.timezone}
-                                    onChange={(tz) => setFormData((p) => ({ ...p, timezone: tz }))}
-                                    placeholder="Select timezone"
-                                />
-                            </div>
-                            <div className="space-y-2">
-                                <div className="flex items-center gap-1.5">
-                                    <Label htmlFor="business_day_start_time">Business Day Starts At</Label>
-                                    <FieldInfo>
-                                        Orders before this time are counted toward the previous business day.
-                                    </FieldInfo>
-                                </div>
-                                <Input
-                                    id="business_day_start_time"
-                                    type="time"
-                                    step={60}
-                                    value={formData.business_day_start_time}
-                                    onChange={(e) =>
-                                        setFormData((p) => ({
-                                            ...p,
-                                            business_day_start_time: toHourMinute(e.target.value),
-                                        }))
-                                    }
-                                />
-                            </div>
-                        </div>
-
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div className="space-y-2">
-                                <Label htmlFor="latitude">Latitude</Label>
-                                <Input 
-                                    id="latitude" 
-                                    value={formData.latitude} 
-                                    onChange={(e) => setFormData(p => ({ ...p, latitude: e.target.value }))} 
-                                    placeholder="e.g. 27.7172"
-                                />
-                            </div>
-                            <div className="space-y-2">
-                                <Label htmlFor="longitude">Longitude</Label>
-                                <Input 
-                                    id="longitude" 
-                                    value={formData.longitude} 
-                                    onChange={(e) => setFormData(p => ({ ...p, longitude: e.target.value }))} 
-                                    placeholder="e.g. 85.3240"
-                                />
-                            </div>
-                        </div>
-
-                        <div className="space-y-2">
-                            <Label>Location Marker (Tap Map to Set Location)</Label>
-                            <div className="h-[400px] w-full rounded-xl overflow-hidden border bg-muted relative">
-                                <LocationPicker 
-                                    latitude={formData.latitude} 
-                                    longitude={formData.longitude} 
-                                    onChange={handleLocationChange}
-                                    height={400}
-                                />
-                            </div>
-                            <p className="text-[10px] text-muted-foreground italic">
-                                * Tip: You can also manually adjust the coordinates above. The pin will update automatically.
-                            </p>
-                        </div>
-
-                        <div className="space-y-2">
-                            <Label htmlFor="description">About / Description</Label>
-                            <Textarea 
-                                id="description" 
-                                value={formData.description} 
-                                onChange={(e) => setFormData(p => ({ ...p, description: e.target.value }))} 
-                                placeholder="A brief description of your restaurant"
-                                rows={4}
-                            />
-                        </div>
-                    </CardContent>
-                </Card>
-
-
-                <div className="flex justify-end gap-3">
-                    <Button type="button" variant="outline" onClick={() => router.push('/manage')}>
-                        Discard Changes
-                    </Button>
-                    <Button 
-                        type="submit" 
-                        disabled={saving || !hasChanges} 
-                        className={`min-w-[150px] transition-all ${hasChanges ? "bg-primary" : "bg-green-600 hover:bg-green-600 opacity-90"}`}
-                    >
-                        {saving ? (
-                            <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                        ) : hasChanges ? (
-                            <Save className="w-4 h-4 mr-2" />
-                        ) : (
-                            <FileText className="w-4 h-4 mr-2" />
-                        )}
-                        {saving ? "Saving..." : hasChanges ? "Update Profile" : "Profile Saved"}
-                    </Button>
-                </div>
-            </form>
+  return <main className="mx-auto w-full max-w-5xl space-y-5 pb-10 sm:space-y-6 lg:pb-8">
+    <section className="overflow-hidden rounded-2xl border bg-card shadow-sm" aria-label="Your information">
+      <div className="p-5 sm:p-6">
+        <div className="flex items-start gap-3 sm:gap-4">
+          <Avatar userName={user?.full_name} photoUrl={user?.photo_url} initials={initials} size="large" />
+          <div className="min-w-0 flex-1 pt-0.5">
+            <h1 className="truncate text-xl font-semibold tracking-tight sm:text-2xl">{user?.full_name || "Your profile"}</h1>
+            <p className="mt-1 truncate text-sm text-muted-foreground">{user?.email || "No email address"}</p>
+            <div className="mt-2.5 flex flex-wrap gap-1.5">{roles.map((role) => <Badge key={role} variant="outline" className={`capitalize ${roleBadgeColors[role.toLowerCase().replaceAll(" ", "_")] || ""}`}>{role.replaceAll("_", " ")}</Badge>)}</div>
+          </div>
+          <Button type="button" variant="outline" size="icon" className="shrink-0 rounded-full" onClick={() => setEditingProfile(true)} aria-label="Edit profile" title="Edit profile"><Pencil className="h-4 w-4" /></Button>
         </div>
-    );
+        <div className="mt-5 flex items-start gap-3 rounded-xl bg-muted/45 px-3.5 py-3 sm:px-4">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"><Building2 className="h-4 w-4" /></span>
+          <div className="min-w-0"><p className="text-xs font-medium text-muted-foreground">Working at</p><p className="mt-0.5 truncate text-sm font-semibold">{restaurant?.name || "No restaurant selected"}</p><p className="mt-0.5 line-clamp-2 text-xs leading-5 text-muted-foreground">{restaurant?.address || "Your current workplace"}</p></div>
+        </div>
+      </div>
+    </section>
+
+    <section className="rounded-2xl border bg-card" aria-label="Attendance">
+      <div className="flex flex-col gap-4 border-b p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5"><div><div className="flex items-center gap-2"><Clock3 className="h-4 w-4 text-primary" /><h2 className="font-semibold tracking-tight">Attendance</h2></div><p className="mt-1 text-sm text-muted-foreground">Your current shift and recent time records.</p></div><Button asChild variant={isClockedIn ? "default" : "outline"} className="w-full sm:w-auto"><Link href="/attendance" data-tour="mobile-profile-attendance">{isClockedIn ? "Clock out" : "Take attendance"}<ChevronRight className="ml-1 h-4 w-4" /></Link></Button></div>
+      <div className="grid divide-y md:grid-cols-[0.85fr_1.15fr] md:divide-x md:divide-y-0">
+        <div className="p-4 sm:p-5">{attendanceLoading ? <div className="flex min-h-24 items-center text-sm text-muted-foreground"><Loader2 className="mr-2 h-4 w-4 animate-spin" />Checking today&apos;s attendance</div> : attendanceUnavailable ? <EmptyAttendance /> : <><p className="text-sm text-muted-foreground">Today</p><p className="mt-2 text-2xl font-semibold tracking-tight">{isClockedIn ? "You are clocked in" : todayEntry ? attendanceStatusLabel(todayEntry.status) : "No attendance yet"}</p><p className="mt-2 text-sm leading-5 text-muted-foreground">{isClockedIn ? `Started at ${formatDateTime(attendanceStatus?.active_entry?.clock_in_at)}` : todayEntry ? `${workedHours(todayEntry)} recorded on ${formatDateTime(todayEntry.clock_in_at)}` : "Use an approved attendance station to record your shift."}</p></>}</div>
+        <div className="p-4 sm:p-5"><p className="text-sm font-medium">Recent records</p>{!attendanceLoading && !attendanceUnavailable && recentEntries.length ? <div className="mt-2 divide-y">{recentEntries.map((entry) => <div key={entry.id} className="flex items-center gap-3 py-3 first:pt-2 last:pb-0"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted"><CheckCircle2 className="h-4 w-4 text-muted-foreground" /></span><div className="min-w-0 flex-1"><p className="text-sm font-medium">{formatDateTime(entry.clock_in_at)}</p><p className="mt-0.5 text-xs text-muted-foreground">{attendanceStatusLabel(entry.status)} - {attendanceApprovalLabel(entry.approval_status)}</p></div><p className="text-sm font-semibold tabular-nums">{workedHours(entry)}</p></div>)}</div> : <p className="mt-2 text-sm leading-5 text-muted-foreground">Your latest attendance records will appear here.</p>}</div>
+      </div>
+      <p className="border-t px-4 py-3 text-xs leading-5 text-muted-foreground sm:px-5">Attendance uses your restaurant&apos;s approved QR, mobile, or device process so each record can be verified.</p>
+    </section>
+
+    {user ? <StaffPerformanceCard userId={user.id} /> : null}
+
+    <section className="rounded-2xl border bg-card" aria-label="Account settings" data-tour="mobile-profile-account-settings">
+      <div className="border-b p-4 sm:p-5"><div className="flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-primary" /><h2 className="font-semibold tracking-tight">Account settings</h2></div><p className="mt-1 text-sm text-muted-foreground">Update your profile, sign-in, and restaurant access.</p></div>
+      <div className="divide-y"><ActionRow icon={Pencil} title="Personal details" description="Name and profile photo" onClick={() => setEditingProfile(true)} /><ActionRow icon={KeyRound} title="Change password" description="Use a strong password you do not use elsewhere" onClick={() => setEditingPassword(true)} /><ActionRow icon={LogOut} title="Leave this restaurant" description="Review any open responsibilities before leaving" href="/leave-restaurant" tone="danger" /></div>
+    </section>
+    <Dialog open={editingProfile} onOpenChange={setEditingProfile}><DialogContent className="sm:max-w-[460px]"><DialogHeader><DialogTitle>Edit profile</DialogTitle><DialogDescription>Update how your name and photo appear in Yummy.</DialogDescription></DialogHeader><form onSubmit={saveName} className="space-y-5"><div className="flex items-center gap-4 rounded-xl border bg-muted/20 p-3"><Avatar userName={user?.full_name} photoUrl={user?.photo_url} initials={initials} /><div><p className="text-sm font-medium">Profile photo</p><p className="mt-0.5 text-xs text-muted-foreground">JPG or PNG, up to 5 MB.</p><input ref={photoInput} type="file" accept="image/jpeg,image/png,.jpg,.jpeg,.png" className="hidden" onChange={uploadPhoto} /><Button type="button" variant="outline" size="sm" className="mt-2" onClick={() => photoInput.current?.click()} disabled={uploadingPhoto}>{uploadingPhoto ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Camera className="mr-2 h-4 w-4" />}{uploadingPhoto ? "Uploading" : "Change photo"}</Button></div></div><Field label="Full name" htmlFor="profile-name"><Input id="profile-name" autoComplete="name" value={name} onChange={(event) => setName(event.target.value)} maxLength={120} /></Field><Field label="Email address" htmlFor="profile-email" hint="Changing your sign-in email requires a verified email-change flow."><Input id="profile-email" type="email" value={user?.email || ""} readOnly className="bg-muted/30" /></Field><div className="flex justify-end gap-2"><Button type="button" variant="outline" onClick={() => setEditingProfile(false)}>Cancel</Button><Button type="submit" disabled={savingName || !name.trim()}>{savingName ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}Save changes</Button></div></form></DialogContent></Dialog>
+    <Dialog open={editingPassword} onOpenChange={setEditingPassword}><DialogContent className="sm:max-w-[460px]"><DialogHeader><DialogTitle>Change password</DialogTitle><DialogDescription>Choose a password you do not use for any other account.</DialogDescription></DialogHeader><form onSubmit={savePassword} className="space-y-4"><Field label="Current password" htmlFor="current-password" hint="Leave this blank only if you have not set a password yet."><Input id="current-password" type="password" autoComplete="current-password" value={password.current} onChange={(event) => setPassword((current) => ({ ...current, current: event.target.value }))} /></Field><Field label="New password" htmlFor="new-password"><Input id="new-password" type="password" autoComplete="new-password" minLength={8} value={password.next} onChange={(event) => setPassword((current) => ({ ...current, next: event.target.value }))} /></Field><Field label="Confirm new password" htmlFor="confirm-password"><Input id="confirm-password" type="password" autoComplete="new-password" minLength={8} value={password.confirm} onChange={(event) => setPassword((current) => ({ ...current, confirm: event.target.value }))} /></Field><div className="flex justify-end gap-2"><Button type="button" variant="outline" onClick={() => setEditingPassword(false)}>Cancel</Button><Button type="submit" disabled={savingPassword || !password.next || !password.confirm}>{savingPassword ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <KeyRound className="mr-2 h-4 w-4" />}Update password</Button></div></form></DialogContent></Dialog>
+  </main>;
+}
+
+function Avatar({ userName, photoUrl, initials, size = "regular" }: { userName?: string | null; photoUrl?: string | null; initials: string; size?: "regular" | "large" }) {
+  const dimension = size === "large" ? "h-16 w-16 sm:h-20 sm:w-20" : "h-14 w-14";
+  return <div className={`flex shrink-0 items-center justify-center overflow-hidden rounded-2xl border bg-primary/10 font-semibold text-primary ${dimension}`}>{photoUrl ? <Image src={photoUrl} alt={userName || "Profile photo"} width={80} height={80} unoptimized className="h-full w-full object-cover" /> : initials}</div>;
+}
+
+function EmptyAttendance() { return <><p className="text-sm text-muted-foreground">Today</p><p className="mt-2 text-xl font-semibold tracking-tight">Attendance is unavailable</p><p className="mt-2 text-sm leading-5 text-muted-foreground">Ask a manager to confirm that attendance access is enabled for your account.</p></>; }
+
+function ActionRow({ icon: Icon, title, description, href, onClick, tone = "default" }: { icon: LucideIcon; title: string; description: string; href?: string; onClick?: () => void; tone?: "default" | "danger" }) {
+  const body = <><span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${tone === "danger" ? "bg-destructive/10 text-destructive" : "bg-muted text-muted-foreground"}`}><Icon className="h-4 w-4" /></span><span className="min-w-0 flex-1"><span className={`block text-sm font-medium ${tone === "danger" ? "text-destructive" : ""}`}>{title}</span><span className="mt-0.5 block text-xs leading-5 text-muted-foreground">{description}</span></span><ChevronRight className={`h-4 w-4 shrink-0 ${tone === "danger" ? "text-destructive" : "text-muted-foreground"}`} /></>;
+  const className = "flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:px-5";
+  return href ? <Link href={href} className={className}>{body}</Link> : <button type="button" className={className} onClick={onClick}>{body}</button>;
+}
+
+function Field({ label, htmlFor, hint, children }: { label: string; htmlFor: string; hint?: string; children: React.ReactNode }) {
+  return <div className="space-y-2"><Label htmlFor={htmlFor}>{label}</Label>{children}{hint ? <p className="text-xs leading-5 text-muted-foreground">{hint}</p> : null}</div>;
 }

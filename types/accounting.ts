@@ -269,6 +269,13 @@ export type AccountingDaybook = {
   restaurant_id: number;
   business_date: string;
   business_line: string;
+  period_start_at?: string | null;
+  period_end_at?: string | null;
+  status: "open" | "closed";
+  day_close_id?: number | null;
+  closed_at?: string | null;
+  receipts: DaybookStatementRow[];
+  payments: DaybookStatementRow[];
   cash_control: {
     opening_balance: number;
     closing_balance: number;
@@ -302,6 +309,17 @@ export type AccountingDaybook = {
     count: number;
     blocking: boolean;
   }>;
+};
+
+export type DaybookStatementRow = {
+  key: string;
+  label: string;
+  bank_digital: number;
+  counter_cash: number;
+  owner_other: number;
+  credit_due: number;
+  total: number;
+  count: number;
 };
 
 export type CashTransferInput = {
@@ -1130,8 +1148,11 @@ export type InventoryAdoptionLine = {
   profile_name?: string | null;
   treatment?: InventoryAccountingTreatment | null;
   quantity_snapshot: number;
+  reference_unit_cost: number;
   unit_book_value: number;
   total_book_value: number;
+  cost_variance: number;
+  requires_cost_variance_confirmation: boolean;
   legacy_status: string;
   note?: string | null;
 };

@@ -5,7 +5,17 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
-import { Plus, Search, Edit, Trash2, MoreHorizontal, UtensilsCrossed, X, ImageIcon, Loader2 } from "lucide-react";
+import {
+  Plus,
+  Search,
+  Edit,
+  Trash2,
+  MoreHorizontal,
+  UtensilsCrossed,
+  X,
+  ImageIcon,
+  Loader2,
+} from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -36,11 +46,23 @@ import { useRestaurant } from "@/hooks/use-restaurant";
 import { useFiscalProfile } from "@/hooks/use-fiscal-profile";
 import { MenuApis, ModifierApis, ItemCategoryApis } from "@/lib/api/endpoints";
 import { Skeleton } from "@/components/ui/skeleton";
-import { cn } from "@/lib/utils";
+import { cn, formatCurrency } from "@/lib/utils";
 import { ImageService } from "@/services/image-service";
-import { MenuGalleryDialog, MenuGalleryItem } from "@/components/menu/menu-gallery-dialog";
+import {
+  MenuGalleryDialog,
+  MenuGalleryItem,
+} from "@/components/menu/menu-gallery-dialog";
 import { InventoryLinkDialog } from "@/components/menu/inventory-link-dialog";
+import { AppPage } from "@/components/patterns/page/app-page";
+import { PageHeader } from "@/components/patterns/page/page-header";
+import { SearchField } from "@/components/patterns/controls/search-field";
+import { FilterBar } from "@/components/patterns/controls/filter-bar";
+import { MobileRegisterToolbar } from "@/components/patterns/controls/mobile-register-toolbar";
+import { MobileCreateFab } from "@/components/patterns/actions/mobile-create-fab";
+import { FilterChip } from "@/components/patterns/controls/filter-chip";
+import { EmptyState } from "@/components/patterns/feedback/feedback-state";
 import Image from "next/image";
+import Link from "next/link";
 import type { FiscalTaxCategory } from "@/lib/fiscal/types";
 
 interface MenuItem {
@@ -62,6 +84,12 @@ interface CategoryGroup {
   category_id: number;
   category_name: string;
   items: MenuItem[];
+}
+
+interface CatalogCategory {
+  id: number;
+  name: string;
+  categoryIds: number[];
 }
 
 interface FormData {
@@ -92,17 +120,21 @@ const emptyForm: FormData = {
 
 export default function MenuItemsPage() {
   const [allItems, setAllItems] = useState<MenuItem[]>([]);
-  const [categories, setCategories] = useState<{ id: number; name: string }[]>([]);
-  const [modifierGroups, setModifierGroups] = useState<{ id: number; name: string }[]>([]);
+  const [categories, setCategories] = useState<{ id: number; name: string }[]>(
+    [],
+  );
+  const [modifierGroups, setModifierGroups] = useState<
+    { id: number; name: string }[]
+  >([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedCategory, setSelectedCategory] = useState<number | null>(null);
+  const [selectedCategoryIds, setSelectedCategoryIds] = useState<
+    number[] | null
+  >(null);
   const restaurantId = useAuth((s) => s.user?.restaurant_id);
   const restaurant = useRestaurant((s) => s.restaurant);
-  const {
-    profile: fiscalProfile,
-    loading: fiscalProfileLoading,
-  } = useFiscalProfile(Boolean(restaurantId));
+  const { profile: fiscalProfile, loading: fiscalProfileLoading } =
+    useFiscalProfile(Boolean(restaurantId));
   const requiresFiscalClassification =
     fiscalProfile?.fiscal_billing_mode === "vat_ebilling";
 
@@ -121,14 +153,19 @@ export default function MenuItemsPage() {
 
   // Inventory Link Dialog State
   const [inventoryLinkOpen, setInventoryLinkOpen] = useState(false);
-  const [inventoryLinkItem, setInventoryLinkItem] = useState<MenuItem | null>(null);
+  const [inventoryLinkItem, setInventoryLinkItem] = useState<MenuItem | null>(
+    null,
+  );
 
   // Delete dialog state
   const [deleteItem, setDeleteItem] = useState<MenuItem | null>(null);
   const [deleting, setDeleting] = useState(false);
 
   // Feedback message
-  const [message, setMessage] = useState<{ text: string; type: "success" | "error" } | null>(null);
+  const [message, setMessage] = useState<{
+    text: string;
+    type: "success" | "error";
+  } | null>(null);
 
   const fetchItems = useCallback(async () => {
     if (!restaurantId) {
@@ -138,11 +175,13 @@ export default function MenuItemsPage() {
     try {
       const [response, catRes] = await Promise.all([
         apiClient.get(MenuApis.getMenusGroupedByRestaurant(restaurantId)),
-        apiClient.get(ItemCategoryApis.getItemCategories(restaurantId))
+        apiClient.get(ItemCategoryApis.getItemCategories(restaurantId)),
       ]);
-      
+
       if (catRes.data.status === "success") {
-        setCategories(catRes.data.data.map((c: any) => ({ id: c.id, name: c.name })));
+        setCategories(
+          catRes.data.data.map((c: any) => ({ id: c.id, name: c.name })),
+        );
       }
 
       if (response.data.status === "success") {
@@ -150,21 +189,26 @@ export default function MenuItemsPage() {
         const items: MenuItem[] = [];
         groups.forEach((g) => {
           g.items.forEach((item) => {
-            items.push({ ...item, category_name: g.category_name });
+            items.push({
+              ...item,
+              category_name: g.category_name,
+              item_category_id: item.item_category_id ?? g.category_id,
+            });
           });
         });
         setAllItems(items);
       }
-      
+
       try {
-        const modRes = await apiClient.get(ModifierApis.listGroups(restaurantId));
+        const modRes = await apiClient.get(
+          ModifierApis.listGroups(restaurantId),
+        );
         if (modRes.data?.status === "success") {
-           setModifierGroups(modRes.data.data.groups || []);
+          setModifierGroups(modRes.data.data.groups || []);
         }
-      } catch(e) {
-         console.warn("Failed to fetch modifier groups", e);
+      } catch (e) {
+        console.warn("Failed to fetch modifier groups", e);
       }
-      
     } catch (err) {
       console.error("Failed to fetch menu items:", err);
     } finally {
@@ -172,7 +216,9 @@ export default function MenuItemsPage() {
     }
   }, [restaurantId]);
 
-  useEffect(() => { fetchItems(); }, [fetchItems]);
+  useEffect(() => {
+    fetchItems();
+  }, [fetchItems]);
 
   // Auto-dismiss feedback message
   useEffect(() => {
@@ -182,10 +228,34 @@ export default function MenuItemsPage() {
     }
   }, [message]);
 
+  const catalogCategories = useMemo<CatalogCategory[]>(() => {
+    const categoriesByName = new Map<string, CatalogCategory>();
+
+    categories.forEach((category) => {
+      const existing = categoriesByName.get(category.name);
+      if (existing) {
+        existing.categoryIds.push(category.id);
+        return;
+      }
+
+      categoriesByName.set(category.name, {
+        id: category.id,
+        name: category.name,
+        categoryIds: [category.id],
+      });
+    });
+
+    return Array.from(categoriesByName.values());
+  }, [categories]);
+
   const filteredItems = useMemo(() => {
     let result = allItems;
-    if (selectedCategory !== null) {
-      result = result.filter((item) => item.item_category_id === selectedCategory);
+    if (selectedCategoryIds !== null) {
+      result = result.filter(
+        (item) =>
+          item.item_category_id !== undefined &&
+          selectedCategoryIds.includes(item.item_category_id),
+      );
     }
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
@@ -193,13 +263,15 @@ export default function MenuItemsPage() {
         (item) =>
           item.name.toLowerCase().includes(q) ||
           (item.category_name || "").toLowerCase().includes(q) ||
-          (item.description || "").toLowerCase().includes(q)
+          (item.description || "").toLowerCase().includes(q),
       );
     }
     return result;
-  }, [allItems, searchQuery, selectedCategory]);
+  }, [allItems, searchQuery, selectedCategoryIds]);
 
-  const handleClearSearch = useCallback(() => { setSearchQuery(""); }, []);
+  const handleClearSearch = useCallback(() => {
+    setSearchQuery("");
+  }, []);
 
   const openAddDialog = () => {
     setEditingItem(null);
@@ -209,7 +281,7 @@ export default function MenuItemsPage() {
     setFormError(null);
     setFormOpen(true);
   };
-   
+
   const getImageUrl = (path?: string) => {
     if (!path) return "";
     if (path.startsWith("asset:")) {
@@ -258,7 +330,7 @@ export default function MenuItemsPage() {
   const handleRemoveImage = () => {
     setSelectedFile(null);
     setPreviewUrl(null);
-    setForm({ ...form, image: '' });
+    setForm({ ...form, image: "" });
   };
 
   const handleSubmit = async () => {
@@ -267,9 +339,18 @@ export default function MenuItemsPage() {
       setFormError("Please wait while fiscal requirements are checked.");
       return;
     }
-    if (!form.name.trim()) { setFormError("Name is required"); return; }
-    if (!form.price || isNaN(Number(form.price)) || Number(form.price) <= 0) { setFormError("Valid price is required"); return; }
-    if (!form.item_category_id) { setFormError("Category is required"); return; }
+    if (!form.name.trim()) {
+      setFormError("Name is required");
+      return;
+    }
+    if (!form.price || isNaN(Number(form.price)) || Number(form.price) <= 0) {
+      setFormError("Valid price is required");
+      return;
+    }
+    if (!form.item_category_id) {
+      setFormError("Category is required");
+      return;
+    }
     if (requiresFiscalClassification && !form.fiscal_code.trim()) {
       setFormError("Fiscal code is required for VAT e-billing.");
       return;
@@ -291,7 +372,10 @@ export default function MenuItemsPage() {
       if (selectedFile) {
         setIsUploading(true);
         try {
-          imageUrl = await ImageService.uploadMenuImage(selectedFile, restaurantId);
+          imageUrl = await ImageService.uploadMenuImage(
+            selectedFile,
+            restaurantId,
+          );
         } catch (error: any) {
           console.error("Upload failed", error);
           if (error.response) {
@@ -320,16 +404,25 @@ export default function MenuItemsPage() {
 
       if (editingItem) {
         await apiClient.put(MenuApis.updateMenu(editingItem.id), payload);
-        setMessage({ text: `"${form.name}" updated successfully`, type: "success" });
+        setMessage({
+          text: `"${form.name}" updated successfully`,
+          type: "success",
+        });
       } else {
         await apiClient.post(MenuApis.createMenu(restaurantId), payload);
-        setMessage({ text: `"${form.name}" created successfully`, type: "success" });
+        setMessage({
+          text: `"${form.name}" created successfully`,
+          type: "success",
+        });
       }
       setFormOpen(false);
       await fetchItems();
     } catch (err: any) {
-      const detail = err.response?.data?.detail || err.message || "Something went wrong";
-      setFormError(typeof detail === "string" ? detail : JSON.stringify(detail));
+      const detail =
+        err.response?.data?.detail || err.message || "Something went wrong";
+      setFormError(
+        typeof detail === "string" ? detail : JSON.stringify(detail),
+      );
     } finally {
       setSubmitting(false);
     }
@@ -345,92 +438,170 @@ export default function MenuItemsPage() {
       await fetchItems();
     } catch (err: any) {
       const detail = err.response?.data?.detail || "Failed to delete item";
-      setMessage({ text: typeof detail === "string" ? detail : JSON.stringify(detail), type: "error" });
+      setMessage({
+        text: typeof detail === "string" ? detail : JSON.stringify(detail),
+        type: "error",
+      });
       setDeleteItem(null);
     } finally {
       setDeleting(false);
     }
   };
 
-  const currency = restaurant?.currency || "Rs.";
+  const currency = restaurant?.currency;
 
   return (
-    <div className="flex flex-col gap-6 max-w-[1600px] mx-auto">
+    <AppPage width="workspace">
       {/* Feedback toast */}
       {message && (
-        <div className={cn(
-          "fixed top-4 right-4 z-[100] px-4 py-3 rounded-lg shadow-lg text-sm font-medium animate-in slide-in-from-top-2 fade-in",
-          message.type === "success" ? "bg-emerald-600 text-white" : "bg-destructive text-destructive-foreground"
-        )}>
+        <div
+          className={cn(
+            "fixed top-4 right-4 z-[100] px-4 py-3 rounded-lg shadow-lg text-sm font-medium animate-in slide-in-from-top-2 fade-in",
+            message.type === "success"
+              ? "bg-emerald-600 text-white"
+              : "bg-destructive text-destructive-foreground",
+          )}
+        >
           {message.text}
         </div>
       )}
 
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Menu</h1>
-          <p className="text-muted-foreground text-sm">
-            Manage your dishes and categories
-            {!loading && <span className="ml-1 text-foreground font-medium">({allItems.length} items)</span>}
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          <div className="relative w-full sm:w-72">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search by name or category..."
-              className="pl-9 pr-9"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
-            {searchQuery && (
-              <button onClick={handleClearSearch} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
-                <X className="h-4 w-4" />
-              </button>
-            )}
-          </div>
-          <Button onClick={openAddDialog} className="bg-primary text-white hover:bg-primary/90 shrink-0">
-            <Plus className="mr-2 h-4 w-4" /> Add Item
-          </Button>
-        </div>
+      <div className="hidden lg:block">
+        <PageHeader
+          title="Menu"
+          description={`Manage dishes and categories${loading ? "" : ` · ${allItems.length} items`}`}
+          actions={
+            <div className="flex w-full min-w-0 items-center gap-2 md:w-auto">
+              <SearchField
+                placeholder="Search by name or category"
+                className="min-w-0 flex-1 md:w-72"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onClear={handleClearSearch}
+              />
+              <Button
+                asChild
+                variant="outline"
+                className="h-11 shrink-0 rounded-xl"
+              >
+                <Link href="/menu/categories">Categories</Link>
+              </Button>
+              <Button
+                asChild
+                variant="outline"
+                className="h-11 shrink-0 rounded-xl"
+              >
+                <Link href="/menu/modifiers">Options &amp; add-ons</Link>
+              </Button>
+              <Button
+                onClick={openAddDialog}
+                className="h-11 shrink-0 rounded-xl"
+              >
+                <Plus className="mr-2 h-4 w-4" /> Add Item
+              </Button>
+            </div>
+          }
+        />
       </div>
+
+      <MobileRegisterToolbar
+        search={
+          <SearchField
+            placeholder="Search menu"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            onClear={handleClearSearch}
+          />
+        }
+        filter={
+          <FilterBar
+            title="Filters"
+            activeCount={selectedCategoryIds === null ? 0 : 1}
+            responsiveAt="lg"
+            mobileTriggerVariant="icon"
+            mobileContent={
+              <div className="space-y-3">
+                <p className="text-sm font-medium">Category</p>
+                <div className="flex flex-wrap gap-2">
+                  <FilterChip
+                    onClick={() => setSelectedCategoryIds(null)}
+                    active={selectedCategoryIds === null}
+                    count={allItems.length}
+                  >
+                    All
+                  </FilterChip>
+                  {catalogCategories.map((cat) => {
+                    const count = allItems.filter(
+                      (item) =>
+                        item.item_category_id !== undefined &&
+                        cat.categoryIds.includes(item.item_category_id),
+                    ).length;
+                    const isActive =
+                      selectedCategoryIds !== null &&
+                      selectedCategoryIds.length === cat.categoryIds.length &&
+                      selectedCategoryIds.every((id) =>
+                        cat.categoryIds.includes(id),
+                      );
+                    return (
+                      <FilterChip
+                        key={cat.id}
+                        onClick={() =>
+                          setSelectedCategoryIds(
+                            isActive ? null : cat.categoryIds,
+                          )
+                        }
+                        active={isActive}
+                        count={count}
+                      >
+                        {cat.name}
+                      </FilterChip>
+                    );
+                  })}
+                </div>
+              </div>
+            }
+          />
+        }
+      />
 
       {/* Category Filter Tabs */}
       {loading ? (
-        <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
+        <div className="hidden gap-2 overflow-x-auto pb-1 no-scrollbar lg:flex">
           {Array.from({ length: 6 }).map((_, i) => (
             <Skeleton key={i} className="h-9 w-24 rounded-lg flex-shrink-0" />
           ))}
         </div>
-      ) : categories.length > 0 ? (
-        <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
-          <button
-            onClick={() => setSelectedCategory(null)}
-            className={cn(
-              "px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all border",
-              selectedCategory === null
-                ? "bg-primary text-primary-foreground border-primary shadow-sm"
-                : "bg-card text-muted-foreground border-border hover:text-foreground hover:border-foreground/20"
-            )}
+      ) : catalogCategories.length > 0 ? (
+        <div className="hidden gap-2 overflow-x-auto pb-1 no-scrollbar lg:flex">
+          <FilterChip
+            onClick={() => setSelectedCategoryIds(null)}
+            active={selectedCategoryIds === null}
+            count={allItems.length}
           >
-            All ({allItems.length})
-          </button>
-          {categories.map((cat) => {
-            const count = allItems.filter((i) => i.item_category_id === cat.id).length;
+            All
+          </FilterChip>
+          {catalogCategories.map((cat) => {
+            const count = allItems.filter(
+              (item) =>
+                item.item_category_id !== undefined &&
+                cat.categoryIds.includes(item.item_category_id),
+            ).length;
+            const isActive =
+              selectedCategoryIds !== null &&
+              selectedCategoryIds.length === cat.categoryIds.length &&
+              selectedCategoryIds.every((id) => cat.categoryIds.includes(id));
             return (
-              <button
+              <FilterChip
                 key={cat.id}
-                onClick={() => setSelectedCategory(selectedCategory === cat.id ? null : cat.id)}
-                className={cn(
-                  "px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all border",
-                  selectedCategory === cat.id
-                    ? "bg-primary text-primary-foreground border-primary shadow-sm"
-                    : "bg-card text-muted-foreground border-border hover:text-foreground hover:border-foreground/20"
-                )}
+                onClick={() =>
+                  setSelectedCategoryIds(isActive ? null : cat.categoryIds)
+                }
+                active={isActive}
+                count={count}
               >
-                {cat.name} ({count})
-              </button>
+                {cat.name}
+              </FilterChip>
             );
           })}
         </div>
@@ -438,7 +609,7 @@ export default function MenuItemsPage() {
 
       {/* Content */}
       {loading ? (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
           {Array.from({ length: 12 }).map((_, i) => (
             <Card key={i} className="overflow-hidden">
               <Skeleton className="h-28 w-full rounded-none" />
@@ -451,37 +622,53 @@ export default function MenuItemsPage() {
           ))}
         </div>
       ) : filteredItems.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-20 text-center">
-          {searchQuery || selectedCategory !== null ? (
-            <>
-              <Search className="h-12 w-12 text-muted-foreground/40 mb-4" />
-              <h3 className="text-lg font-semibold mb-1">No results found</h3>
-              <p className="text-muted-foreground text-sm mb-4">
-                {searchQuery ? `No items match "${searchQuery}"` : "No items in this category"}
-              </p>
-              <Button variant="outline" onClick={() => { setSearchQuery(""); setSelectedCategory(null); }}>
-                Clear Filters
-              </Button>
-            </>
-          ) : (
-            <>
-              <UtensilsCrossed className="h-12 w-12 text-muted-foreground/40 mb-4" />
-              <h3 className="text-lg font-semibold mb-1">No menu items yet</h3>
-              <p className="text-muted-foreground text-sm mb-4">Add your first item to get started.</p>
-              <Button onClick={openAddDialog}>
-                <Plus className="mr-2 h-4 w-4" /> Add Item
-              </Button>
-            </>
-          )}
-        </div>
+        <EmptyState
+          icon={
+            searchQuery || selectedCategoryIds !== null ? (
+              <Search className="h-5 w-5" />
+            ) : (
+              <UtensilsCrossed className="h-5 w-5" />
+            )
+          }
+          title={
+            searchQuery || selectedCategoryIds !== null
+              ? "No results found"
+              : "No menu items yet"
+          }
+          description={
+            searchQuery
+              ? `No items match “${searchQuery}”`
+              : selectedCategoryIds !== null
+                ? "No items in this category."
+                : "Add your first item to get started."
+          }
+          actionLabel={
+            searchQuery || selectedCategoryIds !== null
+              ? "Clear filters"
+              : "Add item"
+          }
+          onAction={
+            searchQuery || selectedCategoryIds !== null
+              ? () => {
+                  setSearchQuery("");
+                  setSelectedCategoryIds(null);
+                }
+              : openAddDialog
+          }
+        />
       ) : (
         <>
           {searchQuery && (
             <p className="text-sm text-muted-foreground">
-              Showing <span className="font-medium text-foreground">{filteredItems.length}</span> result{filteredItems.length !== 1 ? "s" : ""} for &quot;{searchQuery}&quot;
+              Showing{" "}
+              <span className="font-medium text-foreground">
+                {filteredItems.length}
+              </span>{" "}
+              result{filteredItems.length !== 1 ? "s" : ""} for &quot;
+              {searchQuery}&quot;
             </p>
           )}
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
             {filteredItems.map((item) => (
               <MenuItemCard
                 key={item.id}
@@ -499,17 +686,31 @@ export default function MenuItemsPage() {
         </>
       )}
 
+      <MobileCreateFab label="Add menu item" onClick={openAddDialog} />
+
       {/* Add/Edit Dialog */}
       <Dialog open={formOpen} onOpenChange={setFormOpen}>
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>{editingItem ? "Edit Menu Item" : "Add Menu Item"}</DialogTitle>
+            <DialogTitle>
+              {editingItem ? "Edit Menu Item" : "Add Menu Item"}
+            </DialogTitle>
             <DialogDescription>
-              {editingItem ? "Update the details of this menu item." : "Fill in the details to create a new menu item."}
+              {editingItem
+                ? "Update the details of this menu item."
+                : "Fill in the details to create a new menu item."}
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 py-2">
+          <div className="space-y-5 py-2">
+            <div>
+              <p className="text-sm font-medium text-foreground">
+                Item details
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Name and customer-facing description.
+              </p>
+            </div>
             <div className="space-y-2">
               <Label htmlFor="name">Name *</Label>
               <Input
@@ -520,9 +721,12 @@ export default function MenuItemsPage() {
               />
             </div>
 
+            <p className="border-t pt-5 text-sm font-medium text-foreground">
+              Pricing and category
+            </p>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="price">Price *</Label>
+                <Label htmlFor="price">Price ({currency || "NPR"}) *</Label>
                 <Input
                   id="price"
                   type="number"
@@ -537,7 +741,9 @@ export default function MenuItemsPage() {
                 <Label>Category *</Label>
                 <Select
                   value={form.item_category_id}
-                  onValueChange={(val) => setForm({ ...form, item_category_id: val })}
+                  onValueChange={(val) =>
+                    setForm({ ...form, item_category_id: val })
+                  }
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Select category" />
@@ -553,32 +759,15 @@ export default function MenuItemsPage() {
               </div>
             </div>
 
-            <div className="space-y-2">
+            <div className="space-y-2 border-t pt-5">
               <Label>Item Image</Label>
               <div className="flex items-center gap-4">
-                {(previewUrl || (form.image && !form.image.startsWith('asset:'))) && (
+                {(previewUrl ||
+                  (form.image && !form.image.startsWith("asset:"))) && (
                   <div className="relative w-24 h-24 border rounded-md overflow-hidden">
-                    <img 
-                      src={previewUrl || getImageUrl(form.image)} 
-                      alt="Preview" 
-                      className="w-full h-full object-cover"
-                    />
-                    <button
-                      onClick={handleRemoveImage}
-                      className="absolute top-0 right-0 p-1 bg-red-500 text-white rounded-bl-md hover:bg-red-600"
-                      type="button"
-                    >
-                      <X size={14} />
-                    </button>
-                  </div>
-                )}
-                
-                {/* Logic for default image display if form.image is set but no preview */}
-                 {!previewUrl && form.image && form.image.startsWith('asset:') && (
-                  <div className="relative w-24 h-24 border rounded-md overflow-hidden">
-                    <img 
-                      src={getImageUrl(form.image)} 
-                      alt="Preview" 
+                    <img
+                      src={previewUrl || getImageUrl(form.image)}
+                      alt="Preview"
                       className="w-full h-full object-cover"
                     />
                     <button
@@ -591,6 +780,26 @@ export default function MenuItemsPage() {
                   </div>
                 )}
 
+                {/* Logic for default image display if form.image is set but no preview */}
+                {!previewUrl &&
+                  form.image &&
+                  form.image.startsWith("asset:") && (
+                    <div className="relative w-24 h-24 border rounded-md overflow-hidden">
+                      <img
+                        src={getImageUrl(form.image)}
+                        alt="Preview"
+                        className="w-full h-full object-cover"
+                      />
+                      <button
+                        onClick={handleRemoveImage}
+                        className="absolute top-0 right-0 p-1 bg-red-500 text-white rounded-bl-md hover:bg-red-600"
+                        type="button"
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                  )}
+
                 <div className="flex-1 space-y-2">
                   <div className="flex gap-2">
                     <Input
@@ -601,9 +810,9 @@ export default function MenuItemsPage() {
                       disabled={isUploading}
                       className="flex-1"
                     />
-                    <Button 
-                      type="button" 
-                      variant="outline" 
+                    <Button
+                      type="button"
+                      variant="outline"
                       onClick={() => setGalleryOpen(true)}
                     >
                       <ImageIcon className="mr-2 h-4 w-4" />
@@ -623,7 +832,9 @@ export default function MenuItemsPage() {
                 id="description"
                 placeholder="Optional description..."
                 value={form.description}
-                onChange={(e) => setForm({ ...form, description: e.target.value })}
+                onChange={(e) =>
+                  setForm({ ...form, description: e.target.value })
+                }
               />
             </div>
 
@@ -631,20 +842,28 @@ export default function MenuItemsPage() {
               <div className="space-y-4 rounded-lg border border-emerald-200 bg-emerald-50/50 p-4 dark:border-emerald-900 dark:bg-emerald-950/20">
                 <div>
                   <div className="flex items-center gap-2">
-                    <p className="text-sm font-semibold">Fiscal classification</p>
-                    <Badge variant={requiresFiscalClassification ? "warning" : "outline"}>
+                    <p className="text-sm font-semibold">
+                      Fiscal classification
+                    </p>
+                    <Badge
+                      variant={
+                        requiresFiscalClassification ? "warning" : "outline"
+                      }
+                    >
                       {requiresFiscalClassification ? "Required" : "Optional"}
                     </Badge>
                   </div>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    These values are snapshotted by the backend when a VAT invoice is issued.
+                    These values are snapshotted by the backend when a VAT
+                    invoice is issued.
                   </p>
                 </div>
 
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div className="space-y-2">
                     <Label htmlFor="fiscal-code">
-                      Fiscal / service code{requiresFiscalClassification ? " *" : ""}
+                      Fiscal / service code
+                      {requiresFiscalClassification ? " *" : ""}
                     </Label>
                     <Input
                       id="fiscal-code"
@@ -701,30 +920,39 @@ export default function MenuItemsPage() {
                 </div>
               </div>
             )}
-            
-            <div className="space-y-2">
+
+            <div className="space-y-2 border-t pt-5">
               <Label>Modifier Groups</Label>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 border rounded-md p-3 max-h-40 overflow-y-auto">
-                {modifierGroups.map(group => (
-                   <label key={group.id} className="flex items-center gap-2 text-sm cursor-pointer">
-                     <input 
-                       type="checkbox" 
-                       checked={form.modifier_group_ids.includes(group.id)} 
-                       onChange={(e) => {
-                         const checked = e.target.checked;
-                         setForm(prev => ({
-                            ...prev,
-                            modifier_group_ids: checked 
-                              ? [...prev.modifier_group_ids, group.id]
-                              : prev.modifier_group_ids.filter(id => id !== group.id)
-                         }))
-                       }}
-                       className="rounded border-border"
-                     />
-                     {group.name}
-                   </label>
+                {modifierGroups.map((group) => (
+                  <label
+                    key={group.id}
+                    className="flex min-h-11 items-center gap-2 rounded-lg px-2 text-sm cursor-pointer hover:bg-muted"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={form.modifier_group_ids.includes(group.id)}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        setForm((prev) => ({
+                          ...prev,
+                          modifier_group_ids: checked
+                            ? [...prev.modifier_group_ids, group.id]
+                            : prev.modifier_group_ids.filter(
+                                (id) => id !== group.id,
+                              ),
+                        }));
+                      }}
+                      className="rounded border-border"
+                    />
+                    {group.name}
+                  </label>
                 ))}
-                {modifierGroups.length === 0 && <span className="text-muted-foreground text-xs col-span-2">No modifier groups available</span>}
+                {modifierGroups.length === 0 && (
+                  <span className="text-muted-foreground text-xs col-span-2">
+                    No modifier groups available
+                  </span>
+                )}
               </div>
             </div>
 
@@ -733,28 +961,41 @@ export default function MenuItemsPage() {
                 type="checkbox"
                 id="tax_inclusive"
                 checked={form.is_price_tax_inclusive}
-                onChange={(e) => setForm({ ...form, is_price_tax_inclusive: e.target.checked })}
+                onChange={(e) =>
+                  setForm({ ...form, is_price_tax_inclusive: e.target.checked })
+                }
                 className="rounded border-border"
               />
-              <Label htmlFor="tax_inclusive" className="text-sm font-normal cursor-pointer">
+              <Label
+                htmlFor="tax_inclusive"
+                className="text-sm font-normal cursor-pointer"
+              >
                 Price includes tax
               </Label>
             </div>
 
             {formError && (
-              <p className="text-sm text-destructive bg-destructive/10 px-3 py-2 rounded-md">{formError}</p>
+              <p className="text-sm text-destructive bg-destructive/10 px-3 py-2 rounded-md">
+                {formError}
+              </p>
             )}
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setFormOpen(false)} disabled={submitting}>
+            <Button
+              variant="outline"
+              onClick={() => setFormOpen(false)}
+              disabled={submitting}
+            >
               Cancel
             </Button>
             <Button
               onClick={handleSubmit}
               disabled={submitting || isUploading || fiscalProfileLoading}
             >
-              {(submitting || isUploading) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {(submitting || isUploading) && (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              )}
               {isUploading ? "Uploading..." : editingItem ? "Update" : "Create"}
             </Button>
           </DialogFooter>
@@ -762,31 +1003,46 @@ export default function MenuItemsPage() {
       </Dialog>
 
       {/* Delete Confirmation Dialog */}
-      <Dialog open={!!deleteItem} onOpenChange={(open) => { if (!open) setDeleteItem(null); }}>
+      <Dialog
+        open={!!deleteItem}
+        onOpenChange={(open) => {
+          if (!open) setDeleteItem(null);
+        }}
+      >
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>Delete Menu Item</DialogTitle>
             <DialogDescription>
-              Are you sure you want to delete <strong>&quot;{deleteItem?.name}&quot;</strong>? This action cannot be undone.
+              Are you sure you want to delete{" "}
+              <strong>&quot;{deleteItem?.name}&quot;</strong>? This action
+              cannot be undone.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteItem(null)} disabled={deleting}>
+            <Button
+              variant="outline"
+              onClick={() => setDeleteItem(null)}
+              disabled={deleting}
+            >
               Cancel
             </Button>
-            <Button variant="destructive" onClick={handleDelete} disabled={deleting}>
+            <Button
+              variant="destructive"
+              onClick={handleDelete}
+              disabled={deleting}
+            >
               {deleting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Delete
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      <MenuGalleryDialog 
-        open={galleryOpen} 
-        onOpenChange={setGalleryOpen} 
-        onSelect={handleGallerySelect} 
+      <MenuGalleryDialog
+        open={galleryOpen}
+        onOpenChange={setGalleryOpen}
+        onSelect={handleGallerySelect}
       />
-      
+
       {/* Inventory Link Dialog */}
       <InventoryLinkDialog
         open={inventoryLinkOpen}
@@ -796,7 +1052,7 @@ export default function MenuItemsPage() {
         }}
         menuItem={inventoryLinkItem}
       />
-    </div>
+    </AppPage>
   );
 }
 
@@ -808,7 +1064,7 @@ function MenuItemCard({
   onLinkInventory,
 }: {
   item: MenuItem;
-  currency: string;
+  currency?: string | null;
   onEdit: () => void;
   onDelete: () => void;
   onLinkInventory: () => void;
@@ -847,18 +1103,28 @@ function MenuItemCard({
             {item.category_name}
           </Badge>
         )}
-        <div className="absolute top-1.5 right-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+        <div className="absolute right-1.5 top-1.5 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="secondary" size="icon" className="h-7 w-7 bg-black/50 hover:bg-black/70 text-white border-0">
-                <MoreHorizontal className="h-3.5 w-3.5" />
+              <Button
+                variant="secondary"
+                size="icon"
+                className="h-9 w-9 bg-black/50 text-white hover:bg-black/70"
+              >
+                <MoreHorizontal className="h-4 w-4" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={onLinkInventory}><UtensilsCrossed className="mr-2 h-4 w-4" /> Link Inventory</DropdownMenuItem>
-              <DropdownMenuItem onClick={onEdit}><Edit className="mr-2 h-4 w-4" /> Edit</DropdownMenuItem>
+              <DropdownMenuItem onClick={onLinkInventory}>
+                <UtensilsCrossed className="mr-2 h-4 w-4" /> Link Inventory
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={onEdit}>
+                <Edit className="mr-2 h-4 w-4" /> Edit
+              </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={onDelete} className="text-destructive"><Trash2 className="mr-2 h-4 w-4" /> Delete</DropdownMenuItem>
+              <DropdownMenuItem onClick={onDelete} className="text-destructive">
+                <Trash2 className="mr-2 h-4 w-4" /> Delete
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
@@ -870,17 +1136,14 @@ function MenuItemCard({
           {item.name}
         </h3>
         {item.description && (
-          <p className="text-[10px] sm:text-xs text-muted-foreground line-clamp-1 mb-1">{item.description}</p>
+          <p className="text-[10px] sm:text-xs text-muted-foreground line-clamp-1 mb-1">
+            {item.description}
+          </p>
         )}
         <div className="flex items-center justify-between mt-1">
           <span className="text-sm sm:text-base font-bold text-foreground">
-            {currency} {(item.price || 0).toLocaleString()}
+            {formatCurrency(item.price || 0, currency)}
           </span>
-          {item.category_type && (
-            <Badge variant="outline" className="text-[9px] capitalize hidden sm:inline-flex">
-              {item.category_type}
-            </Badge>
-          )}
         </div>
       </CardContent>
     </Card>

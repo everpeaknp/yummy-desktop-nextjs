@@ -177,10 +177,32 @@ export function InventoryAccountingClient() {
     unitBookValue: number,
   ) => {
     if (!restaurantId || !draft) return;
+    const currentLine = draft.lines.find((line) => line.inventory_item_id === itemId);
+    const referenceCost = Number(currentLine?.reference_unit_cost ?? 0);
+    const selectedProfile = profiles.find((profile) => profile.id === profileId);
+    const hasVariance =
+      selectedProfile?.treatment !== "direct_expense" &&
+      Math.abs(unitBookValue - referenceCost) >= 0.01;
+    let varianceReason: string | undefined;
+    if (hasVariance) {
+      varianceReason = window.prompt(
+        `The book cost differs from the existing stock cost (Rs. ${referenceCost.toLocaleString()}). Explain why this accounting value should be different:`,
+      )?.trim();
+      if (!varianceReason) {
+        toast.error("A reason is required to use a different opening book cost.");
+        await load();
+        return;
+      }
+    }
     try {
       await apiClient.patch(
         AccountingApis.updateInventoryAdoptionLine(draft.id, itemId, restaurantId),
-        { accounting_profile_id: profileId, unit_book_value: unitBookValue },
+        {
+          accounting_profile_id: profileId,
+          unit_book_value: unitBookValue,
+          confirm_cost_variance: hasVariance,
+          note: varianceReason,
+        },
       );
       await load();
     } catch (error: any) {
@@ -265,9 +287,9 @@ export function InventoryAccountingClient() {
 
         <TabsContent value="adoption" className="mt-4">
           <Card>
-            <CardHeader className="flex-row items-center justify-between space-y-0"><div><CardTitle className="text-base">Opening inventory valuation</CardTitle><p className="mt-1 text-sm text-muted-foreground">Existing quantities remain unchanged. Enter book values only for capitalized stock.</p></div>{!draft && !posted && canManage ? <Button onClick={createAdoption}><BookOpenCheck className="mr-2 h-4 w-4" />Start adoption</Button> : null}</CardHeader>
+            <CardHeader className="flex-row items-center justify-between space-y-0"><div><CardTitle className="text-base">Opening inventory valuation</CardTitle><p className="mt-1 text-sm text-muted-foreground">Existing stock costs are copied automatically. Changing a book cost requires an explicit reason because it changes the Balance Sheet.</p></div>{!draft && !posted && canManage ? <Button onClick={createAdoption}><BookOpenCheck className="mr-2 h-4 w-4" />Start adoption</Button> : null}</CardHeader>
             <CardContent className="p-0">
-              {posted ? <div className="p-5 text-sm"><p className="font-medium text-emerald-700">Posted on {new Date(posted.posted_at || posted.created_at).toLocaleString()}</p><p className="mt-1">Opening inventory: Rs. {Number(posted.total_book_value).toLocaleString()}</p></div> : draft ? <div className="overflow-x-auto"><table className="w-full min-w-[880px] text-sm"><thead className="border-y bg-muted/40 text-left text-muted-foreground"><tr><th className="px-5 py-3">Item</th><th className="px-5 py-3">Quantity</th><th className="px-5 py-3">Profile</th><th className="px-5 py-3">Unit value</th><th className="px-5 py-3">Total</th></tr></thead><tbody>{draft.lines.map((line) => <tr key={line.id} className="border-b"><td className="px-5 py-3 font-medium">{line.item_name}</td><td className="px-5 py-3">{Number(line.quantity_snapshot).toLocaleString()} {line.unit}</td><td className="px-5 py-3"><Select value={line.accounting_profile_id ? String(line.accounting_profile_id) : ""} onValueChange={(value) => void updateAdoptionLine(line.inventory_item_id, Number(value), Number(line.unit_book_value))}><SelectTrigger className="w-[220px]"><SelectValue placeholder="Select profile" /></SelectTrigger><SelectContent>{profiles.filter((profile) => profile.is_active).map((profile) => <SelectItem key={profile.id} value={String(profile.id)}>{profile.name}</SelectItem>)}</SelectContent></Select></td><td className="px-5 py-3"><Input className="w-32" type="number" min="0" step="0.01" defaultValue={Number(line.unit_book_value)} disabled={line.treatment === "direct_expense"} onBlur={(event) => line.accounting_profile_id && void updateAdoptionLine(line.inventory_item_id, line.accounting_profile_id, Number(event.target.value))} /></td><td className="px-5 py-3">Rs. {Number(line.total_book_value).toLocaleString()}</td></tr>)}</tbody></table><div className="flex items-center justify-between border-t p-5"><span className="font-semibold">Total: Rs. {Number(draft.total_book_value).toLocaleString()}</span>{canManage ? <Button onClick={postAdoption}><Save className="mr-2 h-4 w-4" />Post opening valuation</Button> : null}</div></div> : <p className="p-5 text-sm text-muted-foreground">No inventory adoption has been started.</p>}
+              {posted ? <div className="p-5 text-sm"><p className="font-medium text-emerald-700">Posted on {new Date(posted.posted_at || posted.created_at).toLocaleString()}</p><p className="mt-1">Opening inventory: Rs. {Number(posted.total_book_value).toLocaleString()}</p></div> : draft ? <div className="overflow-x-auto"><table className="w-full min-w-[1020px] text-sm"><thead className="border-y bg-muted/40 text-left text-muted-foreground"><tr><th className="px-5 py-3">Item</th><th className="px-5 py-3">Quantity</th><th className="px-5 py-3">Profile</th><th className="px-5 py-3">Existing stock cost</th><th className="px-5 py-3">Opening book cost</th><th className="px-5 py-3">Book value</th></tr></thead><tbody>{draft.lines.map((line) => <tr key={line.id} className="border-b"><td className="px-5 py-3 font-medium">{line.item_name}{line.note ? <p className="mt-1 max-w-48 text-xs font-normal text-amber-700">Variance: {line.note}</p> : null}</td><td className="px-5 py-3">{Number(line.quantity_snapshot).toLocaleString()} {line.unit}</td><td className="px-5 py-3"><Select value={line.accounting_profile_id ? String(line.accounting_profile_id) : ""} onValueChange={(value) => void updateAdoptionLine(line.inventory_item_id, Number(value), Number(line.unit_book_value))}><SelectTrigger className="w-[220px]"><SelectValue placeholder="Select profile" /></SelectTrigger><SelectContent>{profiles.filter((profile) => profile.is_active).map((profile) => <SelectItem key={profile.id} value={String(profile.id)}>{profile.name}</SelectItem>)}</SelectContent></Select></td><td className="px-5 py-3">Rs. {Number(line.reference_unit_cost).toLocaleString()}</td><td className="px-5 py-3"><Input className="w-32" type="number" min="0" step="0.01" defaultValue={Number(line.unit_book_value)} disabled={line.treatment === "direct_expense"} onBlur={(event) => line.accounting_profile_id && void updateAdoptionLine(line.inventory_item_id, line.accounting_profile_id, Number(event.target.value))} /></td><td className="px-5 py-3">Rs. {Number(line.total_book_value).toLocaleString()}</td></tr>)}</tbody></table><div className="flex items-center justify-between border-t p-5"><span className="font-semibold">Total book inventory: Rs. {Number(draft.total_book_value).toLocaleString()}</span>{canManage ? <Button onClick={postAdoption}><Save className="mr-2 h-4 w-4" />Post opening valuation</Button> : null}</div></div> : <p className="p-5 text-sm text-muted-foreground">No inventory adoption has been started.</p>}
             </CardContent>
           </Card>
         </TabsContent>

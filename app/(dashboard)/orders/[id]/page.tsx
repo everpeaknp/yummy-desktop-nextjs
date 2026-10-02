@@ -1,14 +1,34 @@
 "use client";
 
-import { useEffect, useState, useCallback, type Dispatch, type SetStateAction } from "react";
+import {
+  useEffect,
+  useState,
+  useCallback,
+  type Dispatch,
+  type ReactNode,
+  type SetStateAction,
+} from "react";
 import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
 import apiClient from "@/lib/api-client";
 import { useAuth } from "@/hooks/use-auth";
 import { useOrderFull } from "@/hooks/use-order-full";
-import { OrderApis, KotApis, TableApis, TableTypeApis } from "@/lib/api/endpoints";
-import { RoomContainer, type TableData } from "@/components/tables/room-container";
-import { cn } from "@/lib/utils";
+import {
+  OrderApis,
+  KotApis,
+  TableApis,
+  TableTypeApis,
+} from "@/lib/api/endpoints";
+import {
+  RoomContainer,
+  type TableData,
+} from "@/components/tables/room-container";
+import {
+  cn,
+  formatCurrency as formatProductCurrency,
+  formatDate,
+  formatDateTime,
+} from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -23,7 +43,21 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import {
   Select,
   SelectContent,
@@ -32,13 +66,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
-import {
-  ArrowLeft,
   Loader2,
   ShoppingCart,
   Receipt,
@@ -58,7 +85,6 @@ import {
   Ban,
   Plus,
   Minus,
-  Pencil,
   CreditCard,
   Armchair,
   Eye,
@@ -69,11 +95,11 @@ import {
   Calendar,
   Truck,
   Award,
+  MoreHorizontal,
 } from "lucide-react";
-import { 
-  getStatusColor, 
-  getChannelIcon, 
-  getStatusBadgeColor 
+import {
+  getChannelIcon,
+  getStatusBadgeColor,
 } from "@/components/orders/order-card";
 import type {
   Order,
@@ -84,15 +110,16 @@ import type {
   OrderItem,
   OrderPayment,
 } from "@/types/order";
-import { EntityNotificationsCard } from "@/components/notifications/entity-notifications-card";
 import { toast } from "sonner";
 import { usePosBillingPermissions } from "@/hooks/use-pos-billing-permissions";
 import { getRecordedOrderDiscount } from "@/lib/order-totals";
-import { getKOTHeading, getKOTItemDisplay } from "@/lib/order-kot-display";
+import { KotEmbeddedTicketCard } from "@/components/kitchen/kot-ticket-card";
+import { SalesDocumentDetailSheet } from "@/components/finance/transaction-detail/sales-document-detail-sheet";
+import { useMobileAppBarTitle } from "@/components/layout/mobile-app-bar-title";
 
 // ── Helpers ──────────────────────────────────────────
 function formatCurrency(amount: number) {
-  return `Rs. ${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return formatProductCurrency(amount);
 }
 
 function timeAgo(dateStr: string) {
@@ -106,7 +133,15 @@ function timeAgo(dateStr: string) {
 }
 
 function formatTime(dateStr: string) {
-  return new Date(dateStr).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return new Date(dateStr).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function OrderDetailAppBarTitle({ title }: { title: string }) {
+  useMobileAppBarTitle(title);
+  return null;
 }
 
 function computeOrderDiscount(order: Order) {
@@ -115,7 +150,11 @@ function computeOrderDiscount(order: Order) {
 
 function getOrderItemEffectiveUnitPrice(item: OrderItem) {
   const modifierTotal = Array.isArray(item.modifiers)
-    ? item.modifiers.reduce((sum, modifier) => sum + Number(modifier.price_adjustment_snapshot || 0), 0)
+    ? item.modifiers.reduce(
+        (sum, modifier) =>
+          sum + Number(modifier.price_adjustment_snapshot || 0),
+        0,
+      )
     : 0;
   return Number(item.unit_price || 0) + modifierTotal;
 }
@@ -129,7 +168,10 @@ function isTableAvailable(status: string | undefined) {
   return ["FREE", "AVAILABLE"].includes((status || "").toUpperCase());
 }
 
-function getAssignedTableIds(order: Order, tables: OrderTableSummary[]): number[] {
+function getAssignedTableIds(
+  order: Order,
+  tables: OrderTableSummary[],
+): number[] {
   if (order.table_ids?.length) return order.table_ids;
   if (tables.length > 0) return tables.map((t) => t.id);
   if (order.table_id) return [order.table_id];
@@ -150,30 +192,85 @@ function buildTableIdsPayload(
 
 function getStatusConfig(s: string) {
   switch (s.toLowerCase()) {
-    case "pending": return { label: "Pending", color: "#f59e0b", bg: "bg-amber-500/10", icon: Clock };
-    case "running": return { label: "Running", color: "#3b82f6", bg: "bg-blue-500/10", icon: Activity };
-    case "preparing": return { label: "Preparing", color: "#f97316", bg: "bg-orange-500/10", icon: ChefHat };
-    case "ready": return { label: "Ready", color: "#10b981", bg: "bg-emerald-500/10", icon: CheckCircle };
-    case "completed": return { label: "Completed", color: "#10b981", bg: "bg-emerald-500/10", icon: CheckCircle };
-    case "canceled": return { label: "Canceled", color: "#ef4444", bg: "bg-red-500/10", icon: XCircle };
-    case "requested": return { label: "Pending Verification", color: "#6366f1", bg: "bg-indigo-500/10", icon: Timer };
-    default: return { label: s, color: "#64748b", bg: "bg-slate-500/10", icon: Circle };
+    case "pending":
+      return {
+        label: "Pending",
+        color: "#f59e0b",
+        bg: "bg-amber-500/10",
+        icon: Clock,
+      };
+    case "running":
+      return {
+        label: "Running",
+        color: "#3b82f6",
+        bg: "bg-blue-500/10",
+        icon: Activity,
+      };
+    case "preparing":
+      return {
+        label: "Preparing",
+        color: "#f97316",
+        bg: "bg-orange-500/10",
+        icon: ChefHat,
+      };
+    case "ready":
+      return {
+        label: "Ready",
+        color: "#10b981",
+        bg: "bg-emerald-500/10",
+        icon: CheckCircle,
+      };
+    case "completed":
+      return {
+        label: "Completed",
+        color: "#10b981",
+        bg: "bg-emerald-500/10",
+        icon: CheckCircle,
+      };
+    case "canceled":
+      return {
+        label: "Canceled",
+        color: "#ef4444",
+        bg: "bg-red-500/10",
+        icon: XCircle,
+      };
+    case "requested":
+      return {
+        label: "Pending Verification",
+        color: "#6366f1",
+        bg: "bg-indigo-500/10",
+        icon: Timer,
+      };
+    default:
+      return {
+        label: s,
+        color: "#64748b",
+        bg: "bg-slate-500/10",
+        icon: Circle,
+      };
   }
 }
 
-function getKOTStatusConfig(s: string) {
-  switch (s.toLowerCase()) {
-    case "pending": return { label: "Pending", color: "text-amber-600 dark:text-amber-400", bg: "bg-amber-500/10 border-amber-500/20" };
-    case "acknowledged": return { label: "Acknowledged", color: "text-blue-600 dark:text-blue-400", bg: "bg-blue-500/10 border-blue-500/20" };
-    case "preparing": return { label: "Preparing", color: "text-orange-600 dark:text-orange-400", bg: "bg-orange-500/10 border-orange-500/20" };
-    case "partial": return { label: "Partially ready", color: "text-cyan-600 dark:text-cyan-400", bg: "bg-cyan-500/10 border-cyan-500/20" };
-    case "ready": return { label: "Ready", color: "text-emerald-600 dark:text-emerald-400", bg: "bg-emerald-500/10 border-emerald-500/20" };
-    case "served": return { label: "Served", color: "text-emerald-600 dark:text-emerald-400", bg: "bg-emerald-500/10 border-emerald-500/20" };
-    case "completed": return { label: "Completed", color: "text-emerald-600 dark:text-emerald-400", bg: "bg-emerald-500/10 border-emerald-500/20" };
-    case "rejected": return { label: "Rejected", color: "text-red-600 dark:text-red-400", bg: "bg-red-500/10 border-red-500/20" };
-    case "cancelled": return { label: "Cancelled", color: "text-red-600 dark:text-red-400", bg: "bg-red-500/10 border-red-500/20" };
-    default: return { label: s, color: "text-muted-foreground", bg: "bg-muted border-border/40" };
-  }
+type DetailKotStatus =
+  "PENDING" | "PREPARING" | "READY" | "SERVED" | "REJECTED";
+
+function nextKotStatus(status: string): DetailKotStatus | null {
+  const normalized = status.trim().toUpperCase();
+  if (normalized === "PENDING" || normalized === "ACKNOWLEDGED")
+    return "PREPARING";
+  if (normalized === "PREPARING" || normalized === "PARTIAL") return "READY";
+  if (normalized === "READY") return "SERVED";
+  return null;
+}
+
+function kotActionLabel(status: string): string | null {
+  const normalized = status.trim().toUpperCase();
+  if (normalized === "PENDING" || normalized === "ACKNOWLEDGED")
+    return "Start cooking";
+  if (normalized === "PREPARING" || normalized === "PARTIAL")
+    return "Mark ready";
+  if (normalized === "READY") return "Mark served";
+  return null;
 }
 
 type TabKey = "details" | "kots" | "events";
@@ -187,7 +284,15 @@ export default function OrderDetailPage() {
   const user = useAuth((s) => s.user);
   const me = useAuth((s) => s.me);
 
-  const { context, loading, error, fetchContext, isFullyPaid, allKotsServed } = useOrderFull(orderId);
+  const {
+    context,
+    loading,
+    error,
+    fetchContext,
+    updateKotLocal,
+    isFullyPaid,
+    allKotsServed,
+  } = useOrderFull(orderId);
   const [events, setEvents] = useState<OrderEvent[]>([]);
   const [eventsLoading, setEventsLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<TabKey>("details");
@@ -204,9 +309,13 @@ export default function OrderDetailPage() {
   const [allTables, setAllTables] = useState<TableData[]>([]);
   const [tableTypes, setTableTypes] = useState<any[]>([]);
   const [selectedArea, setSelectedArea] = useState("All Areas");
-  const [itemOverrides, setItemOverrides] = useState<Record<number, Partial<OrderItem>>>({});
+  const [itemOverrides, setItemOverrides] = useState<
+    Record<number, Partial<OrderItem>>
+  >({});
+  const [kotUpdatingIds, setKotUpdatingIds] = useState<Set<number>>(new Set());
 
-  const { canVoidOrder, canVoidItem, canTransferOrder, canMarkNc } = usePosBillingPermissions();
+  const { canVoidOrder, canTransferOrder, canMarkNc } =
+    usePosBillingPermissions();
   const sourceOrder = context?.order;
   const displayOrder = sourceOrder
     ? (() => {
@@ -224,11 +333,21 @@ export default function OrderDetailPage() {
             line_total: getOrderItemEffectiveLineTotal(displayItem),
           };
         });
-        const subtotal = Number(items.reduce((sum, item) => sum + Number(item.line_total || 0), 0).toFixed(2));
+        const subtotal = Number(
+          items
+            .reduce((sum, item) => sum + Number(item.line_total || 0), 0)
+            .toFixed(2),
+        );
         const computedDiscount = computeOrderDiscount(sourceOrder);
         // Menu prices/subtotal are tax-inclusive; VAT is reported separately
         // and must not be added to the amount due a second time.
-        const grandTotal = Number((subtotal + Number(sourceOrder.service_charge || 0) - computedDiscount).toFixed(2));
+        const grandTotal = Number(
+          (
+            subtotal +
+            Number(sourceOrder.service_charge || 0) -
+            computedDiscount
+          ).toFixed(2),
+        );
         return {
           ...sourceOrder,
           items,
@@ -241,9 +360,15 @@ export default function OrderDetailPage() {
   // Auth guard
   useEffect(() => {
     const checkAuth = async () => {
-      const token = typeof window !== "undefined" ? localStorage.getItem("accessToken") : null;
+      const token =
+        typeof window !== "undefined"
+          ? localStorage.getItem("accessToken")
+          : null;
       if (!user && token) await me();
-      const updatedToken = typeof window !== "undefined" ? localStorage.getItem("accessToken") : null;
+      const updatedToken =
+        typeof window !== "undefined"
+          ? localStorage.getItem("accessToken")
+          : null;
       if (!user && !updatedToken) router.push("/");
     };
     const timer = setTimeout(checkAuth, 500);
@@ -255,7 +380,9 @@ export default function OrderDetailPage() {
     if (!orderId) return;
     setEventsLoading(true);
     try {
-      const res = await apiClient.get(OrderApis.getOrderEvents(orderId, "group"));
+      const res = await apiClient.get(
+        OrderApis.getOrderEvents(orderId, "group"),
+      );
       if (res.data.status === "success") {
         setEvents(res.data.data);
       }
@@ -279,6 +406,74 @@ export default function OrderDetailPage() {
     }
   }, [activeTab, fetchContext, fetchEvents]);
 
+  const handleKotStatusChange = useCallback(
+    async (kotId: number, status: string) => {
+      const next = nextKotStatus(status);
+      if (!next) return;
+      const previousKot = context?.kots.find((kot) => kot.id === kotId);
+      updateKotLocal(kotId, { status: next });
+      setKotUpdatingIds((current) => new Set(current).add(kotId));
+      try {
+        const response = await apiClient.patch(
+          KotApis.updateKotStatus(kotId),
+          { status: next },
+        );
+        const updatedKot = response.data?.data;
+        if (updatedKot && Number(updatedKot.id) === kotId) {
+          // The backend also updates each item's ready/served quantities. Keep
+          // those fields in sync so the ticket does not still show items waiting.
+          updateKotLocal(kotId, updatedKot);
+        }
+        toast.success(`KOT marked ${next.toLowerCase()}`);
+      } catch (err: any) {
+        if (previousKot) updateKotLocal(kotId, previousKot);
+        const detail =
+          err?.response?.data?.detail ||
+          err?.response?.data?.message ||
+          "Failed to update KOT status";
+        toast.error(detail);
+      } finally {
+        setKotUpdatingIds((current) => {
+          const next = new Set(current);
+          next.delete(kotId);
+          return next;
+        });
+      }
+    },
+    [context?.kots, updateKotLocal],
+  );
+
+  const handleKotReject = useCallback(
+    async (kotId: number) => {
+      if (
+        typeof window !== "undefined" &&
+        !window.confirm("Reject this kitchen ticket?")
+      )
+        return;
+      const previousKot = context?.kots.find((kot) => kot.id === kotId);
+      updateKotLocal(kotId, { status: "REJECTED" });
+      setKotUpdatingIds((current) => new Set(current).add(kotId));
+      try {
+        await apiClient.post(KotApis.rejectKot(kotId), undefined);
+        toast.success("KOT rejected");
+      } catch (err: any) {
+        if (previousKot) updateKotLocal(kotId, previousKot);
+        const detail =
+          err?.response?.data?.detail ||
+          err?.response?.data?.message ||
+          "Failed to reject KOT";
+        toast.error(detail);
+      } finally {
+        setKotUpdatingIds((current) => {
+          const next = new Set(current);
+          next.delete(kotId);
+          return next;
+        });
+      }
+    },
+    [context?.kots, updateKotLocal],
+  );
+
   useEffect(() => {
     setItemOverrides({});
   }, [sourceOrder?.updated_at]);
@@ -292,13 +487,18 @@ export default function OrderDetailPage() {
     if (!cancelReason.trim()) return;
     setCanceling(true);
     try {
-      await apiClient.post(OrderApis.cancelOrder(orderId), { reason: cancelReason });
+      await apiClient.post(OrderApis.cancelOrder(orderId), {
+        reason: cancelReason,
+      });
       setCancelOpen(false);
       setCancelReason("");
       await fetchContext();
     } catch (err: any) {
       console.error("Failed to cancel order:", err);
-      const detail = err?.response?.data?.detail || err?.response?.data?.message || "Failed to cancel order";
+      const detail =
+        err?.response?.data?.detail ||
+        err?.response?.data?.message ||
+        "Failed to cancel order";
       toast.error(detail);
     } finally {
       setCanceling(false);
@@ -309,11 +509,16 @@ export default function OrderDetailPage() {
   const handleComplete = async () => {
     setCompleting(true);
     try {
-      await apiClient.patch(OrderApis.updateOrderStatus(orderId), { status: "completed" });
+      await apiClient.patch(OrderApis.updateOrderStatus(orderId), {
+        status: "completed",
+      });
       await fetchContext();
     } catch (err: any) {
       console.error("Failed to complete order:", err);
-      const detail = err?.response?.data?.detail || err?.response?.data?.message || "Failed to complete order";
+      const detail =
+        err?.response?.data?.detail ||
+        err?.response?.data?.message ||
+        "Failed to complete order";
       toast.error(detail);
     } finally {
       setCompleting(false);
@@ -323,7 +528,9 @@ export default function OrderDetailPage() {
   const handleVerifyOrder = async () => {
     setVerifying(true);
     try {
-      const res = await apiClient.patch(OrderApis.updateOrderStatus(orderId), { status: "pending" });
+      const res = await apiClient.patch(OrderApis.updateOrderStatus(orderId), {
+        status: "pending",
+      });
       const updatedOrder = res?.data?.data || res?.data;
 
       if (updatedOrder?.id && Number(updatedOrder.id) !== Number(orderId)) {
@@ -335,7 +542,10 @@ export default function OrderDetailPage() {
       await fetchContext();
       toast.success("Order verified successfully");
     } catch (err: any) {
-      const detail = err?.response?.data?.detail || err?.response?.data?.message || "Failed to verify order";
+      const detail =
+        err?.response?.data?.detail ||
+        err?.response?.data?.message ||
+        "Failed to verify order";
       console.error("Failed to verify order:", err);
       toast.error(detail);
     } finally {
@@ -349,7 +559,7 @@ export default function OrderDetailPage() {
     try {
       const [tablesRes, typesRes] = await Promise.all([
         apiClient.get(TableApis.getTables(context.order.restaurant_id)),
-        apiClient.get(TableTypeApis.getTableTypes(context.order.restaurant_id))
+        apiClient.get(TableTypeApis.getTableTypes(context.order.restaurant_id)),
       ]);
       if (tablesRes.data.status === "success") {
         setAllTables(tablesRes.data.data || []);
@@ -365,7 +575,10 @@ export default function OrderDetailPage() {
   // Open change table dialog
   const handleOpenChangeTable = () => {
     fetchAvailableTables();
-    const assigned = getAssignedTableIds(context?.order ?? ({} as Order), context?.tables ?? []);
+    const assigned = getAssignedTableIds(
+      context?.order ?? ({} as Order),
+      context?.tables ?? [],
+    );
     setSelectedTableIds(assigned);
     setSelectedTableId("");
     setMultiAssignMode(false);
@@ -381,7 +594,9 @@ export default function OrderDetailPage() {
         return;
       }
       setSelectedTableIds((prev) =>
-        prev.includes(table.id) ? prev.filter((id) => id !== table.id) : [...prev, table.id],
+        prev.includes(table.id)
+          ? prev.filter((id) => id !== table.id)
+          : [...prev, table.id],
       );
       return;
     }
@@ -401,20 +616,30 @@ export default function OrderDetailPage() {
       if (selectedTableIds.length === 0) return;
       setChangingTable(true);
       try {
-        const tableIds = buildTableIdsPayload(selectedTableIds, context?.order.table_id);
+        const tableIds = buildTableIdsPayload(
+          selectedTableIds,
+          context?.order.table_id,
+        );
         const blocked = tableIds.filter((id) => {
           const t = allTables.find((table) => table.id === id);
           return t && !isTableAvailable(t.status);
         });
         if (blocked.length > 0) {
-          toast.error("All selected tables must be available for multi-table assignment.");
+          toast.error(
+            "All selected tables must be available for multi-table assignment.",
+          );
           setChangingTable(false);
           return;
         }
 
-        await apiClient.patch(OrderApis.updateOrder(orderId), { table_ids: tableIds });
+        await apiClient.patch(OrderApis.updateOrder(orderId), {
+          table_ids: tableIds,
+        });
         const names = tableIds
-          .map((id) => allTables.find((t) => t.id === id)?.table_name || `Table ${id}`)
+          .map(
+            (id) =>
+              allTables.find((t) => t.id === id)?.table_name || `Table ${id}`,
+          )
           .join(", ");
         toast.success(`Assigned tables: ${names}`);
         setChangeTableOpen(false);
@@ -432,21 +657,27 @@ export default function OrderDetailPage() {
     if (!selectedTableId) return;
     setChangingTable(true);
     try {
-      const selectedTable = allTables.find((t) => String(t.id) === selectedTableId);
-      const isOccupiedTarget = selectedTable && !isTableAvailable(selectedTable.status);
+      const selectedTable = allTables.find(
+        (t) => String(t.id) === selectedTableId,
+      );
+      const isOccupiedTarget =
+        selectedTable && !isTableAvailable(selectedTable.status);
 
       if (isOccupiedTarget) {
         const confirmMerge = window.confirm(
-          `Table "${selectedTable?.table_name}" is occupied. Do you want to MERGE this bill into its active order?`
+          `Table "${selectedTable?.table_name}" is occupied. Do you want to MERGE this bill into its active order?`,
         );
         if (!confirmMerge) {
           setChangingTable(false);
           return;
         }
 
-        const res = await apiClient.post(OrderApis.transferGuestBillTable(orderId), {
-          destination_table_id: Number(selectedTableId),
-        });
+        const res = await apiClient.post(
+          OrderApis.transferGuestBillTable(orderId),
+          {
+            destination_table_id: Number(selectedTableId),
+          },
+        );
 
         const action = res.data?.data?.action || res.data?.action || "merged";
         if (action === "merged") {
@@ -454,7 +685,7 @@ export default function OrderDetailPage() {
         } else {
           toast.success(`Bill moved to ${selectedTable?.table_name}.`);
         }
-        
+
         setChangeTableOpen(false);
         setSelectedTableId("");
         router.push("/orders/active");
@@ -469,7 +700,9 @@ export default function OrderDetailPage() {
       }
     } catch (err: any) {
       console.error("Failed to change table:", err);
-      toast.error(err?.response?.data?.detail || "Failed to transfer/change table");
+      toast.error(
+        err?.response?.data?.detail || "Failed to transfer/change table",
+      );
     } finally {
       setChangingTable(false);
     }
@@ -512,208 +745,235 @@ export default function OrderDetailPage() {
 
   if (!context || !displayOrder) return null;
 
+  if (displayOrder.status === "completed") {
+    return (
+      <>
+        <div className="flex min-h-[50vh] items-center justify-center text-sm text-muted-foreground">
+          Opening completed sale…
+        </div>
+        <SalesDocumentDetailSheet
+          orderId={orderId}
+          open
+          onOpenChange={(nextOpen) => {
+            if (!nextOpen) router.back();
+          }}
+        />
+      </>
+    );
+  }
+
   const order = displayOrder;
   const computedDiscount = computeOrderDiscount(displayOrder);
-  const statusColors = getStatusColor(displayOrder.status);
+  const statusConfig = getStatusConfig(displayOrder.status);
   const statusBadgeColor = getStatusBadgeColor(displayOrder.status);
   const ChannelIcon = getChannelIcon(displayOrder.channel);
   const isEditable = !["completed", "canceled"].includes(displayOrder.status);
-  const isCancellable = !["completed", "canceled"].includes(displayOrder.status);
+  const isCancellable = !["completed", "canceled"].includes(
+    displayOrder.status,
+  );
   const isTableOrder = displayOrder.channel === "table";
-  const assignedTables = context.tables.length > 0
-    ? context.tables
-    : getAssignedTableIds(displayOrder, context.tables).map((id) => ({
-        id,
-        name: id === displayOrder.table_id ? displayOrder.table_name : null,
-        status: null,
-        capacity: null,
-        table_type_id: null,
-      }));
-  
+  const isRoomServiceOrder = displayOrder.channel === "room_service";
+  const assignedTables =
+    context.tables.length > 0
+      ? context.tables
+      : getAssignedTableIds(displayOrder, context.tables).map((id) => ({
+          id,
+          name: id === displayOrder.table_id ? displayOrder.table_name : null,
+          status: null,
+          capacity: null,
+          table_type_id: null,
+        }));
+
   // Format Title
   let title = `Order #${displayOrder.restaurant_order_id || displayOrder.id}`;
   if (assignedTables.length > 1) {
     const primary =
-      assignedTables.find((t) => t.id === displayOrder.table_id) ?? assignedTables[0];
+      assignedTables.find((t) => t.id === displayOrder.table_id) ??
+      assignedTables[0];
     const primaryLabel =
       primary?.name ||
       displayOrder.table_name ||
       `Table ${primary?.id ?? displayOrder.table_id}`;
-    title = `${primaryLabel} + ${assignedTables.length - 1}`;
+    title = `Table ${primaryLabel} + ${assignedTables.length - 1}`;
   } else if (displayOrder.table_name || assignedTables[0]?.name) {
     const name = displayOrder.table_name || assignedTables[0]?.name;
-    title = displayOrder.table_category_name
-      ? `${displayOrder.table_category_name} - ${name}`
-      : (name as string);
+    title = /^table\b/i.test(name || "") ? String(name) : `Table ${name}`;
   }
 
   // Format Subtitle
-  let subtitle = displayOrder.channel.toUpperCase().replace('_', ' ');
-  if (displayOrder.channel === 'table' || displayOrder.table_name) subtitle = 'DINE-IN';
-  if (displayOrder.customer_name) subtitle = displayOrder.customer_name;
+  let subtitle = displayOrder.channel.toUpperCase().replace("_", " ");
+  if (displayOrder.channel === "table" || displayOrder.table_name)
+    subtitle = "DINE-IN";
+  if (isRoomServiceOrder) subtitle = "ROOM SERVICE";
 
   const tabs: { key: TabKey; label: string; icon: any; count?: number }[] = [
     { key: "details", label: "Details", icon: FileText },
-    { key: "kots", label: "KOTs", icon: ChefHat, count: context.kots?.length || 0 },
+    {
+      key: "kots",
+      label: "KOTs",
+      icon: ChefHat,
+      count: context.kots?.length || 0,
+    },
     { key: "events", label: "Events", icon: Activity },
   ];
 
   console.log("Rendering Order Detail", orderId);
 
   return (
-    <div className="flex flex-col gap-6 max-w-7xl mx-auto pb-8">
+    <div className="mx-auto flex w-full max-w-7xl min-w-0 flex-col gap-5 pb-24 md:pb-8">
+      <OrderDetailAppBarTitle title={title} />
       {/* ── Header ── */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={() => router.back()} className="rounded-xl hover:bg-muted/50">
-            <ArrowLeft className="h-5 w-5" />
-          </Button>
-          
-          <div className="flex items-center gap-4">
-            <div className="h-12 w-12 rounded-2xl bg-muted/50 flex items-center justify-center flex-shrink-0">
-               <ChannelIcon className="h-6 w-6 text-muted-foreground" />
-            </div>
-            <div>
-              <div className="flex items-center gap-3">
-                <h1 className="text-2xl font-black tracking-tight leading-none">{title}</h1>
-                <div
-                  className={cn(
-                    "px-2.5 py-1 rounded-xl border text-[10px] font-black uppercase tracking-widest",
-                    statusBadgeColor
-                  )}
-                >
-                  {order.status}
-                </div>
-              </div>
-              <div className="flex items-center gap-2 mt-1 text-muted-foreground">
-                <span className="text-xs font-bold uppercase tracking-wider">{subtitle}</span>
-                <span className="h-1 w-1 rounded-full bg-muted-foreground/30" />
-                <span className="text-xs font-medium">{timeAgo(order.created_at)}</span>
-              </div>
-            </div>
+      <header className="flex flex-col gap-3 border-b border-border/50 pb-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 items-center gap-2 text-muted-foreground">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+            <ChannelIcon className="h-4 w-4" />
+          </div>
+          <span className="text-xs font-semibold">{subtitle}</span>
+          <span className="h-1 w-1 shrink-0 rounded-full bg-muted-foreground/30" />
+          <span className="truncate text-xs">{timeAgo(order.created_at)}</span>
+          <div
+            className={cn(
+              "ml-auto shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold sm:ml-1",
+              statusBadgeColor,
+            )}
+          >
+            {statusConfig.label}
           </div>
         </div>
 
-          <div className="flex items-center gap-2">
-            {/* Secondary / Icons */}
-            <TooltipProvider delayDuration={200}>
-              <div className="flex items-center gap-1 mr-2 border-r border-border/40 pr-3">
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button variant="ghost" size="icon" onClick={handleRefresh} className="h-9 w-9 rounded-xl text-muted-foreground hover:text-foreground">
-                        <RefreshCw className="h-4 w-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>Refresh Order</p>
-                  </TooltipContent>
-                </Tooltip>
-
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Link href={`/orders/${orderId}/receipt`}>
-                        <Button variant="ghost" size="icon" className="h-9 w-9 rounded-xl text-muted-foreground hover:text-foreground">
-                          <Eye className="h-4 w-4" />
-                        </Button>
-                    </Link>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>View Receipt</p>
-                  </TooltipContent>
-                </Tooltip>
-                
-              </div>
-            </TooltipProvider>
-
-            {/* Primary Actions */}
-          {isEditable && (
-            <>
-              {isTableOrder && canTransferOrder && (
-                <Button variant="outline" size="sm" onClick={handleOpenChangeTable} className="gap-2 rounded-xl h-9 font-semibold hover:bg-muted">
-                  <Table2 className="h-4 w-4" /> <span>Change / Merge Table</span>
-                </Button>
-              )}
-
-               <Link href={`/orders/${orderId}/edit`}>
-                <Button variant="outline" size="sm" className="gap-2 rounded-xl h-9 font-semibold">
-                  <Plus className="h-4 w-4" /> <span className="hidden sm:inline">Add Items</span>
-                </Button>
-              </Link>
-
-              {String(order.status).toLowerCase() === "requested" && (
-                <div className="flex items-center gap-2 border-l border-border/40 pl-3">
-                  <Button 
-                    size="sm" 
-                    className="gap-2 rounded-xl h-9 bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm font-bold"
-                    onClick={handleVerifyOrder}
-                    disabled={verifying}
-                  >
-                    {verifying ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle className="h-3.5 w-3.5" />}
-                    Verify Order
-                  </Button>
-                  <Button 
-                    variant="ghost" 
-                    size="sm" 
-                    className="gap-2 rounded-xl h-9 text-destructive hover:text-destructive hover:bg-destructive/10 font-semibold"
-                    onClick={() => {
-                      if (!canVoidOrder) {
-                        toast.error("You do not have permission to void orders.");
-                        return;
-                      }
-                      setCancelReason("Rejected by staff");
-                      setCancelOpen(true);
-                    }}
-                    disabled={!canVoidOrder}
-                  >
-                    <Ban className="h-4 w-4" /> Reject
-                  </Button>
-                </div>
-              )}
-              
-              <Link href={`/orders/${orderId}/checkout`}>
-                <Button size="sm" className="gap-2 rounded-xl h-9 shadow-sm font-bold">
-                  <Receipt className="h-4 w-4" /> {isFullyPaid ? "Payments" : "Checkout"}
-                </Button>
-              </Link>
-              
-              {isFullyPaid && order.status !== 'completed' && (
-                <Button 
-                  size="sm"
-                  className="gap-2 rounded-xl h-9 bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm font-bold"
-                  onClick={handleComplete}
-                  disabled={completing}
-                >
-                  {completing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle className="h-3.5 w-3.5" />}
-                  Complete
-                </Button>
-              )}
-            </>
+        <div className="flex w-full min-w-0 items-center gap-2 sm:w-auto">
+          {isEditable && isTableOrder && canTransferOrder && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleOpenChangeTable}
+              className="h-10 shrink-0 gap-2 rounded-xl px-3 font-semibold hover:bg-muted"
+            >
+              <Table2 className="h-4 w-4" />{" "}
+              <span className="hidden sm:inline">Change table</span>
+              <span className="sm:hidden">Table</span>
+            </Button>
           )}
-          
-          {!isEditable && order.status === "completed" && (
-            <Link href={`/orders/${orderId}/checkout`}>
-              <Button size="sm" className="gap-2 rounded-xl h-9 shadow-sm font-bold" variant="outline">
-                <Receipt className="h-4 w-4" /> Payments & Refunds
+
+          {isEditable && (
+            <Link href={`/orders/${orderId}/add-items`} className="shrink-0">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-10 gap-2 rounded-xl px-3 font-semibold"
+              >
+                <Plus className="h-4 w-4" />{" "}
+                <span className="hidden sm:inline">Add items</span>
+                <span className="sm:hidden">Add</span>
               </Button>
             </Link>
           )}
-          
-          {/* Destructive Action */}
-          {isCancellable && canVoidOrder && (
-             <Button
-               variant="ghost"
-               size="sm"
-               className="gap-2 rounded-xl h-9 text-destructive hover:text-destructive hover:bg-destructive/10 font-semibold"
-               onClick={() => setCancelOpen(true)}
-             >
-               <Ban className="h-4 w-4" /> <span className="hidden sm:inline">Cancel</span>
-             </Button>
+
+          {String(order.status).toLowerCase() === "requested" ? (
+            <Button
+              size="sm"
+              className="h-10 min-w-0 flex-1 gap-2 rounded-xl bg-indigo-600 px-3 font-semibold text-white shadow-sm hover:bg-indigo-700 sm:flex-none"
+              onClick={handleVerifyOrder}
+              disabled={verifying}
+            >
+              {verifying ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <CheckCircle className="h-4 w-4" />
+              )}
+              Verify
+            </Button>
+          ) : !isRoomServiceOrder && isEditable && isFullyPaid ? (
+            <Button
+              size="sm"
+              className="h-10 min-w-0 flex-1 gap-2 rounded-xl bg-emerald-600 px-3 font-semibold text-white shadow-sm hover:bg-emerald-700 sm:flex-none"
+              onClick={handleComplete}
+              disabled={completing}
+            >
+              {completing ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <CheckCircle className="h-4 w-4" />
+              )}
+              Complete
+            </Button>
+          ) : (
+            <Link
+              href={`/orders/${orderId}/checkout`}
+              className="min-w-0 flex-1 sm:flex-none"
+            >
+              <Button
+                size="sm"
+                className="h-10 w-full min-w-0 gap-2 rounded-xl px-3 font-semibold shadow-sm sm:w-auto"
+              >
+                <Receipt className="h-4 w-4 shrink-0" />
+                <span className="truncate">
+                  {isRoomServiceOrder
+                    ? "Mark delivered"
+                    : isFullyPaid
+                      ? "Payments"
+                      : "Checkout"}
+                </span>
+              </Button>
+            </Link>
           )}
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-10 w-10 shrink-0 rounded-xl"
+                aria-label="More order actions"
+              >
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48">
+              <DropdownMenuItem asChild>
+                <Link
+                  href={`/orders/${orderId}/receipt`}
+                  className="flex cursor-pointer items-center gap-2"
+                >
+                  <Eye className="h-4 w-4" /> View receipt
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={handleRefresh} className="gap-2">
+                <RefreshCw className="h-4 w-4" /> Refresh order
+              </DropdownMenuItem>
+              {(isCancellable ||
+                String(order.status).toLowerCase() === "requested") &&
+                canVoidOrder && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      className="gap-2 text-destructive focus:text-destructive"
+                      onSelect={() => {
+                        setCancelReason(
+                          String(order.status).toLowerCase() === "requested"
+                            ? "Rejected by staff"
+                            : "",
+                        );
+                        setCancelOpen(true);
+                      }}
+                    >
+                      <Ban className="h-4 w-4" />
+                      {String(order.status).toLowerCase() === "requested"
+                        ? "Reject order"
+                        : "Cancel order"}
+                    </DropdownMenuItem>
+                  </>
+                )}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
-      </div>
+      </header>
 
       {/* ── Tab Bar ── */}
-      <div className="flex items-center gap-1 p-1 bg-muted/30 rounded-xl border border-border/40 w-fit">
+      <nav
+        aria-label="Order detail sections"
+        className="grid grid-cols-3 gap-1 rounded-xl border border-border/40 bg-muted/30 p-1"
+      >
         {tabs.map((tab) => {
           const TabIcon = tab.icon;
           return (
@@ -721,124 +981,62 @@ export default function OrderDetailPage() {
               key={tab.key}
               onClick={() => setActiveTab(tab.key)}
               className={cn(
-                "flex items-center gap-2 px-5 py-2.5 rounded-lg text-xs font-bold uppercase tracking-widest transition-all duration-200",
+                "flex min-w-0 items-center justify-center gap-1.5 rounded-lg px-2 py-2.5 text-xs font-semibold transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:ring-offset-1",
                 activeTab === tab.key
-                  ? "bg-background shadow-sm text-foreground"
-                  : "text-muted-foreground hover:text-foreground"
+                  ? "bg-primary/10 text-primary ring-1 ring-inset ring-primary/30 shadow-sm"
+                  : "text-muted-foreground hover:text-foreground",
               )}
             >
               <TabIcon className="h-3.5 w-3.5" />
               {tab.label}
               {tab.count !== undefined && tab.count > 0 && (
-                <span className={cn(
-                  "ml-1 px-1.5 py-0.5 rounded-full text-[9px] font-black",
-                  activeTab === tab.key ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
-                )}>
+                <span
+                  className={cn(
+                    "ml-1 px-1.5 py-0.5 rounded-full text-[9px] font-black",
+                    activeTab === tab.key
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-muted text-muted-foreground",
+                  )}
+                >
                   {tab.count}
                 </span>
               )}
             </button>
           );
         })}
-      </div>
+      </nav>
 
       {/* ── Content Grid ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left: Main Content */}
-        <div className="lg:col-span-2 space-y-4">
+      <div className="w-full max-w-3xl min-w-0">
+        <div className="space-y-4">
           {activeTab === "details" && (
             <DetailsTab
               order={displayOrder}
               tables={context.tables}
               onRefresh={fetchContext}
-              canVoidItem={canVoidItem}
               canMarkNc={canMarkNc}
               itemOverrides={itemOverrides}
               setItemOverrides={setItemOverrides}
+              summary={
+                <OrderBillSummary
+                  order={displayOrder}
+                  payments={context.payments}
+                  computedDiscount={computedDiscount}
+                />
+              }
             />
           )}
-          {activeTab === "kots" && <KOTsTab kots={context.kots} />}
-          {activeTab === "events" && <EventsTab events={events} loading={eventsLoading} />}
-        </div>
-
-          {/* Right: Summary Sidebar */}
-        <div className="space-y-4">
-          {/* Order Summary */}
-          <Card className="border-border/40 bg-white dark:bg-[#1a1a1a]">
-            <CardContent className="p-0">
-              <div className="p-5 space-y-3">
-                <h3 className="font-black text-[11px] uppercase tracking-[0.15em] text-muted-foreground mb-4">Order Summary</h3>
-
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Subtotal</span>
-                  <span className="tabular-nums font-medium">{formatCurrency(displayOrder.subtotal)}</span>
-                </div>
-
-                {displayOrder.tax_total > 0 && (
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Tax</span>
-                    <span className="tabular-nums font-medium">{formatCurrency(displayOrder.tax_total)}</span>
-                  </div>
-                )}
-
-                {displayOrder.service_charge > 0 && (
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Service Charge</span>
-                    <span className="tabular-nums font-medium">{formatCurrency(displayOrder.service_charge)}</span>
-                  </div>
-                )}
-
-                {computedDiscount > 0 && (
-                  <div className="flex justify-between text-sm">
-                    <span className="text-emerald-600 dark:text-emerald-400 font-medium">Discount</span>
-                    <span className="tabular-nums text-emerald-600 dark:text-emerald-400 font-medium">
-                      -{formatCurrency(computedDiscount)}
-                    </span>
-                  </div>
-                )}
-
-                {/* Payments Summary */}
-                {context.payments.length > 0 && (
-                  <>
-                    <Separator />
-                    <div className="space-y-2 pt-2">
-                       <span className="text-[10px] font-black uppercase tracking-[0.15em] text-muted-foreground">Payments</span>
-                       {context.payments.map((p) => (
-                         <div key={p.id} className="flex items-center justify-between text-sm">
-                           <div className="flex items-center gap-2">
-                             <CreditCard className="h-3.5 w-3.5 text-muted-foreground" />
-                             <span className="capitalize font-medium">{p.method}</span>
-                           </div>
-                           <span className="tabular-nums text-emerald-600 dark:text-emerald-400 font-medium">
-                             {formatCurrency(p.amount)}
-                           </span>
-                         </div>
-                       ))}
-                    </div>
-                  </>
-                )}
-              </div>
-            </CardContent>
-            
-            {/* Total Footer */}
-            <div className="bg-muted/30 px-5 py-4 border-t border-border/20 flex justify-between items-center rounded-b-xl">
-              <span className="text-xs font-black uppercase tracking-[0.1em] text-muted-foreground">Total Amount</span>
-                <span className="text-2xl font-black tracking-tight tabular-nums text-foreground">
-                  <span className="text-sm mr-1.5 font-bold text-muted-foreground/50">Rs.</span>
-                {displayOrder.grand_total.toLocaleString()}
-              </span>
-            </div>
-          </Card>
-
-          {/* Order Notifications */}
-          <EntityNotificationsCard
-            title="Order Notifications"
-            restaurantId={order.restaurant_id}
-            entity="order"
-            entityId={order.id}
-          />
-
-
+          {activeTab === "kots" && (
+            <KOTsTab
+              kots={context.kots}
+              onStatusChange={handleKotStatusChange}
+              onReject={handleKotReject}
+              updatingKotIds={kotUpdatingIds}
+            />
+          )}
+          {activeTab === "events" && (
+            <EventsTab events={events} loading={eventsLoading} />
+          )}
         </div>
       </div>
 
@@ -848,7 +1046,8 @@ export default function OrderDetailPage() {
           <DialogHeader>
             <DialogTitle>Cancel Order</DialogTitle>
             <DialogDescription>
-              This action cannot be undone. Please provide a reason for cancellation.
+              This action cannot be undone. Please provide a reason for
+              cancellation.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
@@ -860,14 +1059,20 @@ export default function OrderDetailPage() {
             />
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setCancelOpen(false)}>Go Back</Button>
+            <Button variant="outline" onClick={() => setCancelOpen(false)}>
+              Go Back
+            </Button>
             <Button
               variant="destructive"
               onClick={handleCancel}
               disabled={canceling || !cancelReason.trim()}
               className="gap-2"
             >
-              {canceling ? <Loader2 className="h-4 w-4 animate-spin" /> : <Ban className="h-4 w-4" />}
+              {canceling ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Ban className="h-4 w-4" />
+              )}
               {canceling ? "Canceling..." : "Cancel Order"}
             </Button>
           </DialogFooter>
@@ -894,13 +1099,16 @@ export default function OrderDetailPage() {
                 size="sm"
                 className={cn(
                   "h-8 text-xs font-bold gap-2",
-                  multiAssignMode && "bg-orange-600 hover:bg-orange-700 text-white",
+                  multiAssignMode &&
+                    "bg-orange-600 hover:bg-orange-700 text-white",
                 )}
                 onClick={() => {
                   setMultiAssignMode((prev) => !prev);
                   setSelectedTableId("");
                   if (!multiAssignMode) {
-                    setSelectedTableIds(getAssignedTableIds(order, context.tables));
+                    setSelectedTableIds(
+                      getAssignedTableIds(order, context.tables),
+                    );
                   }
                 }}
               >
@@ -909,12 +1117,19 @@ export default function OrderDetailPage() {
               </Button>
               {multiAssignMode && selectedTableIds.length > 0 && (
                 <span className="text-xs text-muted-foreground">
-                  {selectedTableIds.length} table{selectedTableIds.length === 1 ? "" : "s"} selected
+                  {selectedTableIds.length} table
+                  {selectedTableIds.length === 1 ? "" : "s"} selected
                   {selectedTableIds.length > 1 && (
                     <span className="ml-1 font-medium text-foreground">
-                      ({selectedTableIds
-                        .map((id) => allTables.find((t) => t.id === id)?.table_name || id)
-                        .join(", ")})
+                      (
+                      {selectedTableIds
+                        .map(
+                          (id) =>
+                            allTables.find((t) => t.id === id)?.table_name ||
+                            id,
+                        )
+                        .join(", ")}
+                      )
                     </span>
                   )}
                 </span>
@@ -926,9 +1141,11 @@ export default function OrderDetailPage() {
               {(() => {
                 const set = new Set<string>();
                 tableTypes.forEach((tt) => set.add(tt.name));
-                allTables.forEach((t) => { if (t.table_type_name) set.add(t.table_type_name); });
+                allTables.forEach((t) => {
+                  if (t.table_type_name) set.add(t.table_type_name);
+                });
                 const areas = ["All Areas", ...Array.from(set).sort()];
-                
+
                 return areas.map((area) => (
                   <button
                     key={area}
@@ -937,7 +1154,7 @@ export default function OrderDetailPage() {
                       "px-4 py-1.5 rounded-xl text-xs font-bold transition-all duration-300",
                       selectedArea === area
                         ? "bg-white dark:bg-zinc-800 text-foreground shadow-sm ring-1 ring-border/50"
-                        : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                        : "text-muted-foreground hover:text-foreground hover:bg-muted",
                     )}
                   >
                     {area}
@@ -948,23 +1165,41 @@ export default function OrderDetailPage() {
 
             {/* Status Legend */}
             <div className="flex items-center gap-4 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-              <div className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-emerald-500" /><span>Available (Move)</span></div>
-              <div className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-red-500" /><span>Occupied (Merge)</span></div>
-              <div className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-orange-500" /><span>Reserved (Merge)</span></div>
+              <div className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
+                <span>Available (Move)</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-red-500" />
+                <span>Occupied (Merge)</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-orange-500" />
+                <span>Reserved (Merge)</span>
+              </div>
             </div>
 
             {/* Grid */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {(() => {
-                const filtered = selectedArea === "All Areas" ? allTables : allTables.filter((t) => (t.table_type_name || "General") === selectedArea);
-                const grouped = filtered.reduce((acc, table) => {
-                  const area = table.table_type_name || "General";
-                  if (!acc[area]) acc[area] = [];
-                  acc[area].push(table);
-                  return acc;
-                }, {} as Record<string, TableData[]>);
+                const filtered =
+                  selectedArea === "All Areas"
+                    ? allTables
+                    : allTables.filter(
+                        (t) =>
+                          (t.table_type_name || "General") === selectedArea,
+                      );
+                const grouped = filtered.reduce(
+                  (acc, table) => {
+                    const area = table.table_type_name || "General";
+                    if (!acc[area]) acc[area] = [];
+                    acc[area].push(table);
+                    return acc;
+                  },
+                  {} as Record<string, TableData[]>,
+                );
                 const sortedRooms = Object.keys(grouped).sort();
-                
+
                 const getLayoutHeight = (areaName: string) => {
                   const tt = tableTypes.find((t) => t.name === areaName);
                   return tt?.layout_height ?? 200;
@@ -977,8 +1212,14 @@ export default function OrderDetailPage() {
                     tables={grouped[roomName]}
                     layoutHeight={getLayoutHeight(roomName)}
                     onTableClick={handleChangeTableClick}
-                    selectedTableId={multiAssignMode ? undefined : Number(selectedTableId) || undefined}
-                    selectedTableIds={multiAssignMode ? selectedTableIds : undefined}
+                    selectedTableId={
+                      multiAssignMode
+                        ? undefined
+                        : Number(selectedTableId) || undefined
+                    }
+                    selectedTableIds={
+                      multiAssignMode ? selectedTableIds : undefined
+                    }
                   />
                 ));
               })()}
@@ -986,7 +1227,9 @@ export default function OrderDetailPage() {
           </div>
 
           <DialogFooter className="shrink-0 pt-4 border-t">
-            <Button variant="outline" onClick={() => setChangeTableOpen(false)}>Cancel</Button>
+            <Button variant="outline" onClick={() => setChangeTableOpen(false)}>
+              Cancel
+            </Button>
             {(() => {
               if (multiAssignMode) {
                 return (
@@ -995,23 +1238,38 @@ export default function OrderDetailPage() {
                     disabled={changingTable || selectedTableIds.length === 0}
                     className="gap-2"
                   >
-                    {changingTable ? <Loader2 className="h-4 w-4 animate-spin" /> : <Table2 className="h-4 w-4" />}
+                    {changingTable ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Table2 className="h-4 w-4" />
+                    )}
                     {changingTable
                       ? "Assigning..."
                       : `Assign ${selectedTableIds.length || ""} Table${selectedTableIds.length === 1 ? "" : "s"}`.trim()}
                   </Button>
                 );
               }
-              const selectedTable = allTables.find((t) => String(t.id) === selectedTableId);
-              const isOccupiedTarget = selectedTable && !isTableAvailable(selectedTable.status);
+              const selectedTable = allTables.find(
+                (t) => String(t.id) === selectedTableId,
+              );
+              const isOccupiedTarget =
+                selectedTable && !isTableAvailable(selectedTable.status);
               return (
                 <Button
                   onClick={handleChangeTable}
                   disabled={changingTable || !selectedTableId}
                   className="gap-2"
                 >
-                  {changingTable ? <Loader2 className="h-4 w-4 animate-spin" /> : <Table2 className="h-4 w-4" />}
-                  {changingTable ? "Transferring..." : isOccupiedTarget ? "Merge Bill" : "Move Bill"}
+                  {changingTable ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Table2 className="h-4 w-4" />
+                  )}
+                  {changingTable
+                    ? "Transferring..."
+                    : isOccupiedTarget
+                      ? "Merge Bill"
+                      : "Move Bill"}
                 </Button>
               );
             })()}
@@ -1023,346 +1281,430 @@ export default function OrderDetailPage() {
 }
 
 // ── Details Tab ─────────────────────────────────────
+function OrderBillSummary({
+  order,
+  payments,
+  computedDiscount,
+}: {
+  order: Order;
+  payments: OrderPayment[];
+  computedDiscount: number;
+}) {
+  return (
+    <Card className="overflow-hidden border-border/50 bg-card shadow-sm">
+      <CardContent className="space-y-3 p-4">
+        <h3 className="text-sm font-semibold">Bill summary</h3>
+
+        <div className="flex justify-between text-sm">
+          <span className="text-muted-foreground">Subtotal</span>
+          <span className="tabular-nums font-medium">
+            {formatCurrency(order.subtotal)}
+          </span>
+        </div>
+
+        {order.tax_total > 0 && (
+          <div className="flex justify-between text-sm">
+            <span className="text-muted-foreground">Tax included</span>
+            <span className="tabular-nums font-medium">
+              {formatCurrency(order.tax_total)}
+            </span>
+          </div>
+        )}
+
+        {order.service_charge > 0 && (
+          <div className="flex justify-between text-sm">
+            <span className="text-muted-foreground">Service charge</span>
+            <span className="tabular-nums font-medium">
+              {formatCurrency(order.service_charge)}
+            </span>
+          </div>
+        )}
+
+        {computedDiscount > 0 && (
+          <div className="flex justify-between text-sm">
+            <span className="font-medium text-emerald-600 dark:text-emerald-400">
+              Discount
+            </span>
+            <span className="tabular-nums font-medium text-emerald-600 dark:text-emerald-400">
+              -{formatCurrency(computedDiscount)}
+            </span>
+          </div>
+        )}
+
+        {payments.length > 0 && (
+          <>
+            <Separator />
+            <div className="space-y-2 pt-1">
+              <p className="text-xs font-medium text-muted-foreground">
+                Payments
+              </p>
+              {payments.map((payment) => (
+                <div
+                  key={payment.id}
+                  className="flex items-center justify-between text-sm"
+                >
+                  <span className="flex min-w-0 items-center gap-2 capitalize">
+                    <CreditCard className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    <span className="truncate">{payment.method}</span>
+                  </span>
+                  <span className="shrink-0 tabular-nums font-medium text-emerald-600 dark:text-emerald-400">
+                    {formatCurrency(payment.amount)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+      </CardContent>
+
+      <div className="flex items-center justify-between border-t border-border/30 bg-muted/30 px-4 py-3">
+        <span className="text-sm font-semibold">Total</span>
+        <span className="text-xl font-bold tracking-tight tabular-nums text-foreground">
+          {formatCurrency(order.grand_total)}
+        </span>
+      </div>
+    </Card>
+  );
+}
+
 function DetailsTab({
   order,
   tables,
   onRefresh,
-  canVoidItem,
   canMarkNc,
   itemOverrides,
   setItemOverrides,
+  summary,
 }: {
   order: Order;
   tables: OrderTableSummary[];
   onRefresh: () => void;
-  canVoidItem: boolean;
   canMarkNc: boolean;
   itemOverrides: Record<number, Partial<OrderItem>>;
-  setItemOverrides: Dispatch<SetStateAction<Record<number, Partial<OrderItem>>>>;
+  setItemOverrides: Dispatch<
+    SetStateAction<Record<number, Partial<OrderItem>>>
+  >;
+  summary: ReactNode;
 }) {
   const router = useRouter();
-  const [editingItemNote, setEditingItemNote] = useState<OrderItem | null>(null);
-  const [editNoteValue, setEditNoteValue] = useState("");
+  const [selectedItem, setSelectedItem] = useState<OrderItem | null>(null);
+  const [selectedItemQuantity, setSelectedItemQuantity] = useState(1);
+  const [selectedItemNc, setSelectedItemNc] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
 
   const displayItems = order.items;
 
-  const handleQtyChange = useCallback(async (item: OrderItem, delta: number) => {
-    // Read current qty from overrides or original item
-    const currentQty = itemOverrides[item.id]?.qty ?? item.qty;
-    const nextQty = Math.max(0, currentQty + delta);
-    if (nextQty === currentQty) return;
-    if (nextQty <= 0 && !canVoidItem) {
-      toast.error("You do not have permission to void order items.");
-      return;
-    }
-    // Optimistically update
-    setItemOverrides(prev => ({
-      ...prev,
-      [item.id]: { ...(prev[item.id] || {}), qty: nextQty }
-    }));
-    await handleApplyItemUpdate(item.id, { qty: nextQty });
-  }, [canVoidItem, itemOverrides]);
+  const handleApplyItemUpdate = useCallback(
+    async (itemId: number, patch: { qty?: number; is_nc?: boolean }) => {
+      setIsUpdating(true);
+      try {
+        const item = order.items.find((candidate) => candidate.id === itemId);
+        if (!item) throw new Error("Order line not found");
+        const displayItem =
+          displayItems.find((candidate) => candidate.id === itemId) || item;
+        const qty = patch.qty ?? displayItem.qty;
+        if (patch.qty !== undefined || patch.is_nc !== undefined) {
+          await apiClient.patch(OrderApis.updateOrderLine(order.id, item.id), {
+            ...(patch.qty !== undefined ? { qty } : {}),
+            ...(patch.is_nc !== undefined ? { is_nc: patch.is_nc } : {}),
+            expected_version: (order as any).version,
+            idempotency_key: crypto.randomUUID(),
+          });
+        }
+        if (patch.qty !== undefined) toast.success("Quantity updated");
+        if (patch.is_nc !== undefined) toast.success("NC status updated");
+        await onRefresh();
+        setItemOverrides({});
+        return true;
+      } catch (err: any) {
+        console.error("Failed to update item:", err);
+        toast.error(err.response?.data?.detail || "Failed to update item");
+        // Revert optimistic update on error
+        setItemOverrides((prev) => {
+          const next = { ...prev };
+          delete next[itemId];
+          return next;
+        });
+        return false;
+      } finally {
+        setIsUpdating(false);
+      }
+    },
+    [order, displayItems, onRefresh, setItemOverrides],
+  );
 
-  const handleApplyItemUpdate = useCallback(async (itemId: number, patch: { qty?: number; notes?: string | null; is_nc?: boolean }) => {
-    setIsUpdating(true);
-    try {
-      const payload = {
-        items: order.items.map((item) => {
-          const isTarget = item.id === itemId;
-          const displayItem = displayItems.find(di => di.id === item.id) || item;
-          return {
-            menu_item_id: item.menu_item_id,
-            name_snapshot: item.name_snapshot,
-            category_name_snapshot: item.category_name_snapshot,
-            category_type_snapshot: item.category_type_snapshot,
-            revenue_category: (item as any).revenue_category,
-            unit_price: item.unit_price,
-            qty: isTarget ? (patch.qty ?? displayItem.qty) : displayItem.qty,
-            notes: isTarget ? (patch.notes !== undefined ? patch.notes : (displayItem.notes || null)) : (displayItem.notes || null),
-            is_nc: isTarget ? (patch.is_nc ?? Boolean(displayItem.is_nc)) : Boolean(displayItem.is_nc),
-            modifiers: item.modifiers ? item.modifiers.map((m) => ({
-              modifier_id: m.modifier_id,
-              modifier_name_snapshot: m.modifier_name_snapshot,
-              price_adjustment_snapshot: m.price_adjustment_snapshot
-            })) : []
-          };
-        })
-      };
-
-      await apiClient.post(OrderApis.updateOrderItems(order.id), payload);
-      if (patch.notes !== undefined) toast.success("Note updated");
-      if (patch.qty !== undefined) toast.success("Quantity updated");
-      if (patch.is_nc !== undefined) toast.success("NC status updated");
-      await onRefresh();
-      setItemOverrides({});
-    } catch (err: any) {
-      console.error("Failed to update item:", err);
-      toast.error(err.response?.data?.detail || "Failed to update item");
-      // Revert optimistic update on error
-      setItemOverrides(prev => {
-        const next = { ...prev };
-        delete next[itemId];
-        return next;
-      });
-    } finally {
-      setIsUpdating(false);
-    }
-  }, [order.id, order.items, displayItems, onRefresh, setItemOverrides]);
-
-  const handleOpenNoteEdit = (item: OrderItem) => {
-    setEditingItemNote(item);
-    setEditNoteValue(item.notes || "");
+  const handleOpenItemDetail = (item: OrderItem) => {
+    setSelectedItem(item);
+    setSelectedItemQuantity(Number(itemOverrides[item.id]?.qty ?? item.qty));
+    setSelectedItemNc(Boolean(itemOverrides[item.id]?.is_nc ?? item.is_nc));
   };
 
-  const handleSaveNote = async () => {
-    if (!editingItemNote) return;
-    await handleApplyItemUpdate(editingItemNote.id, { notes: editNoteValue || null });
-    setEditingItemNote(null);
+  const handleSaveItemDetail = async () => {
+    if (!selectedItem) return;
+    const nextQty = Math.max(1, Math.floor(selectedItemQuantity || 1));
+    const currentQty = Number(
+      itemOverrides[selectedItem.id]?.qty ?? selectedItem.qty,
+    );
+    const currentNc = Boolean(
+      itemOverrides[selectedItem.id]?.is_nc ?? selectedItem.is_nc,
+    );
+    if (nextQty === currentQty && selectedItemNc === currentNc) {
+      setSelectedItem(null);
+      return;
+    }
+    const saved = await handleApplyItemUpdate(selectedItem.id, {
+      qty: nextQty,
+      ...(selectedItemNc !== currentNc ? { is_nc: selectedItemNc } : {}),
+    });
+    if (saved) setSelectedItem(null);
   };
 
   return (
     <div className="space-y-4">
       {/* Items Card */}
-      <Card className="border-border/40 bg-white dark:bg-[#1a1a1a] overflow-hidden">
+      <Card className="overflow-hidden border-border/50 bg-card shadow-sm">
         <CardContent className="p-0">
-          <div className="px-5 py-4 border-b border-border/30 flex items-center justify-between">
+          <div className="flex items-center justify-between border-b border-border/30 px-4 py-3">
             <div className="flex items-center gap-2">
               <Utensils className="h-4 w-4 text-muted-foreground" />
-              <span className="font-black text-[11px] uppercase tracking-[0.15em] text-muted-foreground">
-                Ordered Items
-              </span>
+              <span className="text-sm font-semibold">Items</span>
             </div>
-            <Badge variant="secondary" className="text-[10px] font-black">
+            <Badge variant="secondary" className="text-xs font-medium">
               {displayItems.length} items
             </Badge>
           </div>
 
           <div className="divide-y divide-border/20">
-            {displayItems.map((item: OrderItem) => (
-              <div key={item.id} className="px-5 py-4 hover:bg-muted/5 transition-colors">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex-1 min-w-0">
-                    <p className="font-bold text-sm text-foreground">{item.name_snapshot}</p>
-                    {item.category_name_snapshot && (
-                      <p className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">
-                        {item.category_name_snapshot}
+            {displayItems.map((item: OrderItem) => {
+              const canEdit =
+                order.status !== "completed" && order.status !== "canceled";
+              return (
+                <div
+                  key={item.id}
+                  role={canEdit ? "button" : undefined}
+                  tabIndex={canEdit ? 0 : undefined}
+                  aria-label={
+                    canEdit ? `Edit ${item.name_snapshot}` : undefined
+                  }
+                  className={cn(
+                    "px-4 py-3.5 transition-colors",
+                    canEdit &&
+                      "cursor-pointer hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/40",
+                  )}
+                  onClick={
+                    canEdit ? () => handleOpenItemDetail(item) : undefined
+                  }
+                  onKeyDown={
+                    canEdit
+                      ? (event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            handleOpenItemDetail(item);
+                          }
+                        }
+                      : undefined
+                  }
+                >
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-foreground">
+                        {item.name_snapshot}
                       </p>
-                    )}
-                    {item.modifiers && item.modifiers.length > 0 && (
-                      <div className="flex flex-wrap gap-1 mt-2">
-                        {item.modifiers.map((m) => (
-                          <Badge key={m.id} variant="secondary" className="text-[10px] font-medium px-2 py-0.5">
-                            {m.modifier_name_snapshot}
-                            {m.price_adjustment_snapshot !== 0 && (
-                              <span className="ml-1 text-muted-foreground">+{formatCurrency(m.price_adjustment_snapshot)}</span>
-                            )}
-                          </Badge>
-                        ))}
-                      </div>
-                    )}
-                    {item.notes && (
-                      <p className="text-xs text-muted-foreground italic mt-1.5">📝 {item.notes}</p>
-                    )}
-                    {item.is_nc && (
-                      <Badge variant="outline" className="mt-2 h-5 text-[10px] font-semibold text-orange-600 border-orange-500/40">
-                        NC
-                      </Badge>
-                    )}
-                  </div>
-                  <div className="text-right flex-shrink-0 flex flex-col items-end gap-2">
-                    <div className="flex items-center gap-3">
-                      {order.status !== 'completed' && order.status !== 'canceled' ? (
-                        <div className="flex items-center gap-1">
-                          <Button
-                            variant="outline"
-                            size="icon"
-                            className="h-8 w-8"
-                            disabled={isUpdating || (item.qty <= 1 && !canVoidItem)}
-                            onClick={() => void handleQtyChange(item, -1)}
-                          >
-                            <Minus className="h-3.5 w-3.5" />
-                          </Button>
-                          <div className="min-w-[2.5rem] text-center font-semibold tabular-nums text-sm">
-                            {item.qty}
-                          </div>
-                          <Button
-                            variant="outline"
-                            size="icon"
-                            className="h-8 w-8"
-                            disabled={isUpdating}
-                            onClick={() => void handleQtyChange(item, 1)}
-                          >
-                            <Plus className="h-3.5 w-3.5" />
-                          </Button>
-                        </div>
-                      ) : (
-                        <span className="text-xs text-muted-foreground tabular-nums">×{item.qty}</span>
+                      {item.category_name_snapshot && (
+                        <p className="mt-0.5 text-xs text-muted-foreground">
+                          {item.category_name_snapshot}
+                        </p>
                       )}
-                      <span className="font-bold text-sm tabular-nums">{formatCurrency(item.line_total)}</span>
+                      {item.modifiers && item.modifiers.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-2">
+                          {item.modifiers.map((m) => (
+                            <Badge
+                              key={m.id}
+                              variant="secondary"
+                              className="text-[10px] font-medium px-2 py-0.5"
+                            >
+                              {m.modifier_name_snapshot}
+                              {m.price_adjustment_snapshot !== 0 && (
+                                <span className="ml-1 text-muted-foreground">
+                                  +{formatCurrency(m.price_adjustment_snapshot)}
+                                </span>
+                              )}
+                            </Badge>
+                          ))}
+                        </div>
+                      )}
+                      {item.notes && (
+                        <p className="text-xs text-muted-foreground italic mt-1.5">
+                          📝 {item.notes}
+                        </p>
+                      )}
+                      {item.is_nc && (
+                        <Badge
+                          variant="outline"
+                          className="mt-2 h-5 text-[10px] font-semibold text-orange-600 border-orange-500/40"
+                        >
+                          NC
+                        </Badge>
+                      )}
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="text-right flex-shrink-0 flex flex-col items-end gap-2">
+                      <div className="flex items-center gap-2.5">
+                        <span className="rounded-md bg-muted px-2 py-1 text-xs font-semibold tabular-nums">
+                          ×{item.qty}
+                        </span>
+                        <span className="font-bold text-sm tabular-nums">
+                          {formatCurrency(item.line_total)}
+                        </span>
+                      </div>
                       <span className="text-[10px] text-muted-foreground tabular-nums">
                         @ {formatCurrency(item.unit_price)}
                       </span>
-                      {order.status !== 'completed' && order.status !== 'canceled' && (
-                        <>
-                          <Button
-                            variant={item.is_nc ? "default" : "outline"}
-                            size="sm"
-                            className={cn(
-                              "h-8 gap-1.5 px-2 text-xs font-semibold",
-                              item.is_nc && "bg-orange-500 hover:bg-orange-600 text-white"
-                            )}
-                            disabled={isUpdating || !canMarkNc}
-                            onClick={() => {
-                              // Read current value from overrides or original item
-                              const currentNc = itemOverrides[item.id]?.is_nc ?? item.is_nc;
-                              const nextNc = !Boolean(currentNc);
-                              // Optimistically update
-                              setItemOverrides(prev => ({
-                                ...prev,
-                                [item.id]: { ...(prev[item.id] || {}), is_nc: nextNc }
-                              }));
-                              void handleApplyItemUpdate(item.id, {
-                                is_nc: nextNc,
-                              });
-                            }}
-                          >
-                            <Award className="h-3.5 w-3.5" />
-                            NC
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="h-8 gap-1.5 px-2 text-xs font-semibold"
-                            onClick={() => handleOpenNoteEdit(item)}
-                          >
-                            <Pencil className="h-3.5 w-3.5" />
-                            Note
-                          </Button>
-                        </>
-                      )}
                     </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </CardContent>
       </Card>
 
-      {/* Quick Info Card */}
-      <Card className="border-border/40 bg-white dark:bg-[#1a1a1a]">
-        <CardContent className="p-5 space-y-4">
-          <h3 className="font-black text-[11px] uppercase tracking-[0.15em] text-muted-foreground">Quick Info</h3>
+      {summary}
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+      {/* Quick Info Card */}
+      <Card className="overflow-hidden border-border/50 bg-card shadow-sm">
+        <CardContent className="p-0">
+          <div className="border-b border-border/30 px-4 py-3">
+            <h3 className="text-sm font-semibold">Order details</h3>
+          </div>
+
+          <div className="grid grid-cols-2 divide-x divide-y divide-border/30">
             {/* Tables */}
             {tables && tables.length > 0 ? (
-              <div className="flex items-start gap-3 text-sm">
-                <div className="p-2 rounded-lg bg-orange-500/10 mt-0.5">
+              <div className="flex min-w-0 items-start gap-2.5 p-3 text-sm">
+                <div className="mt-0.5 rounded-lg bg-orange-500/10 p-2">
                   <Armchair className="h-4 w-4 text-orange-600 dark:text-orange-400" />
                 </div>
-                <div className="space-y-0.5">
-                  <p className="font-bold text-foreground">
+                <div className="min-w-0 space-y-0.5">
+                  <p className="truncate font-semibold text-foreground">
                     {tables.length > 1
                       ? `${tables.find((t) => t.id === order.table_id)?.name || tables[0]?.name || `Table ${order.table_id}`} + ${tables.length - 1}`
                       : tables.map((t) => t.name || `Table ${t.id}`).join(", ")}
                   </p>
-                  <p className="text-[10px] text-muted-foreground uppercase tracking-wider leading-none">
+                  <p className="line-clamp-2 text-[10px] leading-snug text-muted-foreground">
                     {tables.map((t) => t.name || `Table ${t.id}`).join(", ")}
                     {tables.some((t) => t.capacity) && (
                       <span className="block mt-0.5 normal-case">
-                        {tables.reduce((sum, t) => sum + (t.capacity || 0), 0)} seats total
+                        {tables.reduce((sum, t) => sum + (t.capacity || 0), 0)}{" "}
+                        seats total
                       </span>
                     )}
                   </p>
                 </div>
               </div>
             ) : order.table_ids && order.table_ids.length > 1 ? (
-              <div className="flex items-start gap-3 text-sm">
-                <div className="p-2 rounded-lg bg-orange-500/10 mt-0.5">
+              <div className="flex min-w-0 items-start gap-2.5 p-3 text-sm">
+                <div className="mt-0.5 rounded-lg bg-orange-500/10 p-2">
                   <Armchair className="h-4 w-4 text-orange-600 dark:text-orange-400" />
                 </div>
-                <div className="space-y-0.5">
-                  <p className="font-bold text-foreground">
-                    {(order.table_name || `Table ${order.table_id}`) + ` + ${order.table_ids.length - 1}`}
+                <div className="min-w-0 space-y-0.5">
+                  <p className="truncate font-semibold text-foreground">
+                    {(order.table_name || `Table ${order.table_id}`) +
+                      ` + ${order.table_ids.length - 1}`}
                   </p>
-                  <p className="text-[10px] text-muted-foreground uppercase tracking-wider leading-none">
+                  <p className="line-clamp-2 text-[10px] leading-snug text-muted-foreground">
                     {order.table_ids.map((id) => `Table ${id}`).join(", ")}
                   </p>
                 </div>
               </div>
             ) : order.table_name ? (
-              <div className="flex items-center gap-3 text-sm">
-                <div className="p-2 rounded-lg bg-orange-500/10">
+              <div className="flex min-w-0 items-center gap-2.5 p-3 text-sm">
+                <div className="rounded-lg bg-orange-500/10 p-2">
                   <Armchair className="h-4 w-4 text-orange-600 dark:text-orange-400" />
                 </div>
-                <div>
-                  <p className="font-bold text-foreground">{order.table_name}</p>
-                  <p className="text-[10px] text-muted-foreground uppercase tracking-wider">{order.table_category_name || "Table"}</p>
+                <div className="min-w-0">
+                  <p className="truncate font-semibold text-foreground">
+                    {order.table_name}
+                  </p>
+                  <p className="truncate text-[10px] text-muted-foreground">
+                    {order.table_category_name || "Table"}
+                  </p>
                 </div>
               </div>
             ) : null}
 
             {/* Customer */}
             {order.customer_name ? (
-              <div className="flex items-center gap-3 text-sm">
-                <div className="p-2 rounded-lg bg-blue-500/10">
+              <div className="flex min-w-0 items-center gap-2.5 p-3 text-sm">
+                <div className="rounded-lg bg-blue-500/10 p-2">
                   <Users className="h-4 w-4 text-blue-600 dark:text-blue-400" />
                 </div>
-                <div>
-                  <p className="font-bold text-foreground">{order.customer_name}</p>
+                <div className="min-w-0">
+                  <p className="truncate font-semibold text-foreground">
+                    {order.customer_name}
+                  </p>
                   {order.customer_phone && (
-                    <p className="text-[10px] text-muted-foreground">{order.customer_phone}</p>
+                    <p className="text-[10px] text-muted-foreground">
+                      {order.customer_phone}
+                    </p>
                   )}
                 </div>
               </div>
             ) : (
-              <div className="flex items-center gap-3 text-sm">
-                <div className="p-2 rounded-lg bg-blue-500/10">
+              <div className="flex min-w-0 items-center gap-2.5 p-3 text-sm">
+                <div className="rounded-lg bg-blue-500/10 p-2">
                   <Users className="h-4 w-4 text-blue-600 dark:text-blue-400" />
                 </div>
-                <div>
-                  <p className="font-bold text-foreground">Walk-in Customer</p>
-                  <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Guest</p>
+                <div className="min-w-0">
+                  <p className="truncate font-semibold text-foreground">
+                    Walk-in customer
+                  </p>
+                  <p className="text-[10px] text-muted-foreground">Guest</p>
                 </div>
               </div>
             )}
 
             {/* Guests */}
             {order.number_of_guests ? (
-              <div className="flex items-center gap-3 text-sm">
-                <div className="p-2 rounded-lg bg-purple-500/10">
+              <div className="flex min-w-0 items-center gap-2.5 p-3 text-sm">
+                <div className="rounded-lg bg-purple-500/10 p-2">
                   <Users className="h-4 w-4 text-purple-600 dark:text-purple-400" />
                 </div>
-                <div>
-                  <p className="font-bold text-foreground">{order.number_of_guests} Guests</p>
-                  <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Party Size</p>
+                <div className="min-w-0">
+                  <p className="truncate font-semibold text-foreground">
+                    {order.number_of_guests} guests
+                  </p>
+                  <p className="text-[10px] text-muted-foreground">
+                    Party size
+                  </p>
                 </div>
               </div>
             ) : (
-              <div className="flex items-center gap-3 text-sm">
-                <div className="p-2 rounded-lg bg-purple-500/10">
+              <div className="flex min-w-0 items-center gap-2.5 p-3 text-sm">
+                <div className="rounded-lg bg-purple-500/10 p-2">
                   <Users className="h-4 w-4 text-purple-600 dark:text-purple-400" />
                 </div>
-                <div>
-                  <p className="font-bold text-foreground">1 Guest</p>
-                  <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Default Size</p>
+                <div className="min-w-0">
+                  <p className="truncate font-semibold text-foreground">
+                    1 guest
+                  </p>
+                  <p className="text-[10px] text-muted-foreground">
+                    Party size
+                  </p>
                 </div>
               </div>
             )}
 
             {/* Time / Date */}
-            <div className="flex items-center gap-3 text-sm">
-              <div className="p-2 rounded-lg bg-muted">
+            <div className="flex min-w-0 items-center gap-2.5 p-3 text-sm">
+              <div className="rounded-lg bg-muted p-2">
                 <Clock className="h-4 w-4 text-muted-foreground" />
               </div>
-              <div>
-                <p className="font-bold text-foreground">{formatTime(order.created_at)}</p>
-                <p className="text-[10px] text-muted-foreground uppercase tracking-wider">
-                  {new Date(order.created_at).toLocaleDateString()}
+              <div className="min-w-0">
+                <p className="font-semibold text-foreground">
+                  {formatTime(order.created_at)}
+                </p>
+                <p className="text-[10px] text-muted-foreground">
+                  {formatDate(order.created_at)}
                 </p>
               </div>
             </div>
@@ -1370,136 +1712,194 @@ function DetailsTab({
 
           {/* Notes */}
           {order.notes && (
-            <div className="p-3 rounded-lg bg-muted/50 border border-border/30 text-sm text-muted-foreground italic">
+            <div className="m-3 rounded-lg border border-border/30 bg-muted/50 p-3 text-sm italic text-muted-foreground">
               {order.notes}
             </div>
           )}
         </CardContent>
       </Card>
 
+      <Sheet
+        open={!!selectedItem}
+        onOpenChange={(open) => !open && setSelectedItem(null)}
+      >
+        <SheetContent
+          side="bottom"
+          className="mx-auto w-full max-w-3xl rounded-t-2xl px-6 pb-6 pt-8"
+        >
+          <SheetHeader className="pr-8">
+            <SheetTitle>{selectedItem?.name_snapshot}</SheetTitle>
+            <SheetDescription>
+              {selectedItem?.category_name_snapshot || "Menu item"} ·{" "}
+              {selectedItem ? formatCurrency(selectedItem.unit_price) : ""} each
+            </SheetDescription>
+          </SheetHeader>
 
-      {/* Note Edit Modal */}
-      <Dialog open={!!editingItemNote} onOpenChange={(open) => !open && setEditingItemNote(null)}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Edit Note</DialogTitle>
-            <DialogDescription>
-              {editingItemNote ? editingItemNote.name_snapshot : "Update the item note."}
-            </DialogDescription>
-          </DialogHeader>
+          <div className="space-y-5 py-6">
+            <div className="flex items-center justify-between rounded-xl border border-border/60 p-4">
+              <div>
+                <p className="font-semibold">Quantity</p>
+                <p className="text-sm text-muted-foreground">
+                  Changes are sent to the kitchen only when you confirm.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-10 w-10"
+                  disabled={isUpdating || selectedItemQuantity <= 1}
+                  onClick={() =>
+                    setSelectedItemQuantity((value) => Math.max(1, value - 1))
+                  }
+                  aria-label="Reduce quantity"
+                >
+                  <Minus className="h-4 w-4" />
+                </Button>
+                <Input
+                  type="number"
+                  min={1}
+                  value={selectedItemQuantity}
+                  onChange={(event) =>
+                    setSelectedItemQuantity(
+                      Math.max(1, Number(event.target.value) || 1),
+                    )
+                  }
+                  className="h-10 w-20 text-center font-bold tabular-nums"
+                  aria-label="Quantity"
+                />
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-10 w-10"
+                  disabled={isUpdating}
+                  onClick={() => setSelectedItemQuantity((value) => value + 1)}
+                  aria-label="Increase quantity"
+                >
+                  <Plus className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
 
-          <div className="space-y-3 py-2">
-            <Textarea
-              value={editNoteValue}
-              onChange={(e) => setEditNoteValue(e.target.value)}
-              placeholder="Add a note for this item"
-              className="min-h-[96px]"
-            />
+            {canMarkNc && (
+              <button
+                type="button"
+                className={cn(
+                  "flex w-full items-center justify-between rounded-xl border p-4 text-left transition-colors",
+                  selectedItemNc
+                    ? "border-orange-500/50 bg-orange-50 dark:bg-orange-950/20"
+                    : "border-border/60 hover:bg-muted/40",
+                )}
+                disabled={isUpdating}
+                onClick={() => setSelectedItemNc((value) => !value)}
+              >
+                <div className="flex items-center gap-3">
+                  <span
+                    className={cn(
+                      "flex h-9 w-9 items-center justify-center rounded-lg",
+                      selectedItemNc
+                        ? "bg-orange-500 text-white"
+                        : "bg-muted text-muted-foreground",
+                    )}
+                  >
+                    <Award className="h-4 w-4" />
+                  </span>
+                  <div>
+                    <p className="font-semibold">Non-chargeable (NC)</p>
+                    <p className="text-sm text-muted-foreground">
+                      Exclude this item from the bill.
+                    </p>
+                  </div>
+                </div>
+                <span
+                  className={cn(
+                    "rounded-full px-2.5 py-1 text-xs font-semibold",
+                    selectedItemNc
+                      ? "bg-orange-500 text-white"
+                      : "bg-muted text-muted-foreground",
+                  )}
+                >
+                  {selectedItemNc ? "NC" : "Chargeable"}
+                </span>
+              </button>
+            )}
           </div>
 
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setEditingItemNote(null)}>Cancel</Button>
+          <SheetFooter>
             <Button
-              onClick={handleSaveNote}
-              disabled={!editingItemNote || isUpdating}
-              className="gap-2"
+              variant="outline"
+              onClick={() => setSelectedItem(null)}
+              disabled={isUpdating}
             >
-              {isUpdating ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-              Save Note
+              Cancel
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            <Button
+              onClick={handleSaveItemDetail}
+              disabled={!selectedItem || isUpdating}
+            >
+              {isUpdating ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : null}
+              Update & Send
+            </Button>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }
 
 // ── KOTs Tab ────────────────────────────────────────
-function KOTsTab({ kots }: { kots: KOTUpdate[] }) {
+function KOTsTab({
+  kots,
+  onStatusChange,
+  onReject,
+  updatingKotIds,
+}: {
+  kots: KOTUpdate[];
+  onStatusChange?: (kotId: number, status: string) => void;
+  onReject?: (kotId: number) => void;
+  updatingKotIds?: ReadonlySet<number>;
+}) {
   if (!kots || kots.length === 0) {
     return (
-      <Card className="border-border/40 bg-white dark:bg-[#1a1a1a]">
-        <CardContent className="p-12 flex flex-col items-center justify-center text-muted-foreground">
-          <ChefHat className="h-12 w-12 mb-3 opacity-30" />
-          <p className="font-bold text-sm">No KOTs Found</p>
-          <p className="text-xs mt-1">Kitchen order tickets will appear here when items are sent to kitchen.</p>
+      <Card className="border-border/50 bg-card shadow-sm">
+        <CardContent className="flex min-h-48 flex-col items-center justify-center p-6 text-center text-muted-foreground">
+          <div className="mb-3 rounded-xl bg-muted p-3">
+            <ChefHat className="h-5 w-5" />
+          </div>
+          <p className="text-sm font-semibold text-foreground">
+            No kitchen tickets yet
+          </p>
+          <p className="mt-1 max-w-xs text-xs leading-relaxed">
+            Kitchen tickets appear when ordered items are sent to the kitchen.
+          </p>
         </CardContent>
       </Card>
     );
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       {kots.map((kot) => {
-        const statusConfig = getKOTStatusConfig(kot.status);
+        const next = nextKotStatus(kot.status);
+        const action = kotActionLabel(kot.status);
+        const isUpdating = Boolean(updatingKotIds?.has(kot.id));
         return (
-          <Card key={kot.id} className={cn("border overflow-hidden bg-white dark:bg-[#1a1a1a]", statusConfig.bg)}>
-            <CardContent className="p-0">
-              {/* KOT Header */}
-              <div className="px-5 py-4 border-b border-border/20 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg bg-background/80">
-                    <ChefHat className="h-4 w-4" />
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-black text-sm">{getKOTHeading(kot)}</span>
-                      <Badge variant="secondary" className={cn("text-[10px] font-black uppercase tracking-wider", statusConfig.color)}>
-                        {statusConfig.label}
-                      </Badge>
-                    </div>
-                    <div className="flex items-center gap-2 mt-0.5">
-                      <span className="text-[10px] text-muted-foreground uppercase tracking-wider capitalize">{kot.station}</span>
-                      <span className="h-1 w-1 rounded-full bg-muted-foreground/30" />
-                      <span className="text-[10px] text-muted-foreground uppercase tracking-wider capitalize">{kot.type}</span>
-                      <span className="h-1 w-1 rounded-full bg-muted-foreground/30" />
-                      <span className="text-[10px] text-muted-foreground">{formatTime(kot.created_at)}</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* KOT Items */}
-              <div className="divide-y divide-border/10">
-                {kot.items.map((item) => {
-                  const display = getKOTItemDisplay(item);
-                  const itemStatus = getKOTStatusConfig(item.item_status || "pending");
-                  const isDeleted = Number(item.is_deleted || 0) === 1;
-
-                  return (
-                    <div key={item.id} className="px-5 py-3 flex items-center justify-between gap-4">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className={cn("text-sm font-medium", isDeleted && "line-through text-muted-foreground")}>
-                            {display.name}
-                          </span>
-                          <Badge variant="secondary" className={cn("text-[10px]", itemStatus.color)}>
-                            {isDeleted ? "Cancelled" : itemStatus.label}
-                          </Badge>
-                        </div>
-                        {item.notes && (
-                          <p className="mt-1 text-[10px] text-muted-foreground italic">Note: {item.notes}</p>
-                        )}
-                        {item.modifiers && item.modifiers.length > 0 && (
-                          <p className="mt-1 text-[10px] text-muted-foreground">
-                            {item.modifiers.map((modifier) => modifier.modifier_name_snapshot).join(", ")}
-                          </p>
-                        )}
-                      </div>
-                      <div className="flex shrink-0 items-center gap-3">
-                        <span className="text-sm font-bold tabular-nums">×{display.quantity}</span>
-                        {display.progressLabel && (
-                          <Badge variant="secondary" className="text-[10px]">
-                            {display.progressLabel}
-                          </Badge>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </CardContent>
-          </Card>
+          <KotEmbeddedTicketCard
+            key={kot.id}
+            kot={kot}
+            isUpdating={isUpdating}
+            primaryAction={
+              action && next && onStatusChange
+                ? {
+                    label: action,
+                    onClick: () => onStatusChange(kot.id, kot.status),
+                  }
+                : null
+            }
+            onReject={next && onReject ? () => onReject(kot.id) : undefined}
+          />
         );
       })}
     </div>
@@ -1507,17 +1907,23 @@ function KOTsTab({ kots }: { kots: KOTUpdate[] }) {
 }
 
 // ── Events Tab ──────────────────────────────────────
-function EventsTab({ events, loading }: { events: OrderEvent[]; loading: boolean }) {
+function EventsTab({
+  events,
+  loading,
+}: {
+  events: OrderEvent[];
+  loading: boolean;
+}) {
   if (loading) {
     return (
-      <Card className="border-border/40 bg-white dark:bg-[#1a1a1a]">
-        <CardContent className="p-6 space-y-6">
+      <Card className="border-border/50 bg-card shadow-sm">
+        <CardContent className="space-y-4 p-4">
           {[1, 2, 3].map((i) => (
-            <div key={i} className="flex gap-4">
-              <Skeleton className="h-10 w-10 rounded-full flex-shrink-0" />
-              <div className="space-y-2 flex-1">
-                <Skeleton className="h-4 w-48" />
-                <Skeleton className="h-3 w-32" />
+            <div key={i} className="flex gap-3">
+              <Skeleton className="h-9 w-9 shrink-0 rounded-lg" />
+              <div className="flex-1 space-y-2">
+                <Skeleton className="h-4 w-40" />
+                <Skeleton className="h-3 w-28" />
               </div>
             </div>
           ))}
@@ -1528,51 +1934,70 @@ function EventsTab({ events, loading }: { events: OrderEvent[]; loading: boolean
 
   if (events.length === 0) {
     return (
-      <Card className="border-border/40 bg-white dark:bg-[#1a1a1a]">
-        <CardContent className="p-12 flex flex-col items-center justify-center text-muted-foreground">
-          <Activity className="h-12 w-12 mb-3 opacity-30" />
-          <p className="font-bold text-sm">No Events Yet</p>
-          <p className="text-xs mt-1">Order activity will appear here as things happen.</p>
+      <Card className="border-border/50 bg-card shadow-sm">
+        <CardContent className="flex min-h-48 flex-col items-center justify-center p-6 text-center text-muted-foreground">
+          <div className="mb-3 rounded-xl bg-muted p-3">
+            <Activity className="h-5 w-5" />
+          </div>
+          <p className="text-sm font-semibold text-foreground">
+            No activity yet
+          </p>
+          <p className="mt-1 max-w-xs text-xs leading-relaxed">
+            Updates to this order will appear here.
+          </p>
         </CardContent>
       </Card>
     );
   }
 
   return (
-    <Card className="border-border/40 bg-white dark:bg-[#1a1a1a]">
-      <CardContent className="p-5">
+    <Card className="border-border/50 bg-card shadow-sm">
+      <CardContent className="p-4">
         <div className="relative">
           {/* Timeline line */}
-          <div className="absolute left-5 top-3 bottom-3 w-px bg-border/40" />
+          <div className="absolute bottom-3 left-4 top-3 w-px bg-border/40" />
 
           <div className="space-y-0">
             {events.map((event, index) => {
               const isFirst = index === 0;
               return (
-                <div key={event.id} className="relative flex gap-4 pb-6 last:pb-0">
+                <div
+                  key={event.id}
+                  className="relative flex gap-3 pb-5 last:pb-0"
+                >
                   {/* Timeline dot */}
-                  <div className={cn(
-                    "relative z-10 h-10 w-10 rounded-full flex items-center justify-center flex-shrink-0 border-2",
-                    isFirst
-                      ? "bg-primary/10 border-primary text-primary"
-                      : "bg-muted border-border/40 text-muted-foreground"
-                  )}>
-                    <Activity className="h-4 w-4" />
+                  <div
+                    className={cn(
+                      "relative z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border",
+                      isFirst
+                        ? "border-primary/30 bg-primary/10 text-primary"
+                        : "border-border/50 bg-muted text-muted-foreground",
+                    )}
+                  >
+                    <Activity className="h-3.5 w-3.5" />
                   </div>
 
                   {/* Event Content */}
-                  <div className="flex-1 pt-1.5">
-                    <p className="font-bold text-sm text-foreground">{event.title}</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">{event.result}</p>
-                    <div className="flex items-center gap-2 mt-2 text-[10px] text-muted-foreground">
+                  <div className="min-w-0 flex-1 pt-0.5">
+                    <p className="text-sm font-semibold text-foreground">
+                      {event.title}
+                    </p>
+                    {event.result && (
+                      <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
+                        {event.result}
+                      </p>
+                    )}
+                    <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-muted-foreground">
                       {event.triggered_by?.name && (
                         <>
-                          <span className="font-medium">{event.triggered_by.name}</span>
+                          <span className="font-medium">
+                            {event.triggered_by.name}
+                          </span>
                           <span className="h-1 w-1 rounded-full bg-muted-foreground/30" />
                         </>
                       )}
                       {event.triggered_at && (
-                        <span>{new Date(event.triggered_at).toLocaleString()}</span>
+                        <span>{formatDateTime(event.triggered_at)}</span>
                       )}
                     </div>
                   </div>

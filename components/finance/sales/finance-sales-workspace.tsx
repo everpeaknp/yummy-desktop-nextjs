@@ -1,0 +1,396 @@
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
+import { FileText, Plus } from "lucide-react";
+import { toast } from "sonner";
+
+import { FinanceSalesInvoiceDialog } from "@/components/finance/sales/finance-sales-invoice-dialog";
+import { SalesDocumentDetailSheet } from "@/components/finance/transaction-detail/sales-document-detail-sheet";
+import type { TransactionDetailModel } from "@/components/finance/transaction-detail/transaction-detail-sheet";
+import { FinanceWorkspaceNav } from "@/components/finance/workspace/finance-workspace-nav";
+import { MetricCard } from "@/components/cards/metric-card";
+import { AppPage } from "@/components/patterns/page/app-page";
+import { PageHeader } from "@/components/patterns/page/page-header";
+import { Button } from "@/components/ui/button";
+import { useAuth } from "@/hooks/use-auth";
+import { financeSalesApi } from "@/lib/api/finance-sales-api";
+import { formatCurrency, formatDate } from "@/lib/utils";
+import type {
+  FinanceOrderSettlementSummary,
+  FinanceSalesDocument,
+} from "@/types/finance-sales";
+
+const formatMoney = formatCurrency;
+
+function settlementLabel(value: string) {
+  const labels: Record<string, string> = {
+    customer_credit: "Customer credit",
+    paid: "Paid",
+    partially_paid: "Partially paid",
+    partially_returned: "Partially returned",
+    pending: "Pending",
+    returned: "Returned",
+    unpaid: "Unpaid",
+  };
+  return labels[value.trim().toLowerCase()] || "Recorded";
+}
+
+export function documentDetail(
+  document: FinanceSalesDocument,
+): TransactionDetailModel {
+  return {
+    eyebrow: document.source_type === "pos_order" ? "POS sale" : "Manual sale",
+    title: document.document_number,
+    reference:
+      document.fiscal_document_number ||
+      document.external_reference ||
+      (document.source_type === "pos_order" ? "POS sale" : "Manual sale"),
+    subtitle: document.daily_order_number
+      ? `Daily order #${document.daily_order_number}`
+      : "Manual sale",
+    occurredAt: document.created_at || document.business_date,
+    status: document.settlement_status,
+    amount: document.grand_total,
+    amountLabel: "Sale total",
+    amountTone: "in",
+    sections: [
+      {
+        title: "Sale overview",
+        fields: [
+          { label: "Business date", value: formatDate(document.business_date) },
+          {
+            label: "Customer",
+            value: document.customer_name || "Cash customer",
+          },
+          {
+            label: "Notes",
+            value: document.notes || document.reason || "—",
+            fullWidth: true,
+          },
+        ],
+      },
+      {
+        title: "Items",
+        description: "The products and amounts recorded for this sale.",
+        table: {
+          columns: ["Item", "Quantity", "Rate", "Amount"],
+          rows: document.lines.map((line) => [
+            <div key={line.id}>
+              <p className="font-medium">{line.item_name}</p>
+              {line.description ? (
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  {line.description}
+                </p>
+              ) : null}
+            </div>,
+            Number(line.quantity || 0).toLocaleString(),
+            formatMoney(line.unit_price),
+            <span
+              key={`amount-${line.id}`}
+              className="font-medium tabular-nums"
+            >
+              {formatMoney(line.line_total)}
+            </span>,
+          ]),
+        },
+      },
+      {
+        title: "Totals & settlement",
+        fields: [
+          ...(Number(document.discount_total) > 0
+            ? [
+                {
+                  label: "Discount",
+                  value: formatMoney(document.discount_total),
+                },
+              ]
+            : []),
+          ...(Number(document.tax_total) > 0
+            ? [{ label: "Tax", value: formatMoney(document.tax_total) }]
+            : []),
+          {
+            label: "Fiscal document",
+            value: document.fiscal_document_number || "Not issued",
+          },
+        ],
+      },
+    ],
+  };
+}
+
+export function FinanceSalesWorkspace() {
+  const restaurantId = useAuth((state) => state.user?.restaurant_id);
+  const [documents, setDocuments] = useState<FinanceSalesDocument[]>([]);
+  const [settlements, setSettlements] = useState<
+    Record<number, FinanceOrderSettlementSummary>
+  >({});
+  const [loading, setLoading] = useState(false);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [selectedDocument, setSelectedDocument] =
+    useState<FinanceSalesDocument | null>(null);
+
+  const load = useCallback(async () => {
+    if (!restaurantId) return;
+    setLoading(true);
+    try {
+      const result = await financeSalesApi.list(Number(restaurantId), {
+        kind: "invoice",
+        limit: 200,
+      });
+      setDocuments(result.documents);
+      const orderIds = result.documents
+        .filter(
+          (document) =>
+            document.source_type === "pos_order" && document.source_id != null,
+        )
+        .map((document) => Number(document.source_id));
+      try {
+        const summaries = await financeSalesApi.getOrderSettlements(
+          Number(restaurantId),
+          orderIds,
+        );
+        setSettlements(
+          Object.fromEntries(
+            summaries.map((summary) => [summary.document_id, summary]),
+          ),
+        );
+      } catch {
+        // Keep the sales workspace useful even when settlement summaries are
+        // temporarily unavailable; each sale can still load its full detail.
+        setSettlements({});
+      }
+    } catch (error: any) {
+      toast.error(
+        error.response?.data?.detail || "Could not load sales invoices.",
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, [restaurantId]);
+
+  const settlementFor = (document: FinanceSalesDocument) =>
+    settlements[document.id];
+
+  const settlementStatus = (document: FinanceSalesDocument) =>
+    settlementFor(document)?.settlement_status || document.settlement_status;
+
+  const balanceDue = (document: FinanceSalesDocument) => {
+    const summary = settlementFor(document);
+    if (summary) return Number(summary.balance_due || 0);
+    return String(document.settlement_status).toLowerCase() === "paid"
+      ? 0
+      : Number(document.grand_total || 0);
+  };
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  return (
+    <AppPage width="wide" density="compact" className="p-4 pb-24 sm:p-6">
+      <PageHeader
+        title="Sales"
+        description="Completed POS and manual sales in one register."
+        meta="Sales & receivables"
+        actions={
+          <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
+            <Button className="h-11 rounded-xl" asChild>
+              <Link href="/orders/new">
+                <Plus className="mr-2 h-4 w-4" />
+                New POS sale
+              </Link>
+            </Button>
+            <Button
+              variant="outline"
+              className="h-11 rounded-xl"
+              onClick={() => setDialogOpen(true)}
+            >
+              <FileText className="mr-2 h-4 w-4" />
+              Manual sale
+            </Button>
+          </div>
+        }
+      />
+
+      <FinanceWorkspaceNav
+        links={[
+          { label: "Sales", href: "/finance/sales" },
+          { label: "Sales returns", href: "/finance/sales/returns" },
+        ]}
+      />
+
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3">
+        <MetricCard label="All sales" value={documents.length} />
+        <MetricCard
+          label="Sales value"
+          value={formatMoney(
+            documents.reduce(
+              (sum, doc) => sum + Number(doc.grand_total || 0),
+              0,
+            ),
+          )}
+        />
+        <MetricCard
+          className="col-span-2 sm:col-span-1"
+          label="Outstanding"
+          tone="warning"
+          value={formatMoney(
+            documents.reduce((sum, doc) => sum + balanceDue(doc), 0),
+          )}
+        />
+      </div>
+
+      <div className="overflow-hidden rounded-lg border">
+        <div className="flex items-center justify-between border-b bg-muted/30 px-4 py-3">
+          <div>
+            <h2 className="font-medium">Sales register</h2>
+            <p className="text-xs text-muted-foreground">
+              Select a sale to see its items, settlement and source.
+            </p>
+          </div>
+          <FileText className="h-5 w-5 text-muted-foreground" />
+        </div>
+        {documents.length ? (
+          <>
+            <div className="divide-y divide-border lg:hidden">
+              {documents.map((document) => (
+                <button
+                  key={document.id}
+                  type="button"
+                  onClick={() => setSelectedDocument(document)}
+                  className="w-full px-4 py-3 text-left transition-colors hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate font-medium">
+                        {document.document_number}
+                      </p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {formatDate(document.business_date)} ·{" "}
+                        {document.daily_order_number
+                          ? `Daily order #${document.daily_order_number}`
+                          : document.external_reference || "Manual sale"}
+                      </p>
+                    </div>
+                    <p className="shrink-0 text-sm font-semibold tabular-nums">
+                      {formatMoney(document.grand_total)}
+                    </p>
+                  </div>
+                  <div className="mt-2 flex items-center justify-between gap-2">
+                    <span className="rounded-full bg-muted px-2 py-1 text-xs">
+                      {settlementLabel(settlementStatus(document))}
+                    </span>
+                    <Link
+                      onClick={(event) => event.stopPropagation()}
+                      className="text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+                      href={`/finance/sales/returns?invoice_id=${document.id}`}
+                    >
+                      Return
+                    </Link>
+                  </div>
+                </button>
+              ))}
+            </div>
+            <div className="hidden max-w-full overflow-x-auto lg:block">
+              <table className="w-full min-w-[960px] text-sm">
+                <thead className="bg-muted/40 text-left text-muted-foreground">
+                  <tr>
+                    <th className="p-3">Date</th>
+                    <th className="p-3">Sale</th>
+                    <th className="p-3">Source</th>
+                    <th className="p-3">Order / reference</th>
+                    <th className="p-3">Items</th>
+                    <th className="p-3">Settlement</th>
+                    <th className="p-3 text-right">Total</th>
+                    <th className="p-3" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {documents.map((document) => (
+                    <tr
+                      key={document.id}
+                      tabIndex={0}
+                      role="button"
+                      onClick={() => setSelectedDocument(document)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          setSelectedDocument(document);
+                        }
+                      }}
+                      className="cursor-pointer border-t transition-colors hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none"
+                    >
+                      <td className="p-3">
+                        {formatDate(document.business_date)}
+                      </td>
+                      <td className="p-3">
+                        <p className="font-medium">
+                          {document.document_number}
+                        </p>
+                        {document.fiscal_document_number ? (
+                          <p className="text-xs text-muted-foreground">
+                            Fiscal invoice: {document.fiscal_document_number}
+                          </p>
+                        ) : null}
+                      </td>
+                      <td className="p-3">
+                        <span className="rounded-full bg-muted px-2 py-1 text-xs">
+                          {document.source_type === "pos_order"
+                            ? "POS"
+                            : "Manual"}
+                        </span>
+                      </td>
+                      <td className="p-3 text-muted-foreground">
+                        {document.daily_order_number
+                          ? `Daily order #${document.daily_order_number}`
+                          : document.external_reference || "—"}
+                      </td>
+                      <td className="p-3">{document.lines.length}</td>
+                      <td className="p-3">
+                        <span className="rounded-full bg-muted px-2 py-1 text-xs">
+                          {settlementLabel(settlementStatus(document))}
+                        </span>
+                      </td>
+                      <td className="p-3 text-right font-medium">
+                        {formatMoney(document.grand_total)}
+                      </td>
+                      <td className="p-3 text-right">
+                        <Link
+                          onClick={(event) => event.stopPropagation()}
+                          className="text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+                          href={`/finance/sales/returns?invoice_id=${document.id}`}
+                        >
+                          Return
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        ) : (
+          <div className="p-12 text-center">
+            <p className="font-medium">No sales yet.</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Complete a POS sale or record a manual sale to create the first
+              sale.
+            </p>
+          </div>
+        )}
+      </div>
+
+      <FinanceSalesInvoiceDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        onCreated={() => void load()}
+      />
+      <SalesDocumentDetailSheet
+        open={selectedDocument != null}
+        onOpenChange={(open) => !open && setSelectedDocument(null)}
+        document={selectedDocument}
+      />
+    </AppPage>
+  );
+}

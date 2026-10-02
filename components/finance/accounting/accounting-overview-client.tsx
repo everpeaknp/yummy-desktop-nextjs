@@ -958,7 +958,7 @@ export function AccountingOverviewClient() {
               </CardTitle>
             </CardHeader>
             <CardContent className="grid gap-2 p-4">
-              <Link href="/finance/accounting/chart-of-accounts">
+              <Link href="/finance/heads">
                 <Button variant="outline" className="w-full justify-start">
                   Chart of Accounts
                 </Button>

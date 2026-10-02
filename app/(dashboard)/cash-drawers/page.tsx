@@ -1,31 +1,32 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import {
+  ArrowLeft,
   Banknote,
-  BookOpen,
-  CalendarCheck,
-  Activity,
+  ChevronRight,
   History,
   Loader2,
   RefreshCw,
   RotateCcw,
-  Send,
-  ShieldCheck,
-  Wallet,
+  Settings2,
 } from "lucide-react";
 import { toast } from "sonner";
 
 import apiClient from "@/lib/api-client";
-import { AccountingApis, DrawerSessionApis } from "@/lib/api/endpoints";
+import { DrawerSessionApis } from "@/lib/api/endpoints";
 import { hasPermission } from "@/lib/role-permissions";
 import { getApiErrorMessage } from "@/lib/api-error-message";
+import { formatCurrency, formatDate, formatDateTime } from "@/lib/utils";
+import {
+  resolveCashDrawerBusinessLine,
+  safeCashDrawerReturnPath,
+} from "@/lib/cash-drawer-business-line";
 import { useAuth } from "@/hooks/use-auth";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -44,14 +45,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { DrawerSessionPanel } from "@/components/day-close/drawer-session-panel";
-import type {
-  CashTransferInput,
-  CashTransferResult,
-  DrawerCashControlSummary,
-} from "@/types/accounting";
+import { DrawerHistoryDialog } from "@/components/cash-drawers/drawer-history-dialog";
+import { AppPage } from "@/components/patterns/page/app-page";
+import { PageHeader } from "@/components/patterns/page/page-header";
 import type {
   BusinessLine,
-  DrawerActivityLog,
   DrawerSession,
   DrawerSessionHistoryPage,
 } from "@/types/day-close";
@@ -60,90 +58,67 @@ type BaseResponse<T> = {
   data?: T;
 };
 
-function yyyyMmDd(value: Date) {
-  return value.toISOString().slice(0, 10);
-}
+const formatMoney = formatCurrency;
 
-function formatMoney(value: number) {
-  return `Rs. ${Number(value || 0).toLocaleString(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
+function activeDrawerCountLabel(count: number) {
+  return `${count} active ${count === 1 ? "drawer" : "drawers"}`;
 }
 
 export default function CashDrawersPage() {
   const user = useAuth((state) => state.user);
   const restaurant = useRestaurant((state) => state.restaurant);
+  const restaurantLoading = useRestaurant((state) => state.loading);
+  const restaurantError = useRestaurant((state) => state.error);
+  const fetchRestaurant = useRestaurant((state) => state.fetchRestaurant);
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const restaurantId = user?.restaurant_id ?? restaurant?.id;
-  const [businessLine, setBusinessLine] = useState<BusinessLine>("restaurant");
-  const [transferMode, setTransferMode] = useState<
-    CashTransferInput["transfer_mode"]
-  >("pending_bank_deposit");
-  const [transferDate, setTransferDate] = useState(() => yyyyMmDd(new Date()));
-  const [transferAmount, setTransferAmount] = useState("");
-  const [transferReference, setTransferReference] = useState("");
-  const [transferPosting, setTransferPosting] = useState(false);
-  const [lastTransfer, setLastTransfer] = useState<CashTransferResult | null>(
-    null,
+  const requestedBusinessLine = searchParams.get("business_line");
+  const returnTo = safeCashDrawerReturnPath(searchParams.get("return_to"));
+  const [businessLine, setBusinessLine] = useState<BusinessLine>(() =>
+    resolveCashDrawerBusinessLine({
+      requested: requestedBusinessLine,
+      restaurantEnabled: restaurant?.restaurant_enabled,
+      hotelEnabled: restaurant?.hotel_enabled,
+    }),
   );
-  const [cashSummary, setCashSummary] =
-    useState<DrawerCashControlSummary | null>(null);
-  const [balanceLoading, setBalanceLoading] = useState(false);
-  const [balanceRefreshKey, setBalanceRefreshKey] = useState(0);
   const [drawerWorkspaceKey, setDrawerWorkspaceKey] = useState(0);
   const [drawerSummary, setDrawerSummary] = useState({
     activeDrawerCash: 0,
     activeSessionCount: 0,
     unopenedRetainedCash: 0,
   });
-  const canTransferCash = hasPermission(user, "finance.cash.transfer.to_bank");
   const canReopenDrawer = hasPermission(user, "day_close.drawer.reopen");
-  const canConfirmBankDeposit = hasPermission(
-    user,
-    "finance.bank_deposit.confirm",
-  );
-  const canPostSelectedTransfer =
-    canTransferCash &&
-    (transferMode === "pending_bank_deposit" || canConfirmBankDeposit);
   const showBusinessLinePicker = Boolean(
     restaurant?.hotel_enabled && restaurant?.restaurant_enabled,
   );
+  const businessLineLabel =
+    businessLine === "hotel" ? "Hotel Cash Drawers" : "Restaurant Cash Drawers";
   const activeDrawerCash =
-    cashSummary?.drawer_cash ??
     drawerSummary.activeDrawerCash + drawerSummary.unopenedRetainedCash;
-  const safeBalance = Number(cashSummary?.safe_cash ?? 0);
-  const cashInTransit = Number(cashSummary?.cash_in_transit ?? 0);
-  const totalControlledCash = Number(
-    cashSummary?.total_controlled_cash ??
-      activeDrawerCash + safeBalance + cashInTransit,
-  );
-  const summaryModeLabel = cashSummary?.finance_accounting_enabled
-    ? "Accounting cash balances"
-    : "Operational cash view";
-
-  const loadCashBalances = useCallback(async () => {
-    if (!restaurantId) return;
-    setBalanceLoading(true);
-    try {
-      const response = await apiClient.get<
-        BaseResponse<DrawerCashControlSummary>
-      >(DrawerSessionApis.cashControlSummary({ restaurantId, businessLine }));
-      setCashSummary(response.data?.data ?? null);
-    } catch (error) {
-      console.error("Failed to load cash control balances", error);
-      setCashSummary(null);
-      toast.error("Failed to load cash control balances.");
-    } finally {
-      setBalanceLoading(false);
-    }
-  }, [businessLine, restaurantId]);
 
   useEffect(() => {
-    void loadCashBalances();
-  }, [loadCashBalances, balanceRefreshKey]);
+    // Carry-forward suggestions are keyed to the server-controlled operational
+    // day, which can intentionally differ from the browser calendar date.
+    void fetchRestaurant(true);
+  }, [fetchRestaurant]);
 
-  const refreshCashBalances = () => {
-    setBalanceRefreshKey((current) => current + 1);
+  useEffect(() => {
+    if (!restaurant) return;
+    const resolved = resolveCashDrawerBusinessLine({
+      requested: requestedBusinessLine,
+      restaurantEnabled: restaurant.restaurant_enabled,
+      hotelEnabled: restaurant.hotel_enabled,
+    });
+    setBusinessLine((current) => (current === resolved ? current : resolved));
+  }, [requestedBusinessLine, restaurant]);
+
+  const changeBusinessLine = (value: BusinessLine) => {
+    setBusinessLine(value);
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("business_line", value);
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
   };
 
   const handleDrawerCashSummary = useCallback(
@@ -155,218 +130,153 @@ export default function CashDrawersPage() {
           ? current
           : summary,
       );
-      setCashSummary((current) => {
-        if (!current) return current;
-        const drawerCash =
-          summary.activeDrawerCash + summary.unopenedRetainedCash;
-        return {
-          ...current,
-          active_session_count: summary.activeSessionCount,
-          active_drawer_cash: summary.activeDrawerCash,
-          retained_drawer_cash: summary.unopenedRetainedCash,
-          drawer_cash: drawerCash,
-          total_controlled_cash:
-            drawerCash +
-            Number(current.safe_cash || 0) +
-            Number(current.cash_in_transit || 0),
-        };
-      });
     },
     [],
   );
 
-  const submitSafeTransfer = async () => {
-    if (!restaurantId) return;
-    const amount = Number(transferAmount);
-    if (!Number.isFinite(amount) || amount <= 0) {
-      toast.error("Enter a valid transfer amount.");
-      return;
-    }
-    if (transferMode !== "pending_bank_deposit" && !transferReference.trim()) {
-      toast.error("Bank deposit reference is required.");
-      return;
-    }
-    setTransferPosting(true);
-    try {
-      const payload: CashTransferInput = {
-        restaurant_id: restaurantId,
-        business_line: businessLine,
-        transfer_mode: transferMode,
-        transfer_date: transferDate,
-        amount,
-        source:
-          transferMode === "confirm_bank_deposit"
-            ? "cash_in_transit"
-            : "main_cash_safe",
-        destination:
-          transferMode === "pending_bank_deposit" ? "cash_in_transit" : "bank",
-        reference: transferReference.trim() || null,
-      };
-      const response = await apiClient.post<BaseResponse<CashTransferResult>>(
-        AccountingApis.createCashTransfer(),
-        payload,
-      );
-      setLastTransfer(response.data?.data ?? null);
-      setTransferAmount("");
-      setTransferReference("");
-      refreshCashBalances();
-      toast.success("Cash transfer posted.");
-    } catch (error: unknown) {
-      const message =
-        typeof error === "object" && error && "response" in error
-          ? (error as { response?: { data?: { detail?: string } } }).response
-              ?.data?.detail
-          : null;
-      toast.error(message || "Failed to post cash transfer.");
-    } finally {
-      setTransferPosting(false);
-    }
-  };
+  const workspaceActions = (
+    <>
+      {showBusinessLinePicker ? (
+        <Select
+          value={businessLine}
+          onValueChange={(value) => changeBusinessLine(value as BusinessLine)}
+        >
+          <SelectTrigger className="h-10 min-w-[190px]">
+            <SelectValue placeholder="Business line" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="restaurant">Restaurant drawers</SelectItem>
+            <SelectItem value="hotel">Hotel drawers</SelectItem>
+          </SelectContent>
+        </Select>
+      ) : null}
+      {returnTo ? (
+        <Button asChild variant="outline" size="sm" className="gap-2">
+          <Link href={returnTo}>
+            <ArrowLeft className="h-4 w-4" />
+            Return to hotel
+          </Link>
+        </Button>
+      ) : null}
+      <Button asChild variant="outline" size="sm" className="gap-2">
+        <Link href="/finance/operations?tab=cash-drawers">
+          <Settings2 className="h-4 w-4" />
+          Configure drawers
+        </Link>
+      </Button>
+    </>
+  );
 
   return (
-    <div className="mx-auto flex max-w-[1500px] flex-col gap-6 px-4 pb-20">
-      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <div className="space-y-2">
-          <div className="flex items-center gap-3">
-            <span className="flex h-11 w-11 items-center justify-center rounded-lg border bg-background">
-              <Banknote className="h-5 w-5 text-emerald-600" />
-            </span>
-            <div>
-              <h1 className="text-2xl font-semibold tracking-normal text-foreground">
-                Cash Drawers
-              </h1>
-              <p className="text-sm text-muted-foreground">
-                Open, count, close, settle, and review drawer cash outside
-                checkout and day close.
-              </p>
-            </div>
-          </div>
-        </div>
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          {showBusinessLinePicker ? (
-            <Select
-              value={businessLine}
-              onValueChange={(value) => setBusinessLine(value as BusinessLine)}
-            >
-              <SelectTrigger className="h-10 min-w-[190px]">
-                <SelectValue placeholder="Business line" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="restaurant">Restaurant drawers</SelectItem>
-                <SelectItem value="hotel">Hotel drawers</SelectItem>
-              </SelectContent>
-            </Select>
-          ) : null}
-          <Button asChild variant="outline" className="gap-2">
-            <Link href="/day-close">
-              <CalendarCheck className="h-4 w-4" />
-              Day close
-            </Link>
-          </Button>
-          <Button asChild variant="outline" className="gap-2">
-            <Link href="/finance/accounting/daybook">
-              <BookOpen className="h-4 w-4" />
-              Daybook
-            </Link>
-          </Button>
-        </div>
-      </div>
+    <AppPage width="wide" className="pb-20">
+      <PageHeader
+        className="hidden md:flex"
+        title={businessLineLabel}
+        leading={
+          <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-500/10">
+            <Banknote className="h-6 w-6 text-emerald-600" />
+          </span>
+        }
+        description={`Open, count, close, and settle ${businessLine} drawers independently from the other business line.`}
+        actions={workspaceActions}
+      />
 
-      {!restaurantId ? (
-        <Card className="border-border/70">
-          <CardContent className="flex items-center gap-3 p-5 text-sm text-muted-foreground">
+      {showBusinessLinePicker || returnTo ? (
+        <div className="flex items-center gap-2 md:hidden">
+          {showBusinessLinePicker ? (
+            <div className="min-w-0 flex-1">
+              <Select
+                value={businessLine}
+                onValueChange={(value) =>
+                  changeBusinessLine(value as BusinessLine)
+                }
+              >
+                <SelectTrigger className="h-11 w-full">
+                  <SelectValue placeholder="Business line" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="restaurant">Restaurant drawers</SelectItem>
+                  <SelectItem value="hotel">Hotel drawers</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          ) : null}
+          {returnTo ? (
+            <Button
+              asChild
+              variant="outline"
+              size="icon"
+              className="h-11 w-11 shrink-0"
+              aria-label="Return to hotel"
+            >
+              <Link href={returnTo}>
+                <ArrowLeft className="h-4 w-4" />
+              </Link>
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+
+      {!restaurantId || restaurantLoading ? (
+        <div className="flex items-center gap-3 border-y border-border/70 py-5 text-sm text-muted-foreground">
+          <RefreshCw className="h-4 w-4" />
+          Loading restaurant context...
+        </div>
+      ) : businessLine === "restaurant" &&
+        !restaurant?.current_business_date ? (
+        <div className="flex flex-col gap-3 border-y border-amber-300/70 py-5 text-sm text-amber-800 dark:text-amber-300 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="font-medium">Operational business date unavailable</p>
+            <p className="mt-1 text-muted-foreground">
+              {restaurantError ||
+                "Refresh the restaurant context before opening or carrying forward drawer cash."}
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="gap-2 self-start sm:self-auto"
+            onClick={() => void fetchRestaurant(true)}
+          >
             <RefreshCw className="h-4 w-4" />
-            Loading restaurant context...
-          </CardContent>
-        </Card>
+            Retry
+          </Button>
+        </div>
       ) : (
         <>
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            <Card className="border-border/70">
-              <CardContent className="flex items-center justify-between gap-3 p-4">
-                <div>
-                  <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                    Cash in drawers
-                  </div>
-                  <div className="mt-1 text-xl font-semibold">
-                    {formatMoney(activeDrawerCash)}
-                  </div>
-                  <div className="mt-1 text-xs text-muted-foreground">
-                    {cashSummary?.active_session_count ??
-                      drawerSummary.activeSessionCount}{" "}
-                    active session(s)
-                    {(cashSummary?.retained_drawer_cash ??
-                      drawerSummary.unopenedRetainedCash) > 0
-                      ? ` + ${formatMoney(cashSummary?.retained_drawer_cash ?? drawerSummary.unopenedRetainedCash)} retained unopened`
-                      : ""}
-                  </div>
-                </div>
-                <Banknote className="h-5 w-5 text-emerald-600" />
-              </CardContent>
-            </Card>
-            <Card className="border-border/70">
-              <CardContent className="flex items-center justify-between gap-3 p-4">
-                <div>
-                  <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                    Main safe available
-                  </div>
-                  <div className="mt-1 text-xl font-semibold">
-                    {formatMoney(safeBalance)}
-                  </div>
-                  <div className="mt-1 text-xs text-muted-foreground">
-                    {cashSummary?.source_accounts?.safe_cash ??
-                      "Account 1005 Main Cash / Safe"}
-                  </div>
-                </div>
-                <ShieldCheck className="h-5 w-5 text-blue-600" />
-              </CardContent>
-            </Card>
-            <Card className="border-border/70">
-              <CardContent className="flex items-center justify-between gap-3 p-4">
-                <div>
-                  <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                    Cash in transit
-                  </div>
-                  <div className="mt-1 text-xl font-semibold">
-                    {formatMoney(cashInTransit)}
-                  </div>
-                  <div className="mt-1 text-xs text-muted-foreground">
-                    {cashSummary?.source_accounts?.cash_in_transit ??
-                      "Pending bank deposit account 1008"}
-                  </div>
-                </div>
-                {balanceLoading ? (
-                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-                ) : (
-                  <Send className="h-5 w-5 text-amber-600" />
-                )}
-              </CardContent>
-            </Card>
-            <Card className="border-border/70">
-              <CardContent className="flex items-center justify-between gap-3 p-4">
-                <div>
-                  <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                    Total controlled cash
-                  </div>
-                  <div className="mt-1 text-xl font-semibold">
-                    {formatMoney(totalControlledCash)}
-                  </div>
-                  <div className="mt-1 text-xs text-muted-foreground">
-                    {summaryModeLabel}
-                  </div>
-                </div>
-                <Wallet className="h-5 w-5 text-cyan-600" />
-              </CardContent>
-            </Card>
-          </div>
+          <section
+            aria-label="Current drawer cash"
+            className="flex items-end justify-between gap-4 border-b border-border/70 pb-4"
+          >
+            <div>
+              <p className="text-sm text-muted-foreground">Cash in drawers</p>
+              <p className="mt-1 text-2xl font-semibold tabular-nums sm:text-3xl">
+                {formatMoney(activeDrawerCash)}
+              </p>
+            </div>
+            <div className="max-w-[11rem] pb-0.5 text-right text-xs text-muted-foreground">
+              <p>{activeDrawerCountLabel(drawerSummary.activeSessionCount)}</p>
+              {drawerSummary.unopenedRetainedCash > 0 ? (
+                <p className="mt-1 text-amber-700 dark:text-amber-400">
+                  {formatMoney(drawerSummary.unopenedRetainedCash)} retained
+                </p>
+              ) : null}
+            </div>
+          </section>
 
           <DrawerSessionPanel
             key={drawerWorkspaceKey}
             restaurantId={restaurantId}
             businessLine={businessLine}
-            title="Drawer workspace"
-            description="Use this page for opening float, drawer count, settlement decision, cash movement review, and expected cash checks."
-            footerNote="Checkout automatically uses the logged-in cashier's active drawer. Day close only verifies that drawers are closed and settled."
+            businessDate={
+              businessLine === "restaurant"
+                ? restaurant?.current_business_date || undefined
+                : undefined
+            }
+            title="Active drawer"
+            presentation="flat"
+            footerNote="Checkout uses the logged-in cashier's active drawer. Day close verifies closure and settlement."
             includeAllActiveSessions
             onCashSummaryChange={handleDrawerCashSummary}
           />
@@ -377,128 +287,11 @@ export default function CashDrawersPage() {
             canReopen={canReopenDrawer}
             onReopened={() => {
               setDrawerWorkspaceKey((current) => current + 1);
-              refreshCashBalances();
             }}
           />
-
-          <Card className="border-border/70">
-            <CardHeader className="pb-3">
-              <CardTitle className="flex flex-col gap-2 text-base sm:flex-row sm:items-center sm:justify-between">
-                <span className="flex items-center gap-2">
-                  <Send className="h-4 w-4" />
-                  Safe to bank transfer
-                </span>
-                <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  Safe available {formatMoney(safeBalance)}
-                </span>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid gap-3 lg:grid-cols-[1.2fr_1fr_1fr_1.2fr_auto]">
-                <div className="space-y-1.5">
-                  <Label htmlFor="cash-transfer-mode">Mode</Label>
-                  <Select
-                    value={transferMode}
-                    onValueChange={(value) =>
-                      setTransferMode(
-                        value as CashTransferInput["transfer_mode"],
-                      )
-                    }
-                  >
-                    <SelectTrigger id="cash-transfer-mode">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem
-                        value="immediate_bank_deposit"
-                        disabled={!canConfirmBankDeposit}
-                      >
-                        Safe to bank now
-                      </SelectItem>
-                      <SelectItem value="pending_bank_deposit">
-                        Safe to cash in transit
-                      </SelectItem>
-                      <SelectItem
-                        value="confirm_bank_deposit"
-                        disabled={!canConfirmBankDeposit}
-                      >
-                        Cash in transit to bank
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="cash-transfer-date">Date</Label>
-                  <Input
-                    id="cash-transfer-date"
-                    type="date"
-                    value={transferDate}
-                    onChange={(event) => setTransferDate(event.target.value)}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="cash-transfer-amount">Amount</Label>
-                  <Input
-                    id="cash-transfer-amount"
-                    inputMode="decimal"
-                    value={transferAmount}
-                    onChange={(event) => setTransferAmount(event.target.value)}
-                    placeholder="0.00"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="cash-transfer-reference">Reference</Label>
-                  <Input
-                    id="cash-transfer-reference"
-                    value={transferReference}
-                    onChange={(event) =>
-                      setTransferReference(event.target.value)
-                    }
-                    placeholder={
-                      transferMode === "pending_bank_deposit"
-                        ? "Optional"
-                        : "Required"
-                    }
-                  />
-                </div>
-                <div className="flex items-end">
-                  <Button
-                    type="button"
-                    className="w-full gap-2"
-                    onClick={submitSafeTransfer}
-                    disabled={!canPostSelectedTransfer || transferPosting}
-                    title={
-                      !canTransferCash
-                        ? "Cash-to-bank transfer permission is required."
-                        : !canConfirmBankDeposit &&
-                            transferMode !== "pending_bank_deposit"
-                          ? "Bank deposit confirmation permission is required."
-                          : undefined
-                    }
-                  >
-                    {transferPosting ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Send className="h-4 w-4" />
-                    )}
-                    Post
-                  </Button>
-                </div>
-              </div>
-              {lastTransfer ? (
-                <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
-                  Posted {lastTransfer.event_type.replace(/_/g, " ")} for Rs.{" "}
-                  {lastTransfer.amount.toFixed(2)}
-                  {lastTransfer.journal_entry_id
-                    ? ` · Journal #${lastTransfer.journal_entry_id}`
-                    : ""}
-                </div>
-              ) : null}
-            </CardContent>
-          </Card>
         </>
       )}
-    </div>
+    </AppPage>
   );
 }
 
@@ -515,10 +308,12 @@ function DrawerHistoryCard({
 }) {
   const [history, setHistory] = useState<DrawerSessionHistoryPage | null>(null);
   const [loading, setLoading] = useState(false);
-  const [expandedSessionId, setExpandedSessionId] = useState<number | null>(null);
-  const [activityBySession, setActivityBySession] = useState<Record<number, DrawerActivityLog[]>>({});
-  const [activityLoadingId, setActivityLoadingId] = useState<number | null>(null);
-  const [reopenSession, setReopenSession] = useState<DrawerSession | null>(null);
+  const [selectedSession, setSelectedSession] = useState<DrawerSession | null>(
+    null,
+  );
+  const [reopenSession, setReopenSession] = useState<DrawerSession | null>(
+    null,
+  );
   const [reopenReason, setReopenReason] = useState("");
   const [reopening, setReopening] = useState(false);
 
@@ -531,9 +326,12 @@ function DrawerHistoryCard({
     }
     setReopening(true);
     try {
-      const transferSettlement = ["safe_transfer", "pending_bank_deposit", "immediate_bank_deposit"].includes(
-        String(reopenSession.settlement_mode || ""),
-      );
+      const transferSettlement = [
+        "safe_transfer",
+        "pending_bank_deposit",
+        "immediate_bank_deposit",
+        "multi_account_transfer",
+      ].includes(String(reopenSession.settlement_mode || ""));
       await apiClient.post(
         transferSettlement
           ? DrawerSessionApis.reopenForCorrection(reopenSession.id)
@@ -559,10 +357,12 @@ function DrawerHistoryCard({
   const loadHistory = useCallback(async () => {
     setLoading(true);
     try {
-      const response = await apiClient.get<BaseResponse<DrawerSessionHistoryPage>>(
-        DrawerSessionApis.history({ restaurantId, businessLine, limit: 20 }),
+      const response = await apiClient.get<
+        BaseResponse<DrawerSessionHistoryPage>
+      >(DrawerSessionApis.history({ restaurantId, businessLine, limit: 20 }));
+      setHistory(
+        response.data?.data ?? { items: [], total: 0, skip: 0, limit: 20 },
       );
-      setHistory(response.data?.data ?? { items: [], total: 0, skip: 0, limit: 20 });
     } catch (error) {
       console.error("Failed to load drawer history", error);
       setHistory(null);
@@ -576,59 +376,53 @@ function DrawerHistoryCard({
     void loadHistory();
   }, [loadHistory]);
 
-  const toggleActivity = async (sessionId: number) => {
-    if (expandedSessionId === sessionId) {
-      setExpandedSessionId(null);
-      return;
-    }
-    setExpandedSessionId(sessionId);
-    if (activityBySession[sessionId]) return;
-    setActivityLoadingId(sessionId);
-    try {
-      const response = await apiClient.get<BaseResponse<DrawerActivityLog[]>>(
-        DrawerSessionApis.activity(sessionId),
-      );
-      setActivityBySession((current) => ({
-        ...current,
-        [sessionId]: response.data?.data ?? [],
-      }));
-    } catch (error) {
-      console.error("Failed to load drawer activity", error);
-      toast.error("Failed to load drawer activity.");
-    } finally {
-      setActivityLoadingId(null);
-    }
-  };
-
   const items = history?.items ?? [];
   return (
-    <Card className="border-border/70">
-      <CardHeader className="pb-3">
-        <CardTitle className="flex items-center justify-between gap-3 text-base">
-          <span className="flex items-center gap-2">
-            <History className="h-4 w-4" />
-            Drawer history
-          </span>
-          <Button type="button" variant="ghost" size="sm" className="gap-2" onClick={loadHistory} disabled={loading}>
-            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-            Refresh
-          </Button>
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3">
+    <section className="space-y-3 border-t border-border/70 pt-5">
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="flex min-h-11 items-center gap-2 text-base font-semibold">
+          <History className="h-4 w-4" />
+          Drawer history
+        </h2>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="shrink-0 gap-2"
+          onClick={loadHistory}
+          disabled={loading}
+        >
+          {loading ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <RefreshCw className="h-4 w-4" />
+          )}
+          Refresh
+        </Button>
+      </div>
+      <div className="space-y-3">
         {loading && items.length === 0 ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" />
             Loading drawer history...
           </div>
         ) : items.length === 0 ? (
-          <div className="text-sm text-muted-foreground">No drawer sessions recorded yet.</div>
+          <div className="text-sm text-muted-foreground">
+            No drawer sessions recorded yet.
+          </div>
         ) : (
           <>
-            <div className="divide-y rounded-md border">
+            <div className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-background">
+              <div className="hidden grid-cols-[170px_120px_minmax(170px,1fr)_150px_120px_120px_auto] gap-3 bg-muted/30 px-4 py-2 text-xs font-medium text-muted-foreground xl:grid">
+                <span>Drawer</span>
+                <span>Business date</span>
+                <span>Opened / closed</span>
+                <span>Cashier</span>
+                <span className="text-right">Opening</span>
+                <span className="text-right">Closing</span>
+                <span className="text-right">Status / actions</span>
+              </div>
               {items.map((session) => {
-                const activity = activityBySession[session.id] ?? [];
-                const expanded = expandedSessionId === session.id;
                 const hasLaterSameDaySession = items.some(
                   (candidate) =>
                     candidate.id > session.id &&
@@ -638,58 +432,133 @@ function DrawerHistoryCard({
                     candidate.drawer_key === session.drawer_key,
                 );
                 return (
-                  <div key={session.id} className="px-4 py-3">
-                    <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                      <div>
-                        <div className="font-medium">
-                          {session.station} / {session.drawer_key}
+                  <div
+                    key={session.id}
+                    role="button"
+                    tabIndex={0}
+                    className="group cursor-pointer px-4 py-3.5 transition-colors hover:bg-muted/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+                    onClick={() => setSelectedSession(session)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        setSelectedSession(session);
+                      }
+                    }}
+                  >
+                    <div className="grid gap-3 xl:grid-cols-[170px_120px_minmax(170px,1fr)_150px_120px_120px_auto] xl:items-center">
+                      <div className="min-w-0">
+                        <div className="flex items-start justify-between gap-3 xl:block">
+                          <div className="font-medium">
+                            {session.configuration_name || session.drawer_key}
+                          </div>
+                          <span className="shrink-0 rounded-full bg-muted px-2.5 py-1 text-xs font-medium capitalize text-muted-foreground xl:hidden">
+                            {statusLabel(session.status)}
+                          </span>
                         </div>
                         <div className="mt-1 text-xs text-muted-foreground">
-                          {session.business_date} · {statusLabel(session.status)}
+                          {session.station} / {session.drawer_key}
+                        </div>
+                        <div className="mt-1 text-xs text-muted-foreground xl:hidden">
+                          Business date: {formatDate(session.business_date)}
+                          <div>
+                            Opened:{" "}
+                            {session.opened_at
+                              ? formatDateTime(session.opened_at)
+                              : "—"}
+                          </div>
+                          <div>
+                            Closed:{" "}
+                            {session.closed_at
+                              ? formatDateTime(session.closed_at)
+                              : "—"}
+                          </div>
                           {session.cashier_name
-                            ? ` · Cashier ${session.cashier_name}`
+                            ? ` · ${session.cashier_name}`
                             : session.cashier_id
                               ? ` · Cashier #${session.cashier_id}`
                               : ""}
                         </div>
                       </div>
-                      <div className="flex flex-wrap items-center gap-2 text-sm">
-                        <span className="font-semibold">
-                          {formatMoney(Number(session.counted_closing_cash ?? session.counted_opening_cash ?? 0))}
+                      <div className="hidden text-sm text-muted-foreground xl:block">
+                        {formatDate(session.business_date)}
+                      </div>
+                      <div className="hidden space-y-1 text-xs text-muted-foreground xl:block">
+                        <div>
+                          Opened:{" "}
+                          {session.opened_at
+                            ? formatDateTime(session.opened_at)
+                            : "—"}
+                        </div>
+                        <div>
+                          Closed:{" "}
+                          {session.closed_at
+                            ? formatDateTime(session.closed_at)
+                            : "—"}
+                        </div>
+                      </div>
+                      <div className="hidden min-w-0 truncate text-sm text-muted-foreground xl:block">
+                        {session.cashier_name ||
+                          (session.cashier_id
+                            ? `Cashier #${session.cashier_id}`
+                            : "—")}
+                      </div>
+                      <dl className="grid grid-cols-2 gap-3 text-sm xl:contents">
+                        <div className="flex items-center justify-between gap-3 xl:block xl:text-right">
+                          <dt className="text-xs text-muted-foreground xl:sr-only">
+                            Opening
+                          </dt>
+                          <dd className="font-medium tabular-nums xl:mt-0.5">
+                            {formatMoney(
+                              Number(session.counted_opening_cash ?? 0),
+                            )}
+                          </dd>
+                        </div>
+                        <div className="flex items-center justify-between gap-3 xl:block xl:text-right">
+                          <dt className="text-xs text-muted-foreground xl:sr-only">
+                            Closing
+                          </dt>
+                          <dd className="font-medium tabular-nums xl:mt-0.5">
+                            {formatMoney(
+                              Number(
+                                session.counted_closing_cash ??
+                                  session.expected_closing_cash ??
+                                  0,
+                              ),
+                            )}
+                          </dd>
+                        </div>
+                      </dl>
+                      <div className="flex flex-wrap items-center gap-2 xl:justify-end">
+                        <span className="hidden rounded-full bg-muted px-2.5 py-1 text-xs font-medium capitalize text-muted-foreground xl:inline-flex">
+                          {statusLabel(session.status)}
                         </span>
-                        {session.cash_variance != null && Number(session.cash_variance) !== 0 ? (
-                          <span className="rounded-md bg-red-50 px-2 py-1 text-xs font-medium text-red-700">
-                            Variance {formatMoney(Number(session.cash_variance))}
+                        {session.cash_variance != null &&
+                        Number(session.cash_variance) !== 0 ? (
+                          <span className="rounded-md bg-destructive/10 px-2 py-1 text-xs font-medium text-destructive">
+                            Variance{" "}
+                            {formatMoney(Number(session.cash_variance))}
                           </span>
                         ) : null}
                         {hasLaterSameDaySession ? (
-                          <span className="rounded-md bg-amber-50 px-2 py-1 text-xs font-medium text-amber-700">
+                          <span className="rounded-md bg-amber-500/10 px-2 py-1 text-xs font-medium text-amber-700 dark:text-amber-400">
                             Earlier session - correct latest session
                           </span>
                         ) : null}
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          className="gap-2"
-                          onClick={() => void toggleActivity(session.id)}
-                        >
-                          {activityLoadingId === session.id ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                          ) : (
-                            <Activity className="h-4 w-4" />
-                          )}
-                          Activity
-                        </Button>
+                        <span className="flex items-center gap-1 text-xs font-medium text-muted-foreground transition-colors group-hover:text-foreground">
+                          View details
+                          <ChevronRight className="h-4 w-4" />
+                        </span>
                         {canReopen &&
                         !hasLaterSameDaySession &&
-                        (session.status === "closed" || session.status === "approved") ? (
+                        (session.status === "closed" ||
+                          session.status === "approved") ? (
                           <Button
                             type="button"
                             variant="outline"
                             size="sm"
                             className="gap-2"
-                            onClick={() => {
+                            onClick={(event) => {
+                              event.stopPropagation();
                               setReopenSession(session);
                               setReopenReason("");
                             }}
@@ -700,123 +569,83 @@ function DrawerHistoryCard({
                         ) : null}
                       </div>
                     </div>
-                    {expanded ? (
-                      <DrawerActivityRows
-                        rows={activity}
-                        loading={activityLoadingId === session.id}
-                      />
-                    ) : null}
                   </div>
                 );
               })}
             </div>
             {history && history.total > items.length ? (
               <div className="text-xs text-muted-foreground">
-                Showing latest {items.length} of {history.total} drawer sessions.
+                Showing latest {items.length} of {history.total} drawer
+                sessions.
               </div>
             ) : null}
           </>
         )}
-      </CardContent>
-      <Dialog
-        open={Boolean(reopenSession)}
-        onOpenChange={(open) => {
-          if (!open && !reopening) {
-            setReopenSession(null);
-            setReopenReason("");
-          }
-        }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Reopen drawer for correction?</DialogTitle>
-            <DialogDescription>
-              {reopenSession?.settlement_mode && reopenSession.settlement_mode !== "retain_all"
-                ? "This creates a compensating reversal for the recorded safe or bank transfer, keeps the original audit trail, and reopens this same session."
-                : "This keeps the original activity and records who reopened it. Recount and settle the drawer again after reopening."}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-2">
-            <Label htmlFor="drawer-reopen-reason">Correction reason</Label>
-            <Textarea
-              id="drawer-reopen-reason"
-              value={reopenReason}
-              onChange={(event) => setReopenReason(event.target.value)}
-              placeholder="Example: Closing cash was entered incorrectly"
-              disabled={reopening}
-            />
-          </div>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setReopenSession(null)} disabled={reopening}>
-              Cancel
-            </Button>
-            <Button type="button" onClick={() => void submitReopen()} disabled={reopening}>
-              {reopening ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RotateCcw className="mr-2 h-4 w-4" />}
-              Reopen drawer
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </Card>
-  );
-}
-
-function DrawerActivityRows({
-  rows,
-  loading,
-}: {
-  rows: DrawerActivityLog[];
-  loading: boolean;
-}) {
-  if (loading && rows.length === 0) {
-    return (
-      <div className="mt-3 flex items-center gap-2 rounded-md bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
-        <Loader2 className="h-4 w-4 animate-spin" />
-        Loading activity...
-      </div>
-    );
-  }
-  if (rows.length === 0) {
-    return <div className="mt-3 text-sm text-muted-foreground">No activity logs for this drawer.</div>;
-  }
-  return (
-    <div className="mt-3 space-y-2 rounded-md bg-muted/30 p-3">
-      {rows.map((row) => (
-        <div key={row.id} className="grid gap-1 text-sm md:grid-cols-[1.2fr_1fr_auto] md:items-center">
-          <div className="font-medium">{row.title}</div>
-          <div className="text-muted-foreground">
-            {formatDateTime(row.occurred_at)}
-            {row.actor_name
-              ? ` · ${row.actor_name}`
-              : row.actor_id
-                ? ` · User #${row.actor_id}`
-                : ""}
-          </div>
-          {row.amount == null ? null : (
-            <div className={Number(row.amount) < 0 ? "font-semibold text-red-700" : "font-semibold"}>
-              {formatMoney(Number(row.amount))}
+        <DrawerHistoryDialog
+          session={selectedSession}
+          open={Boolean(selectedSession)}
+          onOpenChange={(open) => {
+            if (!open) setSelectedSession(null);
+          }}
+        />
+        <Dialog
+          open={Boolean(reopenSession)}
+          onOpenChange={(open) => {
+            if (!open && !reopening) {
+              setReopenSession(null);
+              setReopenReason("");
+            }
+          }}
+        >
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Reopen drawer for correction?</DialogTitle>
+              <DialogDescription>
+                {reopenSession?.settlement_mode &&
+                reopenSession.settlement_mode !== "retain_all"
+                  ? "This creates a compensating reversal for the recorded safe or bank transfer, keeps the original audit trail, and reopens this same session."
+                  : "This keeps the original activity and records who reopened it. Recount and settle the drawer again after reopening."}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-2">
+              <Label htmlFor="drawer-reopen-reason">Correction reason</Label>
+              <Textarea
+                id="drawer-reopen-reason"
+                value={reopenReason}
+                onChange={(event) => setReopenReason(event.target.value)}
+                placeholder="Example: Closing cash was entered incorrectly"
+                disabled={reopening}
+              />
             </div>
-          )}
-          {row.description ? (
-            <div className="text-xs text-muted-foreground md:col-span-3">{row.description}</div>
-          ) : null}
-        </div>
-      ))}
-    </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setReopenSession(null)}
+                disabled={reopening}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                onClick={() => void submitReopen()}
+                disabled={reopening}
+              >
+                {reopening ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <RotateCcw className="mr-2 h-4 w-4" />
+                )}
+                Reopen drawer
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
+    </section>
   );
 }
 
 function statusLabel(value: string) {
   return String(value || "unknown").replace(/_/g, " ");
-}
-
-function formatDateTime(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
 }

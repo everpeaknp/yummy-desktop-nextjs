@@ -8,9 +8,10 @@ import {
   ArrowLeft,
   Banknote,
   BriefcaseBusiness,
+  CalendarClock,
   CalendarDays,
+  ChevronRight,
   Check,
-  CheckCircle2,
   Clock3,
   Edit3,
   FileClock,
@@ -18,10 +19,10 @@ import {
   Loader2,
   Mail,
   MapPin,
-  MoreHorizontal,
   Phone,
-  RefreshCw,
+  Search,
   ShieldCheck,
+  Shield,
   UserX,
   UserRound,
   WalletCards,
@@ -46,23 +47,76 @@ import type {
 } from "@/lib/attendance/types";
 import {
   staffWorkforceApi,
-  type PayrollHistoryRecord,
   type SalaryHistoryRecord,
   type StaffProfile,
 } from "@/lib/staff/workforce";
+import { staffCreditApi } from "@/lib/staff/credit";
 import { useAuth } from "@/hooks/use-auth";
+import { useEntitlement } from "@/hooks/use-subscription";
+import { useMobileAppBarTitle } from "@/components/layout/mobile-app-bar-title";
+import { AppPage } from "@/components/patterns/page/app-page";
+import {
+  EmptyState as SharedEmptyState,
+  ErrorState,
+  LoadingState,
+} from "@/components/patterns/feedback/feedback-state";
+import { DataList, ListRow } from "@/components/patterns/data/data-list";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { StaffPayrollBalanceCard } from "@/components/payroll/staff-payroll-balance-card";
+import { StaffSalaryCard } from "@/components/staff/staff-salary-card";
+import { StaffCreditCard } from "@/components/staff/staff-credit-card";
+import { StaffPerformanceCard } from "@/components/staff/staff-performance-card";
+import { EntitlementGate } from "@/components/subscription/entitlement-gate";
+import {
+  StaffEditDialog,
+  type StaffEditRole,
+  type StaffEditSection,
+  type StaffEditValues,
+} from "@/components/staff/staff-edit-dialog";
+import {
+  normalizeStaffDetailSection,
+  StaffDesktopSectionNav,
+  StaffDetailContent,
+  StaffIdentityHeader,
+  StaffMobileSectionNav,
+  StaffSectionHeading,
+  type StaffDetailSection,
+} from "@/components/staff/staff-detail-shell";
+import { StaffOverviewSection } from "@/components/staff/staff-overview-section";
+import { WorkforceSection } from "@/components/workforce/workforce-presentation";
+import { cn, formatCurrency, formatDate, formatDateTime } from "@/lib/utils";
+import {
+  attendanceApprovalLabel,
+  attendanceExceptionLabel,
+  attendanceStatusLabel,
+} from "@/lib/presentation/workforce";
 
 type ScopeKey = "analytics" | "orders" | "receipts";
 type AccessScopeRow = {
@@ -83,6 +137,15 @@ type StaffUser = {
   created_at?: string;
   status?: string;
   is_active?: boolean;
+  custom_role_id?: number | null;
+};
+
+type RoleOption = {
+  id: number | string;
+  name: string;
+  description?: string | null;
+  is_system_role?: boolean;
+  permissions?: string[];
 };
 
 type EmploymentPeriod = {
@@ -109,21 +172,106 @@ type EmploymentHistory = {
   periods: EmploymentPeriod[];
 };
 
-type ProfileForm = {
-  account_number: string;
-  salary_type: string;
-  salary_amount: string;
-  phone: string;
-  address: string;
-  age: string;
-  weekly_hours: string;
-  daily_hours: string;
-  salary_effective_from: string;
-  salary_change_reason: string;
+const scopeKeys: ScopeKey[] = ["analytics", "orders", "receipts"];
+const scopeLabels: Record<ScopeKey, string> = {
+  analytics: "Analytics history",
+  orders: "Order history",
+  receipts: "Receipt history",
+};
+const weekdays = [
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+  "Sunday",
+];
+
+const ROLE_COPY: Record<string, { label: string; description: string }> = {
+  admin: {
+    label: "Administrator",
+    description: "Full business administration and team management.",
+  },
+  manager: {
+    label: "Operations manager",
+    description: "Runs day-to-day operations and supervises the team.",
+  },
+  cashier: {
+    label: "Cashier",
+    description: "Takes payments and manages the assigned checkout flow.",
+  },
+  waiter: {
+    label: "Service staff",
+    description: "Creates and manages guest orders during service.",
+  },
+  kitchen: {
+    label: "Kitchen staff",
+    description: "Views and updates kitchen tickets and preparation work.",
+  },
+  bar: {
+    label: "Bar staff",
+    description: "Manages bar orders and drink preparation.",
+  },
+  cafe: {
+    label: "Cafe staff",
+    description: "Manages cafe service and preparation work.",
+  },
+  barista: {
+    label: "Barista",
+    description: "Prepares and manages coffee and cafe orders.",
+  },
+  accountant: {
+    label: "Accountant",
+    description: "Reviews finance, records, and accounting reports.",
+  },
+  accounting_approver: {
+    label: "Finance approver",
+    description: "Reviews and approves controlled finance actions.",
+  },
+  staff: {
+    label: "Team member",
+    description: "Standard staff access based on assigned responsibilities.",
+  },
 };
 
-const scopeKeys: ScopeKey[] = ["analytics", "orders", "receipts"];
-const weekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+function readableRole(role?: string | null) {
+  const key = String(role || "staff")
+    .trim()
+    .toLowerCase();
+  return (
+    ROLE_COPY[key]?.label ||
+    key.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase())
+  );
+}
+
+function roleDescription(role?: string | null, fallback?: string | null) {
+  const key = String(role || "staff")
+    .trim()
+    .toLowerCase();
+  return (
+    fallback?.trim() ||
+    ROLE_COPY[key]?.description ||
+    "Access tailored to this team member's responsibilities."
+  );
+}
+
+function permissionTitle(permission: any) {
+  return (
+    permission?.title ||
+    String(permission?.key || "Permission")
+      .replaceAll(".", " ")
+      .replaceAll("_", " ")
+      .replace(/\b\w/g, (letter) => letter.toUpperCase())
+  );
+}
+
+function permissionMode(permissionKey: string) {
+  const action = permissionKey.split(".").at(-1)?.toLowerCase() || "";
+  return ["view", "read", "list", "history", "export"].includes(action)
+    ? "Read"
+    : "Manage";
+}
 
 function isoDate(value: Date) {
   const year = value.getFullYear();
@@ -141,7 +289,11 @@ function currentMonthRange() {
 }
 
 function money(value: number | string | null | undefined) {
-  return `Rs. ${Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+  return formatCurrency(value);
+}
+
+function salaryFrequency(value: string) {
+  return value.trim().replaceAll("_", " ").toLowerCase();
 }
 
 function minutes(value: number) {
@@ -151,9 +303,7 @@ function minutes(value: number) {
 }
 
 function dateTime(value?: string | null) {
-  if (!value) return "—";
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString();
+  return formatDateTime(value);
 }
 
 function toDateTimeLocal(value?: string | null) {
@@ -164,24 +314,7 @@ function toDateTimeLocal(value?: string | null) {
 }
 
 function dateOnly(value?: string | null) {
-  if (!value) return "—";
-  const parsed = new Date(`${value.slice(0, 10)}T00:00:00`);
-  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleDateString();
-}
-
-function emptyProfileForm(): ProfileForm {
-  return {
-    account_number: "",
-    salary_type: "monthly",
-    salary_amount: "",
-    phone: "",
-    address: "",
-    age: "",
-    weekly_hours: "",
-    daily_hours: "",
-    salary_effective_from: isoDate(new Date()),
-    salary_change_reason: "",
-  };
+  return formatDate(value);
 }
 
 export default function StaffWorkspacePage() {
@@ -202,54 +335,108 @@ export default function StaffWorkspacePage() {
   const [templates, setTemplates] = useState<AttendanceShiftTemplate[]>([]);
   const [leaves, setLeaves] = useState<AttendanceLeave[]>([]);
   const [salaryHistory, setSalaryHistory] = useState<SalaryHistoryRecord[]>([]);
-  const [payrollHistory, setPayrollHistory] = useState<PayrollHistoryRecord[]>([]);
-  const [employmentHistory, setEmploymentHistory] = useState<EmploymentHistory | null>(null);
+  const [employmentHistory, setEmploymentHistory] =
+    useState<EmploymentHistory | null>(null);
   const [rehiring, setRehiring] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [workspaceWarnings, setWorkspaceWarnings] = useState<string[]>([]);
+  const [attendanceAvailable, setAttendanceAvailable] = useState(true);
+  const [scheduleAvailable, setScheduleAvailable] = useState(true);
+  const [leaveAvailable, setLeaveAvailable] = useState(true);
 
   const [availablePermissions, setAvailablePermissions] = useState<any[]>([]);
   const [selectedPermissions, setSelectedPermissions] = useState<string[]>([]);
   const [permissionsOpen, setPermissionsOpen] = useState(false);
   const [permissionsSaving, setPermissionsSaving] = useState(false);
-
-  const [accountOpen, setAccountOpen] = useState(false);
-  const [accountSaving, setAccountSaving] = useState(false);
-  const [accountForm, setAccountForm] = useState({ name: "", email: "" });
-  const [profileOpen, setProfileOpen] = useState(false);
-  const [profileSaving, setProfileSaving] = useState(false);
-  const [profileForm, setProfileForm] = useState<ProfileForm>(emptyProfileForm);
-  const [correctionEntry, setCorrectionEntry] = useState<AttendanceEntry | null>(null);
+  const [permissionQuery, setPermissionQuery] = useState("");
+  const [availableRoles, setAvailableRoles] = useState<RoleOption[]>([]);
+  const [staffEditOpen, setStaffEditOpen] = useState(false);
+  const [staffEditSection, setStaffEditSection] =
+    useState<StaffEditSection>("profile");
+  const [staffEditSaving, setStaffEditSaving] = useState(false);
+  const [correctionEntry, setCorrectionEntry] =
+    useState<AttendanceEntry | null>(null);
   const [correctionSaving, setCorrectionSaving] = useState(false);
-  const [correctionForm, setCorrectionForm] = useState({ clockIn: "", clockOut: "", reason: "" });
+  const [correctionForm, setCorrectionForm] = useState({
+    clockIn: "",
+    clockOut: "",
+    reason: "",
+  });
 
-  const [scopesByKey, setScopesByKey] = useState<Partial<Record<ScopeKey, AccessScopeRow>>>({});
-  const [scopeDrafts, setScopeDrafts] = useState<Record<ScopeKey, { max_lookback_days: string; window_start: string; window_end: string }>>({
+  const [scopesByKey, setScopesByKey] = useState<
+    Partial<Record<ScopeKey, AccessScopeRow>>
+  >({});
+  const [scopeDrafts, setScopeDrafts] = useState<
+    Record<
+      ScopeKey,
+      { max_lookback_days: string; window_start: string; window_end: string }
+    >
+  >({
     analytics: { max_lookback_days: "", window_start: "", window_end: "" },
     orders: { max_lookback_days: "", window_start: "", window_end: "" },
     receipts: { max_lookback_days: "", window_start: "", window_end: "" },
   });
   const [scopeBusy, setScopeBusy] = useState<ScopeKey | null>(null);
+  const [scopeEditor, setScopeEditor] = useState<ScopeKey | null>(null);
 
-  const currentRole = String(currentUser?.primary_role || currentUser?.role || "").toLowerCase();
+  const currentRole = String(
+    currentUser?.primary_role || currentUser?.role || "",
+  ).toLowerCase();
   const currentPermissions = useMemo(
-    () => new Set<string>((currentUser?.permissions || []).map((item: unknown) => String(item).toLowerCase())),
+    () =>
+      new Set<string>(
+        (currentUser?.permissions || []).map((item: unknown) =>
+          String(item).toLowerCase(),
+        ),
+      ),
     [currentUser?.permissions],
   );
   const can = useCallback(
     (permission: string) =>
-      currentRole === "admin" || currentRole === "superadmin" || currentPermissions.has(permission),
+      currentRole === "admin" ||
+      currentRole === "superadmin" ||
+      currentPermissions.has(permission),
     [currentPermissions, currentRole],
   );
-  const canViewAttendance = can("attendance.view") || can("attendance.manage");
-  const canManageAttendance = can("attendance.manage");
-  const canManagePayroll = can("finance.payroll.manage");
-  const canViewPayroll = can("finance.payroll.view") || can("finance.payroll.manage");
+  const attendanceAccess = useEntitlement("attendance.enabled", true);
+  const canViewAttendance =
+    attendanceAccess.allowed &&
+    (can("attendance.view") || can("attendance.manage"));
+  const canManageAttendance = attendanceAccess.allowed && can("attendance.manage");
+  const canManagePayroll = can("admin.staff.credit.manage");
+  const canViewPayroll =
+    can("admin.staff.view") || can("admin.staff.credit.manage");
   const canManageStaff = can("admin.staff.manage");
+  const allowedSections = useMemo<StaffDetailSection[]>(
+    () => [
+      "overview",
+      ...(canViewAttendance ? (["attendance"] as const) : []),
+      ...(canViewPayroll ? (["financials"] as const) : []),
+      "performance",
+      "employment",
+      "access",
+      "activity",
+    ],
+    [canViewAttendance, canViewPayroll],
+  );
+  const activeSection = normalizeStaffDetailSection(
+    searchParams.get("tab"),
+    allowedSections,
+  );
+  const selectSection = useCallback(
+    (section: StaffDetailSection) => {
+      const nextParams = new URLSearchParams(searchParams.toString());
+      nextParams.set("tab", section);
+      router.replace(`?${nextParams.toString()}`, { scroll: false });
+    },
+    [router, searchParams],
+  );
 
   const hydrateScopes = useCallback((rows: AccessScopeRow[]) => {
-    const next: Record<ScopeKey, { max_lookback_days: string; window_start: string; window_end: string }> = {
+    const next: Record<
+      ScopeKey,
+      { max_lookback_days: string; window_start: string; window_end: string }
+    > = {
       analytics: { max_lookback_days: "", window_start: "", window_end: "" },
       orders: { max_lookback_days: "", window_start: "", window_end: "" },
       receipts: { max_lookback_days: "", window_start: "", window_end: "" },
@@ -258,7 +445,8 @@ export default function StaffWorkspacePage() {
     rows.forEach((row) => {
       map[row.scope_key] = row;
       next[row.scope_key] = {
-        max_lookback_days: row.max_lookback_days == null ? "" : String(row.max_lookback_days),
+        max_lookback_days:
+          row.max_lookback_days == null ? "" : String(row.max_lookback_days),
         window_start: row.window_start?.slice(0, 10) || "",
         window_end: row.window_end?.slice(0, 10) || "",
       };
@@ -277,186 +465,438 @@ export default function StaffWorkspacePage() {
     }
   }, [hydrateScopes, userId]);
 
-  const loadWorkspace = useCallback(async (quiet = false) => {
-    if (!Number.isFinite(userId) || userId <= 0) {
-      setLoading(false);
-      return;
-    }
-    quiet ? setRefreshing(true) : setLoading(true);
-    const warnings: string[] = [];
-    try {
-      const [userResponse, permissionResponse, employmentResponse] = await Promise.all([
-        apiClient.get(StaffApis.getStaff(userId)),
-        apiClient.get(RoleApis.listPermissions).catch(() => null),
-        apiClient.get(StaffProfileApis.employmentHistory(userId)).catch(() => null),
-      ]);
-      const loadedStaff = userResponse.data?.data as StaffUser;
-      setStaff(loadedStaff);
-      setSelectedPermissions(loadedStaff.permissions || []);
-      setAvailablePermissions(permissionResponse?.data?.data || []);
-      setAccountForm({ name: loadedStaff.name || "", email: loadedStaff.email || "" });
-      setEmploymentHistory((employmentResponse?.data?.data || null) as EmploymentHistory | null);
-
-      const loadedProfile = await staffWorkforceApi.profileByUserId(userId);
-      setProfile(loadedProfile);
-      if (!loadedProfile) {
-        setEntries([]);
-        setSchedules([]);
-        setLeaves([]);
-        setSalaryHistory([]);
-        setPayrollHistory([]);
-        warnings.push("Create the payroll profile to connect attendance, schedules, and payroll history for this staff member.");
-      } else {
-        const results = await Promise.allSettled([
-          canViewAttendance
-            ? attendanceApi.listEntries({ dateFrom, dateTo, staffId: loadedProfile.id, limit: 500 })
-            : Promise.resolve([] as AttendanceEntry[]),
-          canViewAttendance
-            ? attendanceApi.listSchedules(loadedProfile.id)
-            : Promise.resolve([] as AttendanceSchedule[]),
-          canViewAttendance
-            ? attendanceApi.listShiftTemplates()
-            : Promise.resolve([] as AttendanceShiftTemplate[]),
-          canViewAttendance
-            ? attendanceApi.listLeaves({ staffId: loadedProfile.id, dateFrom, dateTo })
-            : Promise.resolve([] as AttendanceLeave[]),
-          staffWorkforceApi.salaryHistory(loadedProfile.id),
-          canViewPayroll
-            ? staffWorkforceApi.payrollHistory(loadedProfile.id)
-            : Promise.resolve([] as PayrollHistoryRecord[]),
-        ]);
-        const [entryResult, scheduleResult, templateResult, leaveResult, salaryResult, payrollResult] = results;
-        setEntries(entryResult.status === "fulfilled" ? entryResult.value : []);
-        setSchedules(scheduleResult.status === "fulfilled" ? scheduleResult.value : []);
-        setTemplates(templateResult.status === "fulfilled" ? templateResult.value : []);
-        setLeaves(leaveResult.status === "fulfilled" ? leaveResult.value : []);
-        setSalaryHistory(salaryResult.status === "fulfilled" ? salaryResult.value : []);
-        setPayrollHistory(payrollResult.status === "fulfilled" ? payrollResult.value : []);
-        if (entryResult.status === "rejected" || scheduleResult.status === "rejected") {
-          warnings.push("Some attendance details are unavailable for your current permission level.");
-        }
-        if (payrollResult.status === "rejected") {
-          warnings.push("Payroll history is unavailable for your current permission level or plan.");
-        }
+  const loadWorkspace = useCallback(
+    async (quiet = false) => {
+      if (!Number.isFinite(userId) || userId <= 0) {
+        setLoading(false);
+        return;
       }
-      await loadScopes();
-      setWorkspaceWarnings(warnings);
-    } catch (error: any) {
-      toast.error(error?.response?.data?.detail || "Failed to load staff workspace");
-      setStaff(null);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, [canViewAttendance, canViewPayroll, dateFrom, dateTo, loadScopes, userId]);
+      quiet ? setRefreshing(true) : setLoading(true);
+      try {
+        const [
+          userResponse,
+          permissionResponse,
+          employmentResponse,
+          customRolesResponse,
+          builtInRolesResponse,
+        ] = await Promise.all([
+          apiClient.get(StaffApis.getStaff(userId)),
+          apiClient.get(RoleApis.listPermissions).catch(() => null),
+          apiClient
+            .get(StaffProfileApis.employmentHistory(userId))
+            .catch(() => null),
+          apiClient.get(RoleApis.listRoles).catch(() => null),
+          apiClient.get(RoleApis.listBuiltInRoles).catch(() => null),
+        ]);
+        const loadedStaff = userResponse.data?.data as StaffUser;
+        setStaff(loadedStaff);
+        setSelectedPermissions(loadedStaff.permissions || []);
+        setAvailablePermissions(permissionResponse?.data?.data || []);
+        const rolePayload = (response: any) => {
+          const body = response?.data;
+          if (Array.isArray(body?.data)) return body.data;
+          if (Array.isArray(body?.data?.roles)) return body.data.roles;
+          if (Array.isArray(body)) return body;
+          if (Array.isArray(body?.roles)) return body.roles;
+          if (
+            body?.status === "success" &&
+            body?.data &&
+            typeof body.data === "object"
+          ) {
+            return Object.entries(body.data).map(([name, permissions]) => ({
+              id: `system-${name}`,
+              name,
+              is_system_role: true,
+              permissions: Array.isArray(permissions) ? permissions : [],
+            }));
+          }
+          return [];
+        };
+        const byName = new Map<string, RoleOption>();
+        [
+          ...rolePayload(builtInRolesResponse),
+          ...rolePayload(customRolesResponse),
+        ].forEach((role: RoleOption) => {
+          const name = String(role?.name || "").trim();
+          if (
+            !name ||
+            ["superadmin", "super_admin", "platform_staff"].includes(
+              name.toLowerCase(),
+            )
+          )
+            return;
+          const existing = byName.get(name.toLowerCase());
+          if (
+            !existing ||
+            (String(existing.id).startsWith("system-") &&
+              !String(role.id).startsWith("system-"))
+          ) {
+            byName.set(name.toLowerCase(), { ...role, name });
+          }
+        });
+        Object.keys(ROLE_COPY).forEach((name) => {
+          if (!byName.has(name)) {
+            byName.set(name, {
+              id: `built-in-${name}`,
+              name,
+              is_system_role: true,
+              permissions: [],
+            });
+          }
+        });
+        const currentRoleName =
+          loadedStaff.primary_role || loadedStaff.role || "staff";
+        if (!byName.has(currentRoleName.toLowerCase())) {
+          byName.set(currentRoleName.toLowerCase(), {
+            id: `legacy-${currentRoleName}`,
+            name: currentRoleName,
+            is_system_role: true,
+            permissions: loadedStaff.permissions || [],
+          });
+        }
+        setAvailableRoles(
+          Array.from(byName.values()).sort((left, right) =>
+            readableRole(left.name).localeCompare(readableRole(right.name)),
+          ),
+        );
+        setEmploymentHistory(
+          (employmentResponse?.data?.data || null) as EmploymentHistory | null,
+        );
+
+        const loadedProfile = await staffWorkforceApi.profileByUserId(userId);
+        setProfile(loadedProfile);
+        if (!loadedProfile) {
+          setEntries([]);
+          setSchedules([]);
+          setLeaves([]);
+          setSalaryHistory([]);
+          setAttendanceAvailable(false);
+          setScheduleAvailable(false);
+          setLeaveAvailable(false);
+        } else {
+          const results = await Promise.allSettled([
+            canViewAttendance
+              ? attendanceApi.listEntries({
+                  dateFrom,
+                  dateTo,
+                  staffId: loadedProfile.id,
+                  limit: 500,
+                })
+              : Promise.resolve([] as AttendanceEntry[]),
+            canViewAttendance
+              ? attendanceApi.listSchedules(loadedProfile.id)
+              : Promise.resolve([] as AttendanceSchedule[]),
+            canViewAttendance
+              ? attendanceApi.listShiftTemplates()
+              : Promise.resolve([] as AttendanceShiftTemplate[]),
+            canViewAttendance
+              ? attendanceApi.listLeaves({
+                  staffId: loadedProfile.id,
+                  dateFrom,
+                  dateTo,
+                })
+              : Promise.resolve([] as AttendanceLeave[]),
+            staffWorkforceApi.salaryHistory(loadedProfile.id),
+          ]);
+          const [
+            entryResult,
+            scheduleResult,
+            templateResult,
+            leaveResult,
+            salaryResult,
+          ] = results;
+          setEntries(
+            entryResult.status === "fulfilled" ? entryResult.value : [],
+          );
+          setSchedules(
+            scheduleResult.status === "fulfilled" ? scheduleResult.value : [],
+          );
+          setTemplates(
+            templateResult.status === "fulfilled" ? templateResult.value : [],
+          );
+          setLeaves(
+            leaveResult.status === "fulfilled" ? leaveResult.value : [],
+          );
+          setAttendanceAvailable(
+            canViewAttendance && entryResult.status === "fulfilled",
+          );
+          setScheduleAvailable(
+            canViewAttendance && scheduleResult.status === "fulfilled",
+          );
+          setLeaveAvailable(
+            canViewAttendance && leaveResult.status === "fulfilled",
+          );
+          setSalaryHistory(
+            salaryResult.status === "fulfilled" ? salaryResult.value : [],
+          );
+        }
+        await loadScopes();
+      } catch (error: any) {
+        toast.error(
+          error?.response?.data?.detail || "Failed to load staff workspace",
+        );
+        setStaff(null);
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    },
+    [canViewAttendance, dateFrom, dateTo, loadScopes, userId],
+  );
 
   useEffect(() => {
     void loadWorkspace();
   }, [loadWorkspace]);
 
   const totals = useMemo(() => {
-    const regular = entries.reduce((sum, item) => sum + Number(item.regular_minutes || 0), 0);
-    const overtime = entries.reduce((sum, item) => sum + Number(item.overtime_minutes || 0), 0);
-    const pending = entries.filter((item) => ["draft", "pending", "needs_correction"].includes(item.approval_status)).length;
-    const exceptions = entries.filter((item) => Boolean(item.exception_code)).length;
+    const regular = entries.reduce(
+      (sum, item) => sum + Number(item.regular_minutes || 0),
+      0,
+    );
+    const overtime = entries.reduce(
+      (sum, item) => sum + Number(item.overtime_minutes || 0),
+      0,
+    );
+    const pending = entries.filter((item) =>
+      ["draft", "pending", "needs_correction"].includes(item.approval_status),
+    ).length;
+    const exceptions = entries.filter((item) =>
+      Boolean(item.exception_code),
+    ).length;
     return { regular, overtime, pending, exceptions };
   }, [entries]);
 
   const todayEntry = useMemo(() => {
     const today = isoDate(new Date());
-    return entries.find((entry) => entry.clock_in_at.slice(0, 10) === today && entry.status === "open")
-      || entries.find((entry) => entry.clock_in_at.slice(0, 10) === today)
-      || null;
+    return (
+      entries.find(
+        (entry) =>
+          entry.clock_in_at.slice(0, 10) === today && entry.status === "open",
+      ) ||
+      entries.find((entry) => entry.clock_in_at.slice(0, 10) === today) ||
+      null
+    );
   }, [entries]);
-  const latestPayroll = payrollHistory[0] || null;
-  const pendingLeaveCount = leaves.filter((leave) => leave.status === "pending").length;
+  const pendingLeaveCount = leaves.filter(
+    (leave) => leave.status === "pending",
+  ).length;
 
-  const openProfileEditor = () => {
-    const next = emptyProfileForm();
-    if (profile) {
-      next.account_number = profile.account_number || "";
-      next.salary_type = profile.salary_type || "monthly";
-      next.salary_amount = String(profile.salary_amount ?? "");
-      next.phone = profile.phone || "";
-      next.address = profile.address || "";
-      next.age = profile.age == null ? "" : String(profile.age);
-      next.weekly_hours = profile.weekly_hours == null ? "" : String(profile.weekly_hours);
-      next.daily_hours = profile.daily_hours == null ? "" : String(profile.daily_hours);
-    }
-    setProfileForm(next);
-    setProfileOpen(true);
+  const canChangeGlobalStatus =
+    currentRole === "superadmin" ||
+    currentRole === "platform_staff" ||
+    currentPermissions.has("platform.staff.manage");
+
+  const staffEditRoles = useMemo<StaffEditRole[]>(
+    () =>
+      availableRoles.map((role) => ({
+        id: role.id,
+        name: role.name,
+        label: readableRole(role.name),
+        description: roleDescription(role.name, role.description),
+        permissions: role.permissions || [],
+        protected: [
+          "admin",
+          "administrator",
+          "superadmin",
+          "super_admin",
+          "platform_staff",
+        ].includes(role.name.toLowerCase()),
+      })),
+    [availableRoles],
+  );
+
+  const staffEditInitialValues = useMemo<StaffEditValues>(
+    () => ({
+      name: staff?.name || "",
+      email: staff?.email || "",
+      phone: profile?.phone || "",
+      address: profile?.address || "",
+      accountNumber: profile?.account_number || "",
+      salaryType: profile?.salary_type || "monthly",
+      salaryAmount:
+        profile?.salary_amount == null ? "" : String(profile.salary_amount),
+      weeklyHours:
+        profile?.weekly_hours == null ? "" : String(profile.weekly_hours),
+      dailyHours:
+        profile?.daily_hours == null ? "" : String(profile.daily_hours),
+      effectiveFrom:
+        salaryHistory.find((record) => !record.effective_to)?.effective_from ||
+        isoDate(new Date()),
+      salaryChangeReason: "",
+      roleName: staff?.primary_role || staff?.role || "staff",
+      isActive: staff?.is_active !== false,
+    }),
+    [profile, salaryHistory, staff],
+  );
+
+  const openStaffEditor = (section: StaffEditSection) => {
+    setStaffEditSection(section);
+    setStaffEditOpen(true);
   };
 
-  const saveAccount = async () => {
-    if (!accountForm.name.trim()) {
+  useEffect(() => {
+    const requestedSection = searchParams.get("edit");
+    if (
+      !staff ||
+      !canManageStaff ||
+      !["profile", "employment", "access"].includes(requestedSection || "")
+    ) {
+      return;
+    }
+    setStaffEditSection(requestedSection as StaffEditSection);
+    setStaffEditOpen(true);
+    const nextParams = new URLSearchParams(searchParams.toString());
+    nextParams.delete("edit");
+    const query = nextParams.toString();
+    router.replace(query ? `?${query}` : `/staff/${userId}`, {
+      scroll: false,
+    });
+  }, [canManageStaff, router, searchParams, staff, userId]);
+
+  const saveStaffEditor = async (values: StaffEditValues) => {
+    const name = values.name.trim();
+    if (!name) {
       toast.error("Name is required");
       return;
     }
-    setAccountSaving(true);
-    try {
-      await apiClient.patch(StaffApis.update(userId), {
-        name: accountForm.name.trim(),
-      });
-      toast.success("Staff account updated");
-      setAccountOpen(false);
-      await loadWorkspace(true);
-    } catch (error: any) {
-      toast.error(error?.response?.data?.detail || "Failed to update staff account");
-    } finally {
-      setAccountSaving(false);
-    }
-  };
 
-  const saveProfile = async () => {
-    const amount = Number(profileForm.salary_amount);
-    if (!profileForm.account_number.trim() || !Number.isFinite(amount) || amount < 0) {
-      toast.error("Account number and a valid salary amount are required");
+    const selectedRole = availableRoles.find(
+      (role) => role.name === values.roleName,
+    );
+    if (!selectedRole) {
+      toast.error("Choose a role for this staff member");
       return;
     }
-    const salaryChanged = !profile
-      || profile.salary_type !== profileForm.salary_type
-      || Number(profile.salary_amount) !== amount
-      || Number(profile.weekly_hours || 0) !== Number(profileForm.weekly_hours || 0)
-      || Number(profile.daily_hours || 0) !== Number(profileForm.daily_hours || 0);
-    if (profile && salaryChanged && profileForm.salary_change_reason.trim().length < 3) {
-      toast.error("Explain the salary change so payroll keeps a useful audit history");
+
+    const profileWasEdited = Boolean(
+      profile ||
+      values.accountNumber.trim() ||
+      values.salaryAmount ||
+      values.phone.trim() ||
+      values.address.trim() ||
+      values.weeklyHours ||
+      values.dailyHours,
+    );
+    const amount = Number(values.salaryAmount);
+    if (
+      profileWasEdited &&
+      (!values.accountNumber.trim() ||
+        !values.salaryAmount ||
+        !Number.isFinite(amount) ||
+        amount < 0)
+    ) {
+      toast.error("Payroll account and a valid salary amount are required");
       return;
     }
-    const payload: Record<string, unknown> = {
-      account_number: profileForm.account_number.trim(),
-      phone: profileForm.phone.trim() || undefined,
-      address: profileForm.address.trim() || undefined,
-      age: profileForm.age ? Number(profileForm.age) : undefined,
-    };
-    if (!profile || salaryChanged) {
-      Object.assign(payload, {
-        salary_type: profileForm.salary_type,
-        salary_amount: amount,
-        weekly_hours: profileForm.weekly_hours ? Number(profileForm.weekly_hours) : undefined,
-        daily_hours: profileForm.daily_hours ? Number(profileForm.daily_hours) : undefined,
-        salary_effective_from: profileForm.salary_effective_from,
-        salary_change_reason: profileForm.salary_change_reason.trim() || "Initial salary",
-      });
+
+    const salaryChanged =
+      profileWasEdited &&
+      (!profile ||
+        profile.salary_type !== values.salaryType ||
+        Number(profile.salary_amount) !== amount ||
+        Number(profile.weekly_hours || 0) !== Number(values.weeklyHours || 0) ||
+        Number(profile.daily_hours || 0) !== Number(values.dailyHours || 0));
+    if (
+      profile &&
+      salaryChanged &&
+      values.salaryChangeReason.trim().length < 3
+    ) {
+      toast.error(
+        "Explain the salary change so it keeps a useful audit history",
+      );
+      return;
     }
-    if (!profile) payload.user_id = userId;
-    setProfileSaving(true);
+
+    setStaffEditSaving(true);
     try {
-      if (profile) await apiClient.patch(StaffProfileApis.update(profile.id), payload);
-      else await apiClient.post(StaffProfileApis.create, payload);
-      toast.success(profile ? "Employment and pay profile updated" : "Employment and pay profile created");
-      setProfileOpen(false);
+      const accountPayload: Record<string, unknown> = {};
+      if (name !== staff?.name) accountPayload.name = name;
+
+      const currentRoleName = staff?.primary_role || staff?.role || "staff";
+      if (values.roleName !== currentRoleName) {
+        const customRoleId = Number(selectedRole.id);
+        const isCustomRole =
+          selectedRole.is_system_role === false &&
+          Number.isInteger(customRoleId);
+        Object.assign(accountPayload, {
+          role: selectedRole.name,
+          roles: [selectedRole.name],
+          primary_role: selectedRole.name,
+          custom_role_id: isCustomRole ? customRoleId : null,
+        });
+      }
+      if (
+        canChangeGlobalStatus &&
+        values.isActive !== (staff?.is_active !== false)
+      ) {
+        accountPayload.is_active = values.isActive;
+      }
+      if (Object.keys(accountPayload).length) {
+        await apiClient.patch(StaffApis.update(userId), accountPayload);
+      }
+
+      if (profileWasEdited) {
+        const profilePayload: Record<string, unknown> = {
+          account_number: values.accountNumber.trim(),
+          phone: values.phone.trim() || undefined,
+          address: values.address.trim() || undefined,
+        };
+        if (!profile || salaryChanged) {
+          Object.assign(profilePayload, {
+            salary_type: values.salaryType,
+            salary_amount: amount,
+            weekly_hours: values.weeklyHours
+              ? Number(values.weeklyHours)
+              : undefined,
+            daily_hours: values.dailyHours
+              ? Number(values.dailyHours)
+              : undefined,
+            salary_effective_from: values.effectiveFrom,
+            salary_change_reason:
+              values.salaryChangeReason.trim() || "Initial salary",
+          });
+        }
+        if (profile) {
+          await apiClient.patch(
+            StaffProfileApis.update(profile.id),
+            profilePayload,
+          );
+        } else {
+          profilePayload.user_id = userId;
+          await apiClient.post(StaffProfileApis.create, profilePayload);
+        }
+      }
+
+      toast.success("Staff details updated");
+      setStaffEditOpen(false);
       await loadWorkspace(true);
     } catch (error: any) {
       const detail = error?.response?.data?.detail;
-      toast.error(typeof detail === "string" ? detail : "Failed to save employment profile");
+      toast.error(
+        typeof detail === "string" ? detail : "Failed to update staff details",
+      );
     } finally {
-      setProfileSaving(false);
+      setStaffEditSaving(false);
     }
   };
 
-  const updateAttendance = async (entry: AttendanceEntry, action: "submit" | "approve" | "reject" | "reopen") => {
+  const updateDiscountLimit = async (value: number | null) => {
+    if (!profile) return;
+    await staffCreditApi.updateDiscountLimit(profile.id, value);
+    toast.success("Discount limit updated");
+    await loadWorkspace(true);
+  };
+
+  const updateAttendance = async (
+    entry: AttendanceEntry,
+    action: "submit" | "approve" | "reject" | "reopen",
+  ) => {
     try {
-      if (action === "submit") await attendanceApi.submitEntry(entry.id, "Submitted from staff workspace");
+      if (action === "submit")
+        await attendanceApi.submitEntry(
+          entry.id,
+          "Submitted from staff workspace",
+        );
       if (action === "approve") {
         await attendanceApi.approveEntry(entry.id, {
           approved_overtime_minutes: entry.overtime_minutes,
@@ -477,7 +917,9 @@ export default function StaffWorkspacePage() {
       toast.success("Attendance updated");
       await loadWorkspace(true);
     } catch (error: any) {
-      toast.error(error?.response?.data?.detail || "Failed to update attendance");
+      toast.error(
+        error?.response?.data?.detail || "Failed to update attendance",
+      );
     }
   };
 
@@ -495,8 +937,10 @@ export default function StaffWorkspacePage() {
     const clockIn = new Date(correctionForm.clockIn);
     const clockOut = new Date(correctionForm.clockOut);
     const reason = correctionForm.reason.trim();
-    if (Number.isNaN(clockIn.getTime()) || Number.isNaN(clockOut.getTime())) return toast.error("Enter valid times");
-    if (clockOut <= clockIn) return toast.error("Clock out must be after clock in");
+    if (Number.isNaN(clockIn.getTime()) || Number.isNaN(clockOut.getTime()))
+      return toast.error("Enter valid times");
+    if (clockOut <= clockIn)
+      return toast.error("Clock out must be after clock in");
     if (reason.length < 3) return toast.error("Add a short correction reason");
 
     setCorrectionSaving(true);
@@ -514,16 +958,64 @@ export default function StaffWorkspacePage() {
       await loadWorkspace(true);
     } catch (error: any) {
       const detail = error?.response?.data?.detail;
-      toast.error(typeof detail === "string" ? detail : detail?.message || "Failed to correct attendance");
+      toast.error(
+        typeof detail === "string"
+          ? detail
+          : detail?.message || "Failed to correct attendance",
+      );
     } finally {
       setCorrectionSaving(false);
     }
   };
 
+  const assignedRolePermissions = useMemo(() => {
+    const assignedRoleName = String(
+      staff?.primary_role || staff?.role || "staff",
+    ).toLowerCase();
+    return new Set(
+      availableRoles.find(
+        (role) => role.name.toLowerCase() === assignedRoleName,
+      )?.permissions || [],
+    );
+  }, [availableRoles, staff?.primary_role, staff?.role]);
+
+  const groupedPermissions = useMemo(() => {
+    const query = permissionQuery.trim().toLowerCase();
+    return availablePermissions
+      .filter((permission) => {
+        if (!query) return true;
+        return [
+          permissionTitle(permission),
+          permission?.description,
+          permission?.module,
+          permission?.key,
+        ].some((value) =>
+          String(value || "")
+            .toLowerCase()
+            .includes(query),
+        );
+      })
+      .reduce((grouped: Record<string, any[]>, permission: any) => {
+        const groupName = String(permission.module || "Other").replaceAll(
+          "_",
+          " ",
+        );
+        (grouped[groupName] ||= []).push(permission);
+        return grouped;
+      }, {});
+  }, [availablePermissions, permissionQuery]);
+
   const savePermissions = async () => {
     setPermissionsSaving(true);
     try {
-      await apiClient.post(AuthApis.updateUserPermissions(userId), { permission_keys: selectedPermissions });
+      await apiClient.post(AuthApis.updateUserPermissions(userId), {
+        permission_keys: Array.from(
+          new Set([
+            ...Array.from(assignedRolePermissions),
+            ...selectedPermissions,
+          ]),
+        ),
+      });
       toast.success("Permissions updated");
       setPermissionsOpen(false);
       await loadWorkspace(true);
@@ -536,17 +1028,30 @@ export default function StaffWorkspacePage() {
 
   const saveScope = async (key: ScopeKey) => {
     const draft = scopeDrafts[key];
-    const maxDays = draft.max_lookback_days ? Number(draft.max_lookback_days) : null;
-    if (maxDays != null && (!Number.isFinite(maxDays) || maxDays < 1 || maxDays > 3650)) {
+    const maxDays = draft.max_lookback_days
+      ? Number(draft.max_lookback_days)
+      : null;
+    if (
+      maxDays != null &&
+      (!Number.isFinite(maxDays) || maxDays < 1 || maxDays > 3650)
+    ) {
       toast.error("Lookback must be between 1 and 3650 days");
       return;
     }
-    if (draft.window_start && draft.window_end && draft.window_start > draft.window_end) {
+    if (
+      draft.window_start &&
+      draft.window_end &&
+      draft.window_start > draft.window_end
+    ) {
       toast.error("Scope start cannot be after its end");
       return;
     }
     if (!maxDays && !draft.window_start && !draft.window_end) {
-      toast.error("Set a lookback or date window");
+      if (scopesByKey[key]) {
+        await removeScope(key);
+      } else {
+        setScopeEditor(null);
+      }
       return;
     }
     setScopeBusy(key);
@@ -558,8 +1063,11 @@ export default function StaffWorkspacePage() {
       });
       toast.success(`${key} scope saved`);
       await loadScopes();
+      setScopeEditor(null);
     } catch (error: any) {
-      toast.error(error?.response?.data?.detail || "Failed to save access scope");
+      toast.error(
+        error?.response?.data?.detail || "Failed to save access scope",
+      );
     } finally {
       setScopeBusy(null);
     }
@@ -571,27 +1079,41 @@ export default function StaffWorkspacePage() {
       await apiClient.delete(UserAccessScopeApis.remove(userId, key));
       toast.success(`${key} scope removed`);
       await loadScopes();
+      setScopeEditor(null);
     } catch (error: any) {
-      toast.error(error?.response?.data?.detail || "Failed to remove access scope");
+      toast.error(
+        error?.response?.data?.detail || "Failed to remove access scope",
+      );
     } finally {
       setScopeBusy(null);
     }
   };
 
   const removeStaffMembership = async () => {
-    if (!window.confirm(`Remove ${staff?.name || "this employee"} from this restaurant? Their account stays active, while attendance and payroll history remain here.`)) return;
+    if (
+      !window.confirm(
+        `Remove ${staff?.name || "this employee"} from this restaurant? Their account stays active, while attendance and payroll history remain here.`,
+      )
+    )
+      return;
     try {
       await apiClient.delete(StaffApis.delete(userId));
-      toast.success("Staff membership removed; account and history were preserved");
+      toast.success(
+        "Staff membership removed; account and history were preserved",
+      );
       router.replace("/staff");
     } catch (error: any) {
-      toast.error(error?.response?.data?.detail || "Failed to remove staff member");
+      toast.error(
+        error?.response?.data?.detail || "Failed to remove staff member",
+      );
     }
   };
 
   const rehireStaff = async () => {
     if (!employmentHistory?.can_rehire) return;
-    const startDate = window.prompt("Employment start date (YYYY-MM-DD)", isoDate(new Date()))?.trim();
+    const startDate = window
+      .prompt("Employment start date (YYYY-MM-DD)", isoDate(new Date()))
+      ?.trim();
     if (!startDate) return;
     if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate)) {
       toast.error("Use a valid YYYY-MM-DD start date");
@@ -599,169 +1121,1460 @@ export default function StaffWorkspacePage() {
     }
     setRehiring(true);
     try {
-      const response = await apiClient.post(StaffProfileApis.rehire(employmentHistory.staff_id), {
-        start_date: startDate,
-      });
+      const response = await apiClient.post(
+        StaffProfileApis.rehire(employmentHistory.staff_id),
+        {
+          start_date: startDate,
+        },
+      );
       setEmploymentHistory(response.data?.data as EmploymentHistory);
-      toast.success("Employment period reactivated; previous history remains unchanged");
+      toast.success(
+        "Employment period reactivated; previous history remains unchanged",
+      );
       await loadWorkspace(true);
     } catch (error: any) {
-      toast.error(error?.response?.data?.detail || "Unable to rehire this staff member");
+      toast.error(
+        error?.response?.data?.detail || "Unable to rehire this staff member",
+      );
     } finally {
       setRehiring(false);
     }
   };
 
+  useMobileAppBarTitle(staff?.name || "Staff");
+
   if (loading) {
-    return <div className="flex min-h-[60vh] items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
+    return (
+      <AppPage width="workspace">
+        <LoadingState label="Loading staff details" className="min-h-[60vh]" />
+      </AppPage>
+    );
   }
   if (!staff) {
     return (
-      <div className="mx-auto max-w-4xl p-6">
-        <Button asChild variant="ghost"><Link href="/staff"><ArrowLeft className="mr-2 h-4 w-4" />Back to staff</Link></Button>
-        <Card className="mt-6"><CardContent className="p-12 text-center"><h1 className="text-xl font-semibold">Staff member not found</h1><p className="mt-2 text-sm text-muted-foreground">The record is unavailable or outside your restaurant.</p></CardContent></Card>
-      </div>
+      <AppPage width="detail">
+        <ErrorState
+          title="Staff member unavailable"
+          description="This record was not found, is outside your restaurant, or you do not have access to it."
+          actionLabel="Back to staff"
+          onAction={() => router.push("/staff")}
+        />
+      </AppPage>
     );
   }
 
-  const activeRoles = staff.roles?.filter((role) => !role.startsWith("__user_")) || [staff.primary_role || staff.role || "staff"];
-
+  const configuredRoles =
+    staff.roles?.filter((role) => !role.startsWith("__user_")) || [];
+  const activeRoles = configuredRoles.length
+    ? configuredRoles
+    : [staff.primary_role || staff.role || "staff"];
+  const primaryRole = readableRole(staff.primary_role || staff.role);
+  const overviewNeedsAttention =
+    !profile ||
+    totals.pending > 0 ||
+    (schedules.length === 0 && profile.salary_type !== "hourly");
+  const overviewAttention = !profile
+    ? {
+        title: "Compensation profile required",
+        description: "Create a compensation profile for this employee.",
+      }
+    : totals.pending > 0
+      ? {
+          title: "Attendance review required",
+          description:
+            "Resolve draft, pending, or correction-required attendance.",
+        }
+      : schedules.length === 0 && profile.salary_type !== "hourly"
+        ? {
+            title: "Work schedule required",
+            description: "Assign an effective work schedule.",
+          }
+        : {
+            title: "",
+            description: "",
+          };
+  const activeScopeDraft = scopeEditor ? scopeDrafts[scopeEditor] : null;
   return (
-    <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-6 px-4 py-5 sm:px-6 lg:px-8">
-      <section className="overflow-hidden rounded-3xl border bg-gradient-to-br from-primary/10 via-background to-amber-500/10 shadow-sm">
-        <div className="flex flex-col gap-5 p-5 sm:p-7 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex min-w-0 items-center gap-4">
-            <Button asChild size="icon" variant="outline" className="shrink-0 rounded-full bg-background/80"><Link href="/staff"><ArrowLeft className="h-4 w-4" /></Link></Button>
-            <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-primary text-2xl font-bold text-primary-foreground shadow-lg shadow-primary/20">{staff.name?.charAt(0).toUpperCase() || "?"}</div>
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2"><h1 className="truncate text-2xl font-bold tracking-tight sm:text-3xl">{staff.name}</h1><Badge variant={staff.is_active === false ? "secondary" : "default"}>{staff.is_active === false ? "Inactive" : "Active"}</Badge></div>
-              <p className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted-foreground"><BriefcaseBusiness className="h-4 w-4" />{staff.primary_role || staff.role || "Staff"}<span>•</span><span>User #{staff.id}</span>{profile ? <><span>•</span><span>Staff #{profile.id}</span></> : null}</p>
-              <div className="mt-2 flex flex-wrap gap-1.5">{activeRoles.map((role) => <Badge key={role} variant="secondary" className="capitalize">{role}</Badge>)}</div>
+    <AppPage
+      width="workspace"
+      className="flex flex-col gap-3 pb-20 lg:gap-6 lg:pb-4"
+    >
+      <StaffIdentityHeader
+        name={staff.name}
+        active={staff.is_active !== false}
+        role={primaryRole}
+        reference={staff.email || null}
+        canEdit={canManageStaff}
+        refreshing={refreshing}
+        onEdit={() => openStaffEditor("profile")}
+        onRefresh={() => void loadWorkspace(true)}
+      />
+
+      <StaffMobileSectionNav
+        activeSection={activeSection}
+        allowedSections={allowedSections}
+        onSectionChange={selectSection}
+      />
+
+      <div className="grid min-w-0 gap-7 lg:grid-cols-[240px_minmax(0,1fr)]">
+        <StaffDesktopSectionNav
+          activeSection={activeSection}
+          allowedSections={allowedSections}
+          onSectionChange={selectSection}
+        />
+        <StaffDetailContent>
+          {activeSection !== "overview" ? (
+            <StaffSectionHeading section={activeSection} />
+          ) : null}
+
+          {activeSection === "overview" ? (
+            <StaffOverviewSection
+              today={[
+                ...(attendanceAvailable
+                  ? [
+                      {
+                        icon: Clock3,
+                        label: "Attendance",
+                        value: todayEntry
+                          ? todayEntry.status === "open"
+                            ? "Clocked in"
+                            : "Attendance completed"
+                          : "No attendance record available",
+                      },
+                      {
+                        icon: FileClock,
+                        label: "Issues",
+                        value: totals.pending
+                          ? `${totals.pending} unresolved`
+                          : "No issues",
+                        attention: totals.pending > 0,
+                      },
+                    ]
+                  : []),
+                ...(scheduleAvailable
+                  ? [
+                      {
+                        icon: CalendarClock,
+                        label: "Schedule",
+                        value: schedules.length
+                          ? `${schedules.length} assigned day${schedules.length === 1 ? "" : "s"}`
+                          : "No schedule assigned",
+                        attention: schedules.length === 0,
+                      },
+                    ]
+                  : []),
+                ...(leaveAvailable
+                  ? [
+                      {
+                        icon: CalendarDays,
+                        label: "Leave",
+                        value: pendingLeaveCount
+                          ? `${pendingLeaveCount} pending`
+                          : "No leave requests",
+                        attention: pendingLeaveCount > 0,
+                      },
+                    ]
+                  : []),
+              ]}
+              periodLabel={`${dateOnly(dateFrom)} – ${dateOnly(dateTo)}`}
+              metrics={
+                attendanceAvailable
+                  ? [
+                      {
+                        icon: Clock3,
+                        label: "Regular time",
+                        value: minutes(totals.regular),
+                      },
+                      {
+                        icon: History,
+                        label: "Overtime",
+                        value: minutes(totals.overtime),
+                      },
+                      {
+                        icon: AlertTriangle,
+                        label: "Exceptions",
+                        value: String(totals.exceptions),
+                      },
+                    ]
+                  : []
+              }
+              employment={[
+                { label: "Role", value: primaryRole },
+                {
+                  label: "Compensation",
+                  value: profile
+                    ? `${money(profile.salary_amount)} / ${salaryFrequency(profile.salary_type)}`
+                    : "Not configured",
+                },
+              ]}
+              needsAttention={overviewNeedsAttention}
+              attentionTitle={overviewAttention.title}
+              attentionDescription={overviewAttention.description}
+              todayUnavailable={!attendanceAvailable}
+            />
+          ) : null}
+
+          {activeSection === "attendance" && canViewAttendance ? (
+            <section className="space-y-5" aria-label="Attendance">
+              <WorkforceSection
+                title="Period"
+                description={`${dateOnly(dateFrom)} – ${dateOnly(dateTo)}`}
+                contentClassName="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"
+              >
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <Label className="text-xs">From</Label>
+                    <Input
+                      type="date"
+                      value={dateFrom}
+                      onChange={(event) => setDateFrom(event.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs">To</Label>
+                    <Input
+                      type="date"
+                      value={dateTo}
+                      onChange={(event) => setDateTo(event.target.value)}
+                    />
+                  </div>
+                </div>
+              </WorkforceSection>
+              <WorkforceSection title="Summary">
+                {attendanceAvailable ? (
+                  <DataList className="rounded-none border-x-0 bg-transparent">
+                    <ListRow
+                      title="Regular time"
+                      trailing={
+                        <span className="font-semibold tabular-nums">
+                          {minutes(totals.regular)}
+                        </span>
+                      }
+                    />
+                    <ListRow
+                      title="Overtime"
+                      trailing={
+                        <span className="font-semibold tabular-nums">
+                          {minutes(totals.overtime)}
+                        </span>
+                      }
+                    />
+                    <ListRow
+                      title="Exceptions"
+                      description={
+                        totals.pending
+                          ? `${totals.pending} record${totals.pending === 1 ? "" : "s"} need review`
+                          : undefined
+                      }
+                      trailing={
+                        <span
+                          className={cn(
+                            "font-semibold tabular-nums",
+                            totals.exceptions > 0 &&
+                              "text-amber-700 dark:text-amber-400",
+                          )}
+                        >
+                          {totals.exceptions}
+                        </span>
+                      }
+                    />
+                  </DataList>
+                ) : (
+                  <p className="border-y py-3 text-sm text-muted-foreground">
+                    Attendance information is unavailable for your access level.
+                  </p>
+                )}
+              </WorkforceSection>
+              <div className="space-y-6">
+                {attendanceAvailable ? (
+                  <WorkforceSection
+                    title="Timesheet"
+                    description="Attendance records for the selected period."
+                  >
+                    <AttendanceList
+                      entries={entries}
+                      canManage={canManageAttendance}
+                      onAction={updateAttendance}
+                      onCorrect={openAttendanceCorrection}
+                    />
+                  </WorkforceSection>
+                ) : null}
+                <div className="space-y-5">
+                  <ScheduleCard
+                    schedules={schedules}
+                    templates={templates}
+                    available={scheduleAvailable}
+                  />
+                  <LeaveCard leaves={leaves} available={leaveAvailable} />
+                </div>
+              </div>
+            </section>
+          ) : null}
+
+          {activeSection === "financials" && canViewPayroll ? (
+            <section aria-label="Financials">
+              <div className="grid min-w-0 gap-7 lg:grid-cols-[minmax(0,1.2fr)_minmax(320px,.8fr)] lg:items-start">
+                <div className="min-w-0 space-y-7">
+                  <WorkforceSection
+                    title="Compensation"
+                    className="[&>div:first-child]:flex-row [&>div:first-child]:items-center [&>div:first-child]:justify-between"
+                    actions={
+                      canManageStaff ? (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => openStaffEditor("employment")}
+                        >
+                          <Edit3 className="mr-2 h-4 w-4" />
+                          Edit
+                        </Button>
+                      ) : null
+                    }
+                  >
+                    {profile ? (
+                      <div className="border-y py-4">
+                        <p className="text-2xl font-semibold tabular-nums">
+                          {money(profile.salary_amount)}
+                          <span className="ml-1 text-sm font-normal text-muted-foreground">
+                            / {salaryFrequency(profile.salary_type)}
+                          </span>
+                        </p>
+                        <div className="mt-4 grid gap-x-6 gap-y-3 text-sm sm:grid-cols-3">
+                          <InfoRow
+                            label="Weekly hours"
+                            value={
+                              profile.weekly_hours == null
+                                ? "Not set"
+                                : String(profile.weekly_hours)
+                            }
+                          />
+                          <InfoRow
+                            label="Daily hours"
+                            value={
+                              profile.daily_hours == null
+                                ? "Not set"
+                                : String(profile.daily_hours)
+                            }
+                          />
+                          <InfoRow
+                            label="Effective from"
+                            value={
+                              salaryHistory.find(
+                                (record) => !record.effective_to,
+                              )
+                                ? dateOnly(
+                                    salaryHistory.find(
+                                      (record) => !record.effective_to,
+                                    )!.effective_from,
+                                  )
+                                : "Not recorded"
+                            }
+                          />
+                        </div>
+                      </div>
+                    ) : (
+                      <SharedEmptyState
+                        title="No compensation profile"
+                        description="Create an employment profile before this employee can be paid."
+                        actionLabel={
+                          canManageStaff ? "Create profile" : undefined
+                        }
+                        onAction={
+                          canManageStaff
+                            ? () => openStaffEditor("employment")
+                            : undefined
+                        }
+                        className="min-h-40"
+                      />
+                    )}
+                  </WorkforceSection>
+                  {profile ? (
+                    <StaffSalaryCard
+                      staffId={profile.id}
+                      canManage={canManagePayroll}
+                      attendanceBasedSalary={
+                        profile.attendance_based_salary ?? false
+                      }
+                      selfDiscountPercent={profile.self_discount_percent}
+                      compensationHistory={salaryHistory}
+                      onSettingsChanged={() => loadWorkspace(true)}
+                    />
+                  ) : null}
+                </div>
+                {profile ? (
+                  <div className="min-w-0 lg:sticky lg:top-24">
+                    <StaffCreditCard
+                      staffId={profile.id}
+                      canManage={canManagePayroll}
+                      discountLimitAmount={profile.discount_limit_amount}
+                      onDiscountLimitChanged={updateDiscountLimit}
+                    />
+                  </div>
+                ) : null}
+              </div>
+            </section>
+          ) : null}
+
+          {activeSection === "performance" ? (
+            <section className="space-y-5" aria-label="Performance">
+              <EntitlementGate entitlement="staff.performance.enabled" legacyFallback>
+                <StaffPerformanceCard userId={userId} />
+              </EntitlementGate>
+            </section>
+          ) : null}
+
+          {activeSection === "employment" ? (
+            <section className="space-y-5" aria-label="Employment">
+              <div className="grid gap-5 lg:grid-cols-2">
+                <Card className="border-0 shadow-none">
+                  <CardHeader className="flex flex-row items-start justify-between border-b px-0 pb-3 pt-0">
+                    <div>
+                      <CardTitle>Profile</CardTitle>
+                    </div>
+                    {canManageStaff ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => openStaffEditor("profile")}
+                      >
+                        <Edit3 className="mr-2 h-4 w-4" />
+                        Edit
+                      </Button>
+                    ) : null}
+                  </CardHeader>
+                  <CardContent className="grid gap-4 px-0 pb-0 pt-4 sm:grid-cols-2">
+                    <InfoLine
+                      icon={UserRound}
+                      label="Status"
+                      value={staff.is_active === false ? "Inactive" : "Active"}
+                    />
+                    <InfoLine
+                      icon={Mail}
+                      label="Email"
+                      value={staff.email || "Not set"}
+                    />
+                    <InfoLine
+                      icon={Phone}
+                      label="Phone"
+                      value={profile?.phone || "Not set"}
+                    />
+                    <InfoLine
+                      icon={MapPin}
+                      label="Address"
+                      value={profile?.address || "Not set"}
+                    />
+                    <InfoLine
+                      icon={BriefcaseBusiness}
+                      label="Primary role"
+                      value={staff.primary_role || staff.role || "Staff"}
+                    />
+                    <InfoLine
+                      icon={CalendarDays}
+                      label="Joined"
+                      value={
+                        staff.created_at ? dateOnly(staff.created_at) : "—"
+                      }
+                    />
+                  </CardContent>
+                </Card>
+                <Card className="border-0 shadow-none">
+                  <CardHeader className="flex flex-row items-start justify-between border-b px-0 pb-3 pt-0">
+                    <div>
+                      <CardTitle>Pay</CardTitle>
+                    </div>
+                    {canManageStaff ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => openStaffEditor("employment")}
+                      >
+                        <Edit3 className="mr-2 h-4 w-4" />
+                        {profile ? "Edit" : "Create"}
+                      </Button>
+                    ) : null}
+                  </CardHeader>
+                  <CardContent className="px-0 pb-0 pt-4">
+                    {profile ? (
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <InfoLine
+                          icon={Banknote}
+                          label="Salary"
+                          value={`${money(profile.salary_amount)} / ${profile.salary_type}`}
+                        />
+                        <InfoLine
+                          icon={Clock3}
+                          label="Weekly hours"
+                          value={
+                            profile.weekly_hours == null
+                              ? "Not set"
+                              : String(profile.weekly_hours)
+                          }
+                        />
+                        <InfoLine
+                          icon={Clock3}
+                          label="Daily hours"
+                          value={
+                            profile.daily_hours == null
+                              ? "Not set"
+                              : String(profile.daily_hours)
+                          }
+                        />
+                      </div>
+                    ) : (
+                      <SharedEmptyState
+                        title="No employment profile"
+                        description="Attendance and payroll need a linked staff profile."
+                        actionLabel={
+                          canManageStaff ? "Create profile" : undefined
+                        }
+                        onAction={
+                          canManageStaff
+                            ? () => openStaffEditor("employment")
+                            : undefined
+                        }
+                        className="min-h-40"
+                      />
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+              <Card className="border-0 shadow-none">
+                <CardHeader className="flex flex-row items-start justify-between gap-4 border-b px-0 pb-3 pt-0">
+                  <div>
+                    <CardTitle className="text-base">Lifecycle</CardTitle>
+                    <CardDescription>Employment periods.</CardDescription>
+                  </div>
+                  {canManageStaff && employmentHistory?.can_rehire ? (
+                    <Button
+                      size="sm"
+                      disabled={rehiring}
+                      onClick={() => void rehireStaff()}
+                    >
+                      {rehiring ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <BriefcaseBusiness className="mr-2 h-4 w-4" />
+                      )}
+                      Rehire
+                    </Button>
+                  ) : null}
+                </CardHeader>
+                <CardContent className="space-y-3 px-0 pb-0 pt-2">
+                  {employmentHistory?.rehire_requires_invitation ? (
+                    <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-sm">
+                      <p className="font-semibold">
+                        Verified invitation required
+                      </p>
+                      <p className="mt-1 text-muted-foreground">
+                        This person is no longer a member. Invite their verified
+                        email; approval or acceptance automatically starts a new
+                        employment period while keeping every previous period
+                        historical.
+                      </p>
+                    </div>
+                  ) : null}
+                  {employmentHistory?.rehire_blocked_reason &&
+                  !employmentHistory.can_rehire ? (
+                    <p className="text-sm text-muted-foreground">
+                      {employmentHistory.rehire_blocked_reason}
+                    </p>
+                  ) : null}
+                  {employmentHistory?.periods?.length ? (
+                    employmentHistory.periods.map((period) => (
+                      <div
+                        key={period.id}
+                        className="flex flex-col gap-2 border-b py-3 last:border-b-0 sm:flex-row sm:items-center sm:justify-between"
+                      >
+                        <div>
+                          <p className="font-semibold">
+                            {dateOnly(period.started_on)} to{" "}
+                            {period.ended_on
+                              ? dateOnly(period.ended_on)
+                              : "Present"}
+                          </p>
+                          {period.end_reason ? (
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              {period.end_reason}
+                            </p>
+                          ) : null}
+                        </div>
+                        <Badge
+                          variant={period.is_current ? "secondary" : "outline"}
+                          className="self-start whitespace-nowrap"
+                        >
+                          {period.is_current ? "Current" : "Historical"}
+                        </Badge>
+                      </div>
+                    ))
+                  ) : (
+                    <SharedEmptyState
+                      title="No employment periods"
+                      description="A period will be recorded when employment begins."
+                      className="min-h-40"
+                    />
+                  )}
+                </CardContent>
+              </Card>
+              {canManageStaff &&
+              !activeRoles.some((role) => role.toLowerCase() === "admin") ? (
+                <details className="group border-t pt-1">
+                  <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between py-2 text-sm font-semibold">
+                    Restaurant membership
+                    <ChevronRight className="h-4 w-4 text-muted-foreground transition-transform group-open:rotate-90" />
+                  </summary>
+                  <div className="border-l-2 border-destructive/60 py-2 pl-4">
+                    <p className="max-w-2xl text-sm text-muted-foreground">
+                      Remove restaurant access without disabling the account or
+                      deleting attendance, payroll, or audit history.
+                    </p>
+                    <Button
+                      className="mt-3"
+                      variant="destructive"
+                      onClick={removeStaffMembership}
+                    >
+                      <UserX className="mr-2 h-4 w-4" />
+                      Remove from restaurant
+                    </Button>
+                  </div>
+                </details>
+              ) : null}
+            </section>
+          ) : null}
+
+          {activeSection === "access" ? (
+            <section className="space-y-5" aria-label="Access">
+              <WorkforceSection
+                title="Assigned role"
+                actions={
+                  canManageStaff ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => openStaffEditor("access")}
+                    >
+                      Edit
+                    </Button>
+                  ) : null
+                }
+              >
+                <DataList className="rounded-none border-x-0 bg-transparent">
+                  <ListRow
+                    leading={<ShieldCheck className="h-4 w-4" />}
+                    title={readableRole(staff.primary_role || staff.role)}
+                    description={roleDescription(
+                      staff.primary_role || staff.role,
+                    )}
+                  />
+                  <ListRow
+                    leading={<Shield className="h-4 w-4" />}
+                    title="Permissions"
+                    description="Effective access from this role and approved exceptions"
+                    trailing={
+                      <span className="flex items-center gap-2">
+                        <span className="font-semibold tabular-nums">
+                          {staff.permissions?.length || 0}
+                        </span>
+                        {canManageStaff ? (
+                          <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                        ) : null}
+                      </span>
+                    }
+                    interactive={canManageStaff}
+                    role={canManageStaff ? "button" : undefined}
+                    tabIndex={canManageStaff ? 0 : undefined}
+                    onClick={() => canManageStaff && setPermissionsOpen(true)}
+                    onKeyDown={(event) => {
+                      if (
+                        canManageStaff &&
+                        (event.key === "Enter" || event.key === " ")
+                      ) {
+                        event.preventDefault();
+                        setPermissionsOpen(true);
+                      }
+                    }}
+                  />
+                </DataList>
+              </WorkforceSection>
+              <WorkforceSection title="Restrictions">
+                <DataList className="rounded-none border-x-0 bg-transparent">
+                  {scopeKeys.map((key) => {
+                    const scope = scopesByKey[key];
+                    const active = Boolean(scopesByKey[key]);
+                    return (
+                      <ListRow
+                        key={key}
+                        title={scopeLabels[key]}
+                        description={
+                          active
+                            ? scope?.max_lookback_days
+                              ? `Limited to ${scope.max_lookback_days} days`
+                              : [scope?.window_start, scope?.window_end]
+                                  .filter(Boolean)
+                                  .join(" to ")
+                            : "No historical limit"
+                        }
+                        trailing={
+                          <span className="flex items-center gap-2">
+                            <span className="text-sm font-medium">
+                              {active
+                                ? scope?.max_lookback_days
+                                  ? `${scope.max_lookback_days} days`
+                                  : "Custom dates"
+                                : "Full history"}
+                            </span>
+                            {canManageStaff ? (
+                              <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                            ) : null}
+                          </span>
+                        }
+                        interactive={canManageStaff}
+                        role={canManageStaff ? "button" : undefined}
+                        tabIndex={canManageStaff ? 0 : undefined}
+                        onClick={() => canManageStaff && setScopeEditor(key)}
+                        onKeyDown={(event) => {
+                          if (
+                            canManageStaff &&
+                            (event.key === "Enter" || event.key === " ")
+                          ) {
+                            event.preventDefault();
+                            setScopeEditor(key);
+                          }
+                        }}
+                      />
+                    );
+                  })}
+                </DataList>
+              </WorkforceSection>
+            </section>
+          ) : null}
+
+          {activeSection === "activity" ? (
+            <section aria-label="Activity">
+              <WorkforceSection
+                title="Recent activity"
+                description="Attendance and compensation changes."
+              >
+                <ActivityTimeline
+                  entries={entries}
+                  salaryHistory={salaryHistory}
+                />
+              </WorkforceSection>
+            </section>
+          ) : null}
+        </StaffDetailContent>
+      </div>
+
+      <Dialog
+        open={Boolean(scopeEditor)}
+        onOpenChange={(open) => !open && setScopeEditor(null)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {scopeEditor ? scopeLabels[scopeEditor] : "Module restriction"}
+            </DialogTitle>
+            <DialogDescription>
+              Limit historical visibility. Leave the restriction removed to
+              allow the complete available history.
+            </DialogDescription>
+          </DialogHeader>
+          {scopeEditor && activeScopeDraft ? (
+            <div className="space-y-4 py-2">
+              <FormField label="History available">
+                <Select
+                  value={
+                    activeScopeDraft.window_start || activeScopeDraft.window_end
+                      ? "custom"
+                      : ["7", "30", "40", "90", "365"].includes(
+                            activeScopeDraft.max_lookback_days,
+                          )
+                        ? activeScopeDraft.max_lookback_days
+                        : activeScopeDraft.max_lookback_days
+                          ? "custom"
+                          : "full"
+                  }
+                  onValueChange={(value) =>
+                    setScopeDrafts((current) => ({
+                      ...current,
+                      [scopeEditor]: {
+                        max_lookback_days:
+                          value === "full"
+                            ? ""
+                            : value === "custom"
+                              ? "custom"
+                              : value,
+                        window_start: "",
+                        window_end: "",
+                      },
+                    }))
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="full">Full history</SelectItem>
+                    <SelectItem value="7">7 days</SelectItem>
+                    <SelectItem value="30">30 days</SelectItem>
+                    <SelectItem value="40">40 days</SelectItem>
+                    <SelectItem value="90">90 days</SelectItem>
+                    <SelectItem value="365">1 year</SelectItem>
+                    <SelectItem value="custom">Custom limit</SelectItem>
+                  </SelectContent>
+                </Select>
+              </FormField>
+              {activeScopeDraft.window_start ||
+              activeScopeDraft.window_end ||
+              (activeScopeDraft.max_lookback_days &&
+                !["7", "30", "40", "90", "365"].includes(
+                  activeScopeDraft.max_lookback_days,
+                )) ? (
+                <>
+                  <FormField label="Custom lookback days">
+                    <Input
+                      inputMode="numeric"
+                      placeholder="For example: 120"
+                      value={
+                        activeScopeDraft.max_lookback_days === "custom"
+                          ? ""
+                          : activeScopeDraft.max_lookback_days
+                      }
+                      onChange={(event) =>
+                        setScopeDrafts((current) => ({
+                          ...current,
+                          [scopeEditor]: {
+                            ...current[scopeEditor],
+                            max_lookback_days: event.target.value,
+                          },
+                        }))
+                      }
+                    />
+                  </FormField>
+                  <div className="grid grid-cols-2 gap-3">
+                    <FormField label="Start date">
+                      <Input
+                        type="date"
+                        value={activeScopeDraft.window_start}
+                        onChange={(event) =>
+                          setScopeDrafts((current) => ({
+                            ...current,
+                            [scopeEditor]: {
+                              ...current[scopeEditor],
+                              window_start: event.target.value,
+                            },
+                          }))
+                        }
+                      />
+                    </FormField>
+                    <FormField label="End date">
+                      <Input
+                        type="date"
+                        value={activeScopeDraft.window_end}
+                        onChange={(event) =>
+                          setScopeDrafts((current) => ({
+                            ...current,
+                            [scopeEditor]: {
+                              ...current[scopeEditor],
+                              window_end: event.target.value,
+                            },
+                          }))
+                        }
+                      />
+                    </FormField>
+                  </div>
+                </>
+              ) : null}
+            </div>
+          ) : null}
+          <DialogFooter className="gap-2 sm:gap-0">
+            {scopeEditor && scopesByKey[scopeEditor] ? (
+              <Button
+                type="button"
+                variant="outline"
+                disabled={scopeBusy === scopeEditor}
+                onClick={() => void removeScope(scopeEditor)}
+              >
+                Remove restriction
+              </Button>
+            ) : null}
+            <Button
+              type="button"
+              disabled={!scopeEditor || scopeBusy === scopeEditor}
+              onClick={() => scopeEditor && void saveScope(scopeEditor)}
+            >
+              {scopeEditor && scopeBusy === scopeEditor ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : null}
+              Save restriction
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(correctionEntry)}
+        onOpenChange={(open) => {
+          if (!open && !correctionSaving) setCorrectionEntry(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Correct attendance time</DialogTitle>
+            <DialogDescription>
+              The record will return to draft and must be reviewed again before
+              payroll.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-2 sm:grid-cols-2">
+            <FormField label="Clock in">
+              <Input
+                type="datetime-local"
+                value={correctionForm.clockIn}
+                onChange={(event) =>
+                  setCorrectionForm((current) => ({
+                    ...current,
+                    clockIn: event.target.value,
+                  }))
+                }
+              />
+            </FormField>
+            <FormField label="Clock out">
+              <Input
+                type="datetime-local"
+                value={correctionForm.clockOut}
+                onChange={(event) =>
+                  setCorrectionForm((current) => ({
+                    ...current,
+                    clockOut: event.target.value,
+                  }))
+                }
+              />
+            </FormField>
+            <div className="sm:col-span-2">
+              <FormField label="Correction reason">
+                <Textarea
+                  value={correctionForm.reason}
+                  onChange={(event) =>
+                    setCorrectionForm((current) => ({
+                      ...current,
+                      reason: event.target.value,
+                    }))
+                  }
+                  placeholder="For example: employee forgot to clock out"
+                />
+              </FormField>
             </div>
           </div>
-          <div className="flex flex-wrap gap-2 lg:justify-end">
-            <Button variant="outline" onClick={() => void loadWorkspace(true)} disabled={refreshing}>{refreshing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}Refresh</Button>
-            {canManageStaff ? <Button onClick={() => setAccountOpen(true)}><Edit3 className="mr-2 h-4 w-4" />Edit staff</Button> : null}
-          </div>
-        </div>
-        <div className="grid border-t bg-background/70 sm:grid-cols-2 lg:grid-cols-4">
-          <HeroMetric icon={Clock3} label="Attendance today" value={todayEntry ? (todayEntry.status === "open" ? "Clocked in" : "Completed") : "No attendance"} tone={todayEntry ? "good" : "neutral"} />
-          <HeroMetric icon={FileClock} label="Attendance review" value={totals.pending ? `${totals.pending} unresolved` : "Ready"} tone={totals.pending ? "warn" : "good"} />
-          <HeroMetric icon={CalendarDays} label="Pending leave" value={pendingLeaveCount ? String(pendingLeaveCount) : "None"} tone={pendingLeaveCount ? "warn" : "neutral"} />
-          <HeroMetric icon={Banknote} label="Latest net pay" value={latestPayroll ? money(latestPayroll.item.net_pay) : "No payroll"} tone="neutral" />
-        </div>
-      </section>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              disabled={correctionSaving}
+              onClick={() => setCorrectionEntry(null)}
+            >
+              Cancel
+            </Button>
+            <Button
+              disabled={correctionSaving}
+              onClick={saveAttendanceCorrection}
+            >
+              {correctionSaving ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : null}
+              Save correction
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-      {workspaceWarnings.length ? <div className="space-y-2">{workspaceWarnings.map((warning) => <div key={warning} className="flex items-start gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-sm"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" /><span>{warning}</span></div>)}</div> : null}
+      <StaffEditDialog
+        open={staffEditOpen}
+        onOpenChange={setStaffEditOpen}
+        initialSection={staffEditSection}
+        initialValues={staffEditInitialValues}
+        roles={staffEditRoles}
+        hasEmploymentProfile={Boolean(profile)}
+        canChangeGlobalStatus={canChangeGlobalStatus}
+        effectivePermissionCount={staff.permissions?.length || 0}
+        saving={staffEditSaving}
+        onSave={saveStaffEditor}
+        onOpenPermissions={() => {
+          setStaffEditOpen(false);
+          window.setTimeout(() => setPermissionsOpen(true), 0);
+        }}
+      />
 
-      <Tabs defaultValue={["overview", "attendance", "payroll", "employment", "access", "activity"].includes(searchParams.get("tab") || "") ? searchParams.get("tab")! : "overview"} className="space-y-5">
-        <div className="overflow-x-auto pb-1"><TabsList className="h-auto min-w-max justify-start rounded-xl bg-muted/70 p-1"><TabsTrigger value="overview">Overview</TabsTrigger>{canViewAttendance ? <TabsTrigger value="attendance">Attendance</TabsTrigger> : null}{canViewPayroll ? <TabsTrigger value="payroll">Payroll</TabsTrigger> : null}<TabsTrigger value="employment">Employment</TabsTrigger><TabsTrigger value="access">Access</TabsTrigger><TabsTrigger value="activity">Activity</TabsTrigger></TabsList></div>
+      <Dialog
+        open={permissionsOpen}
+        onOpenChange={(open) => {
+          if (permissionsSaving) return;
+          setPermissionsOpen(open);
+          if (!open) setPermissionQuery("");
+        }}
+      >
+        <DialogContent className="flex h-[100dvh] max-h-[100dvh] w-screen max-w-none flex-col gap-0 overflow-hidden border-0 p-0 sm:rounded-none lg:h-auto lg:max-h-[min(90vh,820px)] lg:max-w-2xl lg:rounded-xl lg:border">
+          <DialogHeader className="shrink-0 border-b px-5 py-4 text-left sm:px-6">
+            <DialogTitle>Permissions</DialogTitle>
+            <DialogDescription>
+              Role permissions are inherited. Add direct access only for work
+              outside {staff.name}&apos;s assigned role.
+            </DialogDescription>
+          </DialogHeader>
 
-        <TabsContent value="overview" className="space-y-5">
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <SummaryCard icon={Clock3} label="Regular time" value={minutes(totals.regular)} helper={`${dateFrom} to ${dateTo}`} />
-            <SummaryCard icon={History} label="Overtime" value={minutes(totals.overtime)} helper={`${entries.length} attendance records`} />
-            <SummaryCard icon={AlertTriangle} label="Exceptions" value={String(totals.exceptions)} helper={totals.exceptions ? "Needs manager attention" : "No recorded exceptions"} />
-            <SummaryCard icon={WalletCards} label="Compensation" value={profile ? money(profile.salary_amount) : "Not configured"} helper={profile ? `${profile.salary_type} • effective salary history enabled` : "Create a payroll profile"} />
-          </div>
-          <div className="grid gap-5 xl:grid-cols-[1.2fr_.8fr]">
-            <Card><CardHeader><CardTitle className="text-base">Recent attendance</CardTitle><CardDescription>Latest staff-specific records and approval state.</CardDescription></CardHeader><CardContent><AttendanceList entries={entries.slice(0, 5)} canManage={canManageAttendance} onAction={updateAttendance} onCorrect={openAttendanceCorrection} compact /></CardContent></Card>
-            <div className="space-y-5">
-              <Card><CardHeader><CardTitle className="text-base">Current employment</CardTitle></CardHeader><CardContent className="space-y-3"><InfoLine icon={Mail} label="Email" value={staff.email || "Not set"} /><InfoLine icon={Phone} label="Phone" value={profile?.phone || "Not set"} /><InfoLine icon={MapPin} label="Address" value={profile?.address || "Not set"} /><InfoLine icon={WalletCards} label="Account" value={profile?.account_number || "Not configured"} /></CardContent></Card>
-              <Card><CardHeader><CardTitle className="text-base">Payroll readiness</CardTitle><CardDescription>Quick signal; payroll preview remains the authoritative check.</CardDescription></CardHeader><CardContent><div className={`rounded-xl border p-4 ${profile && totals.pending === 0 && schedules.length > 0 ? "border-emerald-500/30 bg-emerald-500/10" : "border-amber-500/30 bg-amber-500/10"}`}><div className="flex items-center gap-2 font-semibold">{profile && totals.pending === 0 && schedules.length > 0 ? <CheckCircle2 className="h-5 w-5 text-emerald-600" /> : <AlertTriangle className="h-5 w-5 text-amber-600" />}{profile && totals.pending === 0 && schedules.length > 0 ? "No obvious staff blockers" : "Setup or review required"}</div><p className="mt-2 text-sm text-muted-foreground">{!profile ? "Create a compensation profile." : totals.pending ? "Resolve draft, pending, or correction-required attendance." : schedules.length === 0 && profile.salary_type !== "hourly" ? "Assign an effective work schedule." : "Run payroll preview to validate salary dates, leave, holidays, and period overlap."}</p></div></CardContent></Card>
+          <div className="shrink-0 border-b px-5 py-3 sm:px-6">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={permissionQuery}
+                onChange={(event) => setPermissionQuery(event.target.value)}
+                placeholder="Search permissions"
+                className="h-11 pl-9"
+              />
             </div>
           </div>
-        </TabsContent>
 
-        {canViewAttendance ? <TabsContent value="attendance" className="space-y-5">
-          <Card><CardContent className="flex flex-col gap-4 p-4 sm:flex-row sm:items-end sm:justify-between"><div><h2 className="font-semibold">Attendance period</h2><p className="text-sm text-muted-foreground">View and manage only {staff.name}&apos;s time records.</p></div><div className="grid grid-cols-2 gap-2"><div><Label className="text-xs">From</Label><Input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} /></div><div><Label className="text-xs">To</Label><Input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} /></div></div></CardContent></Card>
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><SummaryCard icon={Clock3} label="Regular" value={minutes(totals.regular)} /><SummaryCard icon={History} label="Overtime" value={minutes(totals.overtime)} /><SummaryCard icon={FileClock} label="Needs review" value={String(totals.pending)} /><SummaryCard icon={AlertTriangle} label="Exceptions" value={String(totals.exceptions)} /></div>
-          <div className="grid gap-5 xl:grid-cols-[1.35fr_.65fr]">
-            <Card><CardHeader><CardTitle>Timesheet</CardTitle><CardDescription>Corrections remain auditable and exported records stay locked to payroll snapshots.</CardDescription></CardHeader><CardContent><AttendanceList entries={entries} canManage={canManageAttendance} onAction={updateAttendance} onCorrect={openAttendanceCorrection} /></CardContent></Card>
-            <div className="space-y-5"><ScheduleCard schedules={schedules} templates={templates} /><LeaveCard leaves={leaves} /></div>
-          </div>
-        </TabsContent> : null}
+          <ScrollArea className="min-h-0 flex-1 px-5 sm:px-6">
+            <div className="space-y-7 py-5">
+              {Object.keys(groupedPermissions).length ? (
+                Object.entries(groupedPermissions).map(
+                  ([groupName, permissions]) => (
+                    <section key={groupName}>
+                      <h3 className="mb-2 text-sm font-semibold capitalize">
+                        {groupName}
+                      </h3>
+                      <div className="divide-y border-y">
+                        {permissions.map((permission: any) => {
+                          const inherited = assignedRolePermissions.has(
+                            permission.key,
+                          );
+                          const checked =
+                            inherited ||
+                            selectedPermissions.includes(permission.key);
+                          return (
+                            <label
+                              key={permission.key}
+                              className="flex min-h-14 items-start gap-3 py-3"
+                            >
+                              <Checkbox
+                                className="mt-0.5"
+                                checked={checked}
+                                disabled={inherited}
+                                onCheckedChange={(nextChecked) =>
+                                  setSelectedPermissions((current) =>
+                                    nextChecked
+                                      ? Array.from(
+                                          new Set([...current, permission.key]),
+                                        )
+                                      : current.filter(
+                                          (item) => item !== permission.key,
+                                        ),
+                                  )
+                                }
+                              />
+                              <span className="min-w-0 flex-1">
+                                <span className="flex flex-wrap items-center gap-2">
+                                  <span className="text-sm font-medium">
+                                    {permissionTitle(permission)}
+                                  </span>
+                                  <Badge variant="outline">
+                                    {permissionMode(permission.key)}
+                                  </Badge>
+                                  <Badge
+                                    variant={
+                                      inherited ? "secondary" : "outline"
+                                    }
+                                  >
+                                    {inherited ? "Inherited" : "Direct"}
+                                  </Badge>
+                                </span>
+                                {permission.description ? (
+                                  <span className="mt-1 block text-xs text-muted-foreground">
+                                    {permission.description}
+                                  </span>
+                                ) : null}
+                              </span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </section>
+                  ),
+                )
+              ) : (
+                <SharedEmptyState
+                  title="No permissions found"
+                  description="Try a different permission or module name."
+                  className="min-h-48"
+                />
+              )}
+            </div>
+          </ScrollArea>
 
-        {canViewPayroll ? <TabsContent value="payroll" className="space-y-5">
-          {profile ? <StaffPayrollBalanceCard staffId={profile.id} canManage={canManagePayroll} payrollHistory={payrollHistory} /> : null}
-          <div className="grid gap-5 lg:grid-cols-[.75fr_1.25fr]">
-            <Card><CardHeader className="flex flex-row items-start justify-between"><div><CardTitle>Current compensation</CardTitle><CardDescription>Effective salary used for new payroll periods.</CardDescription></div>{canManageStaff ? <Button size="sm" variant="outline" onClick={openProfileEditor}><Edit3 className="mr-2 h-4 w-4" />Edit</Button> : null}</CardHeader><CardContent>{profile ? <div className="space-y-3"><div className="rounded-2xl bg-primary/10 p-4"><p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{profile.salary_type}</p><p className="mt-1 text-2xl font-bold">{money(profile.salary_amount)}</p></div><InfoRow label="Weekly hours" value={profile.weekly_hours == null ? "—" : String(profile.weekly_hours)} /><InfoRow label="Daily hours" value={profile.daily_hours == null ? "—" : String(profile.daily_hours)} /><InfoRow label="Salary records" value={String(salaryHistory.length)} /></div> : <EmptyState title="No compensation profile" description="Create a payroll profile before this employee can be included in payroll." action={canManageStaff ? <Button onClick={openProfileEditor}>Create profile</Button> : null} />}</CardContent></Card>
-            <Card><CardHeader><CardTitle>Salary history</CardTitle><CardDescription>Effective-dated compensation changes; periods crossing a change must be split.</CardDescription></CardHeader><CardContent><div className="space-y-3">{salaryHistory.length ? salaryHistory.map((record) => <div key={record.id} className="flex flex-col gap-2 rounded-xl border p-4 sm:flex-row sm:items-center sm:justify-between"><div><p className="font-semibold capitalize">{record.salary_type} • {money(record.salary_amount)}</p><p className="text-sm text-muted-foreground">{dateOnly(record.effective_from)} to {record.effective_to ? dateOnly(record.effective_to) : "Current"}</p></div><div className="sm:text-right"><Badge variant={record.effective_to ? "outline" : "default"}>{record.effective_to ? "Historical" : "Current"}</Badge><p className="mt-1 text-xs text-muted-foreground">{record.reason || "No change reason"}</p></div></div>) : <EmptyState title="No salary history" description="A salary record will appear after the profile is created." />}</div></CardContent></Card>
-          </div>
-        </TabsContent> : null}
+          <DialogFooter className="shrink-0 gap-2 border-t bg-background px-5 py-4 sm:px-6">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={permissionsSaving}
+              onClick={() => setPermissionsOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button onClick={savePermissions} disabled={permissionsSaving}>
+              {permissionsSaving ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : null}
+              Save direct access
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </AppPage>
+  );
+}
 
-        <TabsContent value="employment" className="space-y-5">
-          <div className="grid gap-5 lg:grid-cols-2">
-            <Card><CardHeader className="flex flex-row items-start justify-between"><div><CardTitle>Account details</CardTitle><CardDescription>Identity and restaurant login information.</CardDescription></div>{canManageStaff ? <Button size="sm" variant="outline" onClick={() => setAccountOpen(true)}><Edit3 className="mr-2 h-4 w-4" />Edit</Button> : null}</CardHeader><CardContent className="space-y-4"><InfoLine icon={UserRound} label="Full name" value={staff.name} /><InfoLine icon={Mail} label="Email" value={staff.email || "Not set"} /><InfoLine icon={BriefcaseBusiness} label="Primary role" value={staff.primary_role || staff.role || "Staff"} /><InfoLine icon={CalendarDays} label="Joined" value={staff.created_at ? dateOnly(staff.created_at) : "—"} /></CardContent></Card>
-            <Card><CardHeader className="flex flex-row items-start justify-between"><div><CardTitle>Employment and pay profile</CardTitle><CardDescription>Contact, account, salary, and expected hours.</CardDescription></div>{canManageStaff ? <Button size="sm" variant="outline" onClick={openProfileEditor}><Edit3 className="mr-2 h-4 w-4" />{profile ? "Edit" : "Create"}</Button> : null}</CardHeader><CardContent>{profile ? <div className="grid gap-4 sm:grid-cols-2"><InfoLine icon={WalletCards} label="Account number" value={profile.account_number} /><InfoLine icon={Banknote} label="Salary" value={`${money(profile.salary_amount)} / ${profile.salary_type}`} /><InfoLine icon={Phone} label="Phone" value={profile.phone || "Not set"} /><InfoLine icon={MapPin} label="Address" value={profile.address || "Not set"} /><InfoLine icon={Clock3} label="Weekly hours" value={profile.weekly_hours == null ? "Not set" : String(profile.weekly_hours)} /><InfoLine icon={Clock3} label="Daily hours" value={profile.daily_hours == null ? "Not set" : String(profile.daily_hours)} /></div> : <EmptyState title="No employment profile" description="Attendance and payroll need a linked staff profile." action={canManageStaff ? <Button onClick={openProfileEditor}>Create profile</Button> : null} />}</CardContent></Card>
-          </div>
-          <Card><CardHeader className="flex flex-row items-start justify-between gap-4"><div><CardTitle className="text-base">Employment lifecycle</CardTitle><CardDescription>Restaurant-scoped work periods. Ending or restarting employment never rewrites prior attendance or payroll.</CardDescription></div>{canManageStaff && employmentHistory?.can_rehire ? <Button size="sm" disabled={rehiring} onClick={() => void rehireStaff()}>{rehiring ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <BriefcaseBusiness className="mr-2 h-4 w-4" />}Rehire</Button> : null}</CardHeader><CardContent className="space-y-3">{employmentHistory?.rehire_requires_invitation ? <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-sm"><p className="font-semibold">Verified invitation required</p><p className="mt-1 text-muted-foreground">This person is no longer a member. Invite their verified email; approval or acceptance automatically starts a new employment period while keeping every previous period historical.</p></div> : null}{employmentHistory?.rehire_blocked_reason && !employmentHistory.can_rehire ? <p className="text-sm text-muted-foreground">{employmentHistory.rehire_blocked_reason}</p> : null}{employmentHistory?.periods?.length ? employmentHistory.periods.map((period) => <div key={period.id} className="flex flex-col gap-2 rounded-xl border p-4 sm:flex-row sm:items-center sm:justify-between"><div><p className="font-semibold">{dateOnly(period.started_on)} to {period.ended_on ? dateOnly(period.ended_on) : "Present"}</p><p className="mt-1 text-xs text-muted-foreground">Employment period #{period.id}{period.end_reason ? ` • ${period.end_reason}` : ""}</p></div><Badge variant={period.is_current ? "default" : "outline"}>{period.is_current ? "Current" : "Historical"}</Badge></div>) : <EmptyState title="No employment periods" description="A period will be recorded when employment begins." />}</CardContent></Card>
-          {canManageStaff && !activeRoles.some((role) => role.toLowerCase() === "admin") ? <Card><CardHeader><CardTitle className="text-base">Restaurant membership</CardTitle><CardDescription>Remove restaurant access without disabling the person&apos;s account or deleting attendance, payroll, or audit history.</CardDescription></CardHeader><CardContent><Button variant="outline" onClick={removeStaffMembership}><UserX className="mr-2 h-4 w-4" />Remove from restaurant</Button></CardContent></Card> : null}
-        </TabsContent>
-
-        <TabsContent value="access" className="space-y-5">
-          <Card><CardHeader className="flex flex-row items-start justify-between"><div><CardTitle>Roles and permissions</CardTitle><CardDescription>Role access stays separate from sensitive attendance and payroll data.</CardDescription></div>{canManageStaff ? <Button size="sm" onClick={() => setPermissionsOpen(true)}><ShieldCheck className="mr-2 h-4 w-4" />Manage</Button> : null}</CardHeader><CardContent><div className="flex flex-wrap gap-2">{staff.permissions?.length ? staff.permissions.map((permission) => <Badge key={permission} variant="secondary" className="font-mono text-[11px]">{permission}</Badge>) : <p className="text-sm text-muted-foreground">No direct overrides; role defaults apply.</p>}</div></CardContent></Card>
-          <div className="grid gap-5 lg:grid-cols-3">{scopeKeys.map((key) => { const draft = scopeDrafts[key]; const active = Boolean(scopesByKey[key]); return <Card key={key}><CardHeader><div className="flex items-center justify-between"><CardTitle className="text-base capitalize">{key}</CardTitle><Badge variant={active ? "default" : "outline"}>{active ? "Scoped" : "Full access"}</Badge></div><CardDescription>Limit historical visibility for this module.</CardDescription></CardHeader><CardContent className="space-y-3"><div><Label>Maximum lookback days</Label><Input inputMode="numeric" placeholder="Example: 30" value={draft.max_lookback_days} onChange={(event) => setScopeDrafts((current) => ({ ...current, [key]: { ...current[key], max_lookback_days: event.target.value } }))} /></div><div className="grid grid-cols-2 gap-2"><div><Label>Start</Label><Input type="date" value={draft.window_start} onChange={(event) => setScopeDrafts((current) => ({ ...current, [key]: { ...current[key], window_start: event.target.value } }))} /></div><div><Label>End</Label><Input type="date" value={draft.window_end} onChange={(event) => setScopeDrafts((current) => ({ ...current, [key]: { ...current[key], window_end: event.target.value } }))} /></div></div>{canManageStaff ? <div className="flex gap-2"><Button className="flex-1" disabled={scopeBusy === key} onClick={() => void saveScope(key)}>{scopeBusy === key ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Save</Button><Button variant="outline" disabled={!active || scopeBusy === key} onClick={() => void removeScope(key)}>Remove</Button></div> : null}</CardContent></Card>; })}</div>
-        </TabsContent>
-
-        <TabsContent value="activity"><Card><CardHeader><CardTitle>Workforce activity</CardTitle><CardDescription>Real staff-specific events from attendance, salary history, and payroll.</CardDescription></CardHeader><CardContent><ActivityTimeline entries={entries} salaryHistory={salaryHistory} payrollHistory={payrollHistory} /></CardContent></Card></TabsContent>
-      </Tabs>
-
-      <Dialog open={Boolean(correctionEntry)} onOpenChange={(open) => { if (!open && !correctionSaving) setCorrectionEntry(null); }}><DialogContent><DialogHeader><DialogTitle>Correct attendance time</DialogTitle><DialogDescription>The record will return to draft and must be reviewed again before payroll.</DialogDescription></DialogHeader><div className="grid gap-4 py-2 sm:grid-cols-2"><FormField label="Clock in"><Input type="datetime-local" value={correctionForm.clockIn} onChange={(event) => setCorrectionForm((current) => ({ ...current, clockIn: event.target.value }))} /></FormField><FormField label="Clock out"><Input type="datetime-local" value={correctionForm.clockOut} onChange={(event) => setCorrectionForm((current) => ({ ...current, clockOut: event.target.value }))} /></FormField><div className="sm:col-span-2"><FormField label="Correction reason"><Textarea value={correctionForm.reason} onChange={(event) => setCorrectionForm((current) => ({ ...current, reason: event.target.value }))} placeholder="For example: employee forgot to clock out" /></FormField></div></div><DialogFooter><Button variant="outline" disabled={correctionSaving} onClick={() => setCorrectionEntry(null)}>Cancel</Button><Button disabled={correctionSaving} onClick={saveAttendanceCorrection}>{correctionSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Save correction</Button></DialogFooter></DialogContent></Dialog>
-
-      <Dialog open={accountOpen} onOpenChange={setAccountOpen}><DialogContent><DialogHeader><DialogTitle>Edit staff account</DialogTitle><DialogDescription>Update the employee&apos;s display name. Login email changes require a separate verified email flow.</DialogDescription></DialogHeader><div className="space-y-4 py-2"><div><Label>Full name</Label><Input value={accountForm.name} onChange={(event) => setAccountForm((current) => ({ ...current, name: event.target.value }))} /></div><div><Label>Email</Label><Input type="email" value={accountForm.email} disabled /><p className="mt-1 text-xs text-muted-foreground">Email is identity-owned and cannot be changed by a restaurant.</p></div></div><DialogFooter><Button variant="outline" onClick={() => setAccountOpen(false)}>Cancel</Button><Button onClick={saveAccount} disabled={accountSaving}>{accountSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Save account</Button></DialogFooter></DialogContent></Dialog>
-
-      <Dialog open={profileOpen} onOpenChange={setProfileOpen}><DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto"><DialogHeader><DialogTitle>{profile ? "Edit employment and pay profile" : "Create employment and pay profile"}</DialogTitle><DialogDescription>Salary changes create effective-dated history and can require payroll periods to be split.</DialogDescription></DialogHeader><div className="grid gap-4 py-2 sm:grid-cols-2"><FormField label="Account number"><Input value={profileForm.account_number} onChange={(event) => setProfileForm((current) => ({ ...current, account_number: event.target.value }))} /></FormField><FormField label="Salary type"><Select value={profileForm.salary_type} onValueChange={(value) => setProfileForm((current) => ({ ...current, salary_type: value }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="monthly">Monthly</SelectItem><SelectItem value="weekly">Weekly</SelectItem><SelectItem value="daily">Daily</SelectItem><SelectItem value="hourly">Hourly</SelectItem></SelectContent></Select></FormField><FormField label="Salary amount"><Input type="number" min="0" step="0.01" value={profileForm.salary_amount} onChange={(event) => setProfileForm((current) => ({ ...current, salary_amount: event.target.value }))} /></FormField><FormField label="Effective from"><Input type="date" value={profileForm.salary_effective_from} onChange={(event) => setProfileForm((current) => ({ ...current, salary_effective_from: event.target.value }))} /></FormField><FormField label="Weekly hours"><Input type="number" min="0" step="0.25" value={profileForm.weekly_hours} onChange={(event) => setProfileForm((current) => ({ ...current, weekly_hours: event.target.value }))} /></FormField><FormField label="Daily hours"><Input type="number" min="0" step="0.25" value={profileForm.daily_hours} onChange={(event) => setProfileForm((current) => ({ ...current, daily_hours: event.target.value }))} /></FormField><FormField label="Phone"><Input value={profileForm.phone} onChange={(event) => setProfileForm((current) => ({ ...current, phone: event.target.value }))} /></FormField><FormField label="Age"><Input type="number" min="0" value={profileForm.age} onChange={(event) => setProfileForm((current) => ({ ...current, age: event.target.value }))} /></FormField><div className="sm:col-span-2"><FormField label="Address"><Input value={profileForm.address} onChange={(event) => setProfileForm((current) => ({ ...current, address: event.target.value }))} /></FormField></div><div className="sm:col-span-2"><FormField label="Salary change reason"><Input placeholder={profile ? "Promotion, review, correction…" : "Initial salary"} value={profileForm.salary_change_reason} onChange={(event) => setProfileForm((current) => ({ ...current, salary_change_reason: event.target.value }))} /></FormField></div></div><DialogFooter><Button variant="outline" onClick={() => setProfileOpen(false)}>Cancel</Button><Button onClick={saveProfile} disabled={profileSaving}>{profileSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Save profile</Button></DialogFooter></DialogContent></Dialog>
-
-      <Dialog open={permissionsOpen} onOpenChange={setPermissionsOpen}><DialogContent className="max-w-xl"><DialogHeader><DialogTitle>Manage permissions</DialogTitle><DialogDescription>Direct overrides for {staff.name}. Role defaults still apply.</DialogDescription></DialogHeader><ScrollArea className="h-[420px] pr-4"><div className="space-y-5">{Object.entries(availablePermissions.reduce((grouped: Record<string, any[]>, permission: any) => { const groupName = permission.module || "Other"; (grouped[groupName] ||= []).push(permission); return grouped; }, {})).map(([groupName, permissions]) => <section key={groupName}><h3 className="mb-2 border-b pb-1 text-xs font-bold uppercase tracking-wider text-muted-foreground">{groupName}</h3><div className="space-y-3">{permissions.map((permission: any) => <label key={permission.key} className="flex cursor-pointer items-start gap-3"><Checkbox checked={selectedPermissions.includes(permission.key)} onCheckedChange={(checked) => setSelectedPermissions((current) => checked ? Array.from(new Set([...current, permission.key])) : current.filter((item) => item !== permission.key))} /><span><span className="block text-sm font-medium">{permission.key}</span>{permission.description ? <span className="block text-xs text-muted-foreground">{permission.description}</span> : null}</span></label>)}</div></section>)}</div></ScrollArea><DialogFooter><Button variant="outline" onClick={() => setPermissionsOpen(false)}>Cancel</Button><Button onClick={savePermissions} disabled={permissionsSaving}>{permissionsSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Save permissions</Button></DialogFooter></DialogContent></Dialog>
+function InfoLine({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: any;
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="flex items-start gap-3">
+      <div className="rounded-lg bg-muted p-2 text-muted-foreground">
+        <Icon className="h-4 w-4" />
+      </div>
+      <div className="min-w-0">
+        <p className="text-xs text-muted-foreground">{label}</p>
+        <p className="break-words text-sm font-semibold">{value}</p>
+      </div>
     </div>
   );
 }
 
-function HeroMetric({ icon: Icon, label, value, tone }: { icon: any; label: string; value: string; tone: "good" | "warn" | "neutral" }) {
-  const toneClass = tone === "good" ? "text-emerald-600" : tone === "warn" ? "text-amber-600" : "text-primary";
-  return <div className="flex items-center gap-3 border-b p-4 last:border-b-0 sm:border-b-0 sm:border-r sm:last:border-r-0"><div className={`rounded-xl bg-background p-2 shadow-sm ${toneClass}`}><Icon className="h-5 w-5" /></div><div className="min-w-0"><p className="text-xs font-medium text-muted-foreground">{label}</p><p className="truncate font-semibold">{value}</p></div></div>;
-}
-
-function SummaryCard({ icon: Icon, label, value, helper }: { icon: any; label: string; value: string; helper?: string }) {
-  return <Card><CardContent className="flex items-start gap-3 p-4"><div className="rounded-xl bg-primary/10 p-2 text-primary"><Icon className="h-5 w-5" /></div><div><p className="text-xs font-medium text-muted-foreground">{label}</p><p className="mt-0.5 text-xl font-bold">{value}</p>{helper ? <p className="mt-1 text-xs text-muted-foreground">{helper}</p> : null}</div></CardContent></Card>;
-}
-
-function InfoLine({ icon: Icon, label, value }: { icon: any; label: string; value: string }) {
-  return <div className="flex items-start gap-3"><div className="rounded-lg bg-muted p-2 text-muted-foreground"><Icon className="h-4 w-4" /></div><div className="min-w-0"><p className="text-xs text-muted-foreground">{label}</p><p className="break-words text-sm font-semibold">{value}</p></div></div>;
-}
-
 function InfoRow({ label, value }: { label: string; value: string }) {
-  return <div className="flex items-center justify-between gap-4 border-b pb-2 text-sm last:border-0 last:pb-0"><span className="text-muted-foreground">{label}</span><span className="font-semibold">{value}</span></div>;
+  return (
+    <div className="flex items-center justify-between gap-4 border-b pb-2 text-sm last:border-0 last:pb-0">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="font-semibold">{value}</span>
+    </div>
+  );
 }
 
-function FormField({ label, children }: { label: string; children: React.ReactNode }) {
-  return <div className="space-y-1.5"><Label>{label}</Label>{children}</div>;
+function FormField({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <Label>{label}</Label>
+      {children}
+    </div>
+  );
 }
 
-function EmptyState({ title, description, action }: { title: string; description: string; action?: React.ReactNode }) {
-  return <div className="rounded-2xl border border-dashed p-7 text-center"><MoreHorizontal className="mx-auto h-7 w-7 text-muted-foreground" /><p className="mt-2 font-semibold">{title}</p><p className="mx-auto mt-1 max-w-sm text-sm text-muted-foreground">{description}</p>{action ? <div className="mt-4">{action}</div> : null}</div>;
+function AttendanceList({
+  entries,
+  canManage,
+  onAction,
+  onCorrect,
+  compact = false,
+}: {
+  entries: AttendanceEntry[];
+  canManage: boolean;
+  onAction: (
+    entry: AttendanceEntry,
+    action: "submit" | "approve" | "reject" | "reopen",
+  ) => void;
+  onCorrect: (entry: AttendanceEntry) => void;
+  compact?: boolean;
+}) {
+  if (!entries.length)
+    return (
+      <p className="border-y py-4 text-sm text-muted-foreground">
+        No attendance records for this period.
+      </p>
+    );
+  return (
+    <div className="divide-y border-y">
+      {entries.map((entry) => (
+        <div key={entry.id} className="p-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="font-semibold">{dateTime(entry.clock_in_at)}</p>
+                <Badge
+                  variant={
+                    entry.status === "complete" || entry.status === "adjusted"
+                      ? "outline"
+                      : "secondary"
+                  }
+                >
+                  {attendanceStatusLabel(entry.status)}
+                </Badge>
+                <Badge
+                  variant={
+                    entry.approval_status === "approved" ||
+                    entry.approval_status === "payroll_exported"
+                      ? "default"
+                      : "secondary"
+                  }
+                >
+                  {attendanceApprovalLabel(entry.approval_status)}
+                </Badge>
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Out {dateTime(entry.clock_out_at)} •{" "}
+                {minutes(entry.regular_minutes)} regular •{" "}
+                {minutes(entry.overtime_minutes)} overtime
+                {entry.exception_code
+                  ? ` • ${attendanceExceptionLabel(entry.exception_code)}`
+                  : ""}
+              </p>
+            </div>
+            {canManage && !compact ? (
+              <div className="flex shrink-0 flex-wrap gap-1">
+                {entry.approval_status !== "payroll_exported" ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => onCorrect(entry)}
+                  >
+                    <Edit3 className="mr-1 h-3.5 w-3.5" />
+                    Correct
+                  </Button>
+                ) : null}
+                {entry.approval_status === "draft" ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => onAction(entry, "submit")}
+                  >
+                    <FileClock className="mr-1 h-3.5 w-3.5" />
+                    Submit
+                  </Button>
+                ) : null}
+                {entry.approval_status === "pending" ? (
+                  <>
+                    <Button
+                      size="sm"
+                      onClick={() => onAction(entry, "approve")}
+                    >
+                      <Check className="mr-1 h-3.5 w-3.5" />
+                      Approve
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => onAction(entry, "reject")}
+                    >
+                      <X className="mr-1 h-3.5 w-3.5" />
+                      Reject
+                    </Button>
+                  </>
+                ) : null}
+                {["rejected", "needs_correction"].includes(
+                  entry.approval_status,
+                ) ? (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => onAction(entry, "reopen")}
+                  >
+                    Reopen only
+                  </Button>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
 }
 
-function AttendanceList({ entries, canManage, onAction, onCorrect, compact = false }: { entries: AttendanceEntry[]; canManage: boolean; onAction: (entry: AttendanceEntry, action: "submit" | "approve" | "reject" | "reopen") => void; onCorrect: (entry: AttendanceEntry) => void; compact?: boolean }) {
-  if (!entries.length) return <EmptyState title="No attendance records" description="No entries were found for the selected period." />;
-  return <div className="space-y-3">{entries.map((entry) => <div key={entry.id} className="rounded-xl border p-3"><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><div className="flex flex-wrap items-center gap-2"><p className="font-semibold">{dateTime(entry.clock_in_at)}</p><Badge variant={entry.status === "complete" || entry.status === "adjusted" ? "outline" : "secondary"}>{entry.status}</Badge><Badge variant={entry.approval_status === "approved" || entry.approval_status === "payroll_exported" ? "default" : "secondary"}>{entry.approval_status.replaceAll("_", " ")}</Badge></div><p className="mt-1 text-xs text-muted-foreground">Out {dateTime(entry.clock_out_at)} • {minutes(entry.regular_minutes)} regular • {minutes(entry.overtime_minutes)} overtime{entry.exception_code ? ` • ${entry.exception_code}` : ""}</p></div>{canManage && !compact ? <div className="flex shrink-0 flex-wrap gap-1">{entry.approval_status !== "payroll_exported" ? <Button size="sm" variant="outline" onClick={() => onCorrect(entry)}><Edit3 className="mr-1 h-3.5 w-3.5" />Correct</Button> : null}{entry.approval_status === "draft" ? <Button size="sm" variant="outline" onClick={() => onAction(entry, "submit")}><FileClock className="mr-1 h-3.5 w-3.5" />Submit</Button> : null}{entry.approval_status === "pending" ? <><Button size="sm" onClick={() => onAction(entry, "approve")}><Check className="mr-1 h-3.5 w-3.5" />Approve</Button><Button size="sm" variant="outline" onClick={() => onAction(entry, "reject")}><X className="mr-1 h-3.5 w-3.5" />Reject</Button></> : null}{["rejected", "needs_correction"].includes(entry.approval_status) ? <Button size="sm" variant="ghost" onClick={() => onAction(entry, "reopen")}>Reopen only</Button> : null}</div> : null}</div></div>)}</div>;
+function ScheduleCard({
+  schedules,
+  templates,
+  available,
+}: {
+  schedules: AttendanceSchedule[];
+  templates: AttendanceShiftTemplate[];
+  available: boolean;
+}) {
+  return (
+    <WorkforceSection
+      title="Assigned schedule"
+      description="Staff overrides and effective dates."
+      contentClassName="divide-y border-y"
+    >
+      {!available ? (
+        <p className="py-4 text-sm text-muted-foreground">
+          Schedule data is unavailable.
+        </p>
+      ) : schedules.length ? (
+        schedules.map((schedule) => {
+          const template = templates.find(
+            (item) => item.id === schedule.shift_template_id,
+          );
+          return (
+            <div
+              key={schedule.id}
+              className="flex items-center justify-between gap-3 py-3 text-sm"
+            >
+              <div>
+                <p className="font-medium">
+                  {weekdays[schedule.weekday] || `Day ${schedule.weekday}`}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {schedule.is_day_off
+                    ? "Day off"
+                    : template
+                      ? `${template.name} • ${template.start_local_time.slice(0, 5)}–${template.end_local_time.slice(0, 5)}`
+                      : `Shift #${schedule.shift_template_id || "—"}`}
+                </p>
+              </div>
+              <Badge variant="outline">
+                {dateOnly(schedule.effective_from)}
+              </Badge>
+            </div>
+          );
+        })
+      ) : (
+        <p className="py-4 text-sm text-muted-foreground">
+          No staff-specific schedule.
+        </p>
+      )}
+    </WorkforceSection>
+  );
 }
 
-function ScheduleCard({ schedules, templates }: { schedules: AttendanceSchedule[]; templates: AttendanceShiftTemplate[] }) {
-  return <Card><CardHeader><CardTitle className="text-base">Assigned schedule</CardTitle><CardDescription>Staff overrides and effective dates.</CardDescription></CardHeader><CardContent className="space-y-2">{schedules.length ? schedules.map((schedule) => { const template = templates.find((item) => item.id === schedule.shift_template_id); return <div key={schedule.id} className="flex items-center justify-between gap-3 rounded-lg border p-3 text-sm"><div><p className="font-medium">{weekdays[schedule.weekday] || `Day ${schedule.weekday}`}</p><p className="text-xs text-muted-foreground">{schedule.is_day_off ? "Day off" : template ? `${template.name} • ${template.start_local_time.slice(0, 5)}–${template.end_local_time.slice(0, 5)}` : `Shift #${schedule.shift_template_id || "—"}`}</p></div><Badge variant="outline">{dateOnly(schedule.effective_from)}</Badge></div>; }) : <EmptyState title="No staff schedule" description="Restaurant defaults may still apply, but staff-specific rules are not configured." />}</CardContent></Card>;
+function LeaveCard({
+  leaves,
+  available,
+}: {
+  leaves: AttendanceLeave[];
+  available: boolean;
+}) {
+  return (
+    <WorkforceSection
+      title="Leave"
+      description="Paid and unpaid requests in this period."
+      contentClassName="divide-y border-y"
+    >
+      {!available ? (
+        <p className="py-4 text-sm text-muted-foreground">
+          Leave data is unavailable.
+        </p>
+      ) : leaves.length ? (
+        leaves.map((leave) => (
+          <div key={leave.id} className="py-3">
+            <div className="flex items-center justify-between gap-3">
+              <p className="font-medium capitalize">{leave.leave_type} leave</p>
+              <Badge
+                variant={leave.status === "approved" ? "default" : "secondary"}
+              >
+                {leave.status}
+              </Badge>
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {dateOnly(leave.date_from)} to {dateOnly(leave.date_to)} •{" "}
+              {leave.day_fraction === 0.5 ? "Half day" : "Full day"}
+            </p>
+            <p className="mt-1 text-sm">{leave.reason}</p>
+          </div>
+        ))
+      ) : (
+        <p className="py-4 text-sm text-muted-foreground">No leave records.</p>
+      )}
+    </WorkforceSection>
+  );
 }
 
-function LeaveCard({ leaves }: { leaves: AttendanceLeave[] }) {
-  return <Card><CardHeader><CardTitle className="text-base">Leave</CardTitle><CardDescription>Paid and unpaid requests in this period.</CardDescription></CardHeader><CardContent className="space-y-2">{leaves.length ? leaves.map((leave) => <div key={leave.id} className="rounded-lg border p-3"><div className="flex items-center justify-between gap-3"><p className="font-medium capitalize">{leave.leave_type} leave</p><Badge variant={leave.status === "approved" ? "default" : "secondary"}>{leave.status}</Badge></div><p className="mt-1 text-xs text-muted-foreground">{dateOnly(leave.date_from)} to {dateOnly(leave.date_to)} • {leave.day_fraction === 0.5 ? "Half day" : "Full day"}</p><p className="mt-1 text-sm">{leave.reason}</p></div>) : <EmptyState title="No leave records" description="No leave overlaps the selected period." />}</CardContent></Card>;
-}
-
-function ActivityTimeline({ entries, salaryHistory, payrollHistory }: { entries: AttendanceEntry[]; salaryHistory: SalaryHistoryRecord[]; payrollHistory: PayrollHistoryRecord[] }) {
+function ActivityTimeline({
+  entries,
+  salaryHistory,
+}: {
+  entries: AttendanceEntry[];
+  salaryHistory: SalaryHistoryRecord[];
+}) {
   const events = [
-    ...entries.map((entry) => ({ key: `attendance-${entry.id}`, at: entry.updated_at || entry.clock_in_at, icon: Clock3, title: `Attendance ${entry.approval_status.replaceAll("_", " ")}`, detail: `${dateTime(entry.clock_in_at)} • ${minutes(entry.regular_minutes)} regular` })),
-    ...salaryHistory.map((record) => ({ key: `salary-${record.id}`, at: record.created_at || record.effective_from, icon: WalletCards, title: `Salary ${money(record.salary_amount)} / ${record.salary_type}`, detail: `Effective ${dateOnly(record.effective_from)}${record.reason ? ` • ${record.reason}` : ""}` })),
-    ...payrollHistory.map(({ run, item }) => ({ key: `payroll-${item.id}`, at: run.paid_at || run.created_at || run.date_to, icon: Banknote, title: `Payroll ${run.status}`, detail: `${dateOnly(run.date_from)}–${dateOnly(run.date_to)} • ${money(item.net_pay)} net` })),
-  ].sort((left, right) => new Date(right.at || 0).getTime() - new Date(left.at || 0).getTime()).slice(0, 30);
-  if (!events.length) return <EmptyState title="No workforce activity" description="Attendance, salary, and payroll events will appear here." />;
-  return <div className="space-y-1">{events.map((event, index) => { const Icon = event.icon; return <div key={event.key} className="relative flex gap-4 pb-5 last:pb-0">{index < events.length - 1 ? <div className="absolute left-5 top-10 h-[calc(100%-1.5rem)] w-px bg-border" /> : null}<div className="z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-full border bg-background text-primary"><Icon className="h-4 w-4" /></div><div className="pt-1"><p className="font-semibold capitalize">{event.title}</p><p className="text-sm text-muted-foreground">{event.detail}</p><p className="mt-1 text-xs text-muted-foreground">{dateTime(event.at)}</p></div></div>; })}</div>;
+    ...entries.map((entry) => ({
+      key: `attendance-${entry.id}`,
+      at: entry.updated_at || entry.clock_in_at,
+      icon: Clock3,
+      title: `Attendance ${attendanceApprovalLabel(entry.approval_status)}`,
+      detail: `${dateTime(entry.clock_in_at)} • ${minutes(entry.regular_minutes)} regular`,
+    })),
+    ...salaryHistory.map((record) => ({
+      key: `salary-${record.id}`,
+      at: record.created_at || record.effective_from,
+      icon: WalletCards,
+      title: `Salary ${money(record.salary_amount)} / ${record.salary_type}`,
+      detail: `Effective ${dateOnly(record.effective_from)}${record.reason ? ` • ${record.reason}` : ""}`,
+    })),
+  ]
+    .sort(
+      (left, right) =>
+        new Date(right.at || 0).getTime() - new Date(left.at || 0).getTime(),
+    )
+    .slice(0, 30);
+  if (!events.length)
+    return (
+      <SharedEmptyState
+        title="No activity yet"
+        description="Attendance and compensation changes will appear here."
+        className="min-h-0 py-6"
+      />
+    );
+  if (events.length < 3) {
+    return (
+      <DataList className="rounded-none border-x-0 bg-transparent">
+        {events.map((event) => {
+          const Icon = event.icon;
+          return (
+            <ListRow
+              key={event.key}
+              leading={<Icon className="h-4 w-4" />}
+              title={event.title}
+              description={event.detail}
+              trailing={
+                <span className="whitespace-nowrap text-xs text-muted-foreground">
+                  {dateOnly(event.at)}
+                </span>
+              }
+            />
+          );
+        })}
+      </DataList>
+    );
+  }
+  return (
+    <div className="space-y-1">
+      {events.map((event, index) => {
+        const Icon = event.icon;
+        return (
+          <div key={event.key} className="relative flex gap-4 pb-5 last:pb-0">
+            {index < events.length - 1 ? (
+              <div className="absolute left-5 top-10 h-[calc(100%-1.5rem)] w-px bg-border" />
+            ) : null}
+            <div className="z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-full border bg-background text-primary">
+              <Icon className="h-4 w-4" />
+            </div>
+            <div className="pt-1">
+              <p className="font-semibold capitalize">{event.title}</p>
+              <p className="text-sm text-muted-foreground">{event.detail}</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {dateTime(event.at)}
+              </p>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
 }

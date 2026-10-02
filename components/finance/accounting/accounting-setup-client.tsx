@@ -328,7 +328,7 @@ export function AccountingSetupClient() {
         detail: missingAccounts.length
           ? `Missing required account codes: ${missingAccounts.join(", ")}`
           : "Default restaurant account template is available.",
-        href: "/finance/accounting/chart-of-accounts",
+        href: "/finance/heads",
         blocked: missingAccounts.length > 0,
         badge: missingAccounts.length > 0 ? "Blocked" : "Ready",
       },
@@ -375,7 +375,7 @@ export function AccountingSetupClient() {
   }, [status]);
 
   const setupActions = [
-    { label: "Chart of accounts", href: "/finance/accounting/chart-of-accounts" },
+    { label: "Chart of accounts", href: "/finance/heads" },
     { label: "Ledger mappings", href: "/finance/accounting/ledger-mapping" },
     { label: "Daybook", href: "/finance/accounting/daybook" },
     { label: "Settlements", href: "/finance/accounting/settlements" },

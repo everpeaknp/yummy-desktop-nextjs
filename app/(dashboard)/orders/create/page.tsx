@@ -8,6 +8,9 @@ import { EntitlementGate } from "@/components/subscription/entitlement-gate";
 function CreateOrderContent() {
   const searchParams = useSearchParams();
   const channel = (searchParams?.get("channel") || "table").toLowerCase();
+  const stayAssignment = Number(searchParams?.get("stay_assignment") || 0) || undefined;
+  const roomNumber = searchParams?.get("room") || undefined;
+  const guestName = searchParams?.get("guest") || undefined;
   const entitlement =
     channel === "delivery"
       ? "orders.delivery.enabled"
@@ -19,7 +22,12 @@ function CreateOrderContent() {
 
   return (
     <EntitlementGate entitlement={entitlement} legacyFallback>
-      <POSSystem orderId="create" />
+      <POSSystem
+        orderId="create"
+        defaultChannel={channel}
+        hotelStayRoomAssignmentId={stayAssignment}
+        roomOrderLabel={roomNumber ? `Room ${roomNumber}${guestName ? ` · ${guestName}` : ""}` : undefined}
+      />
     </EntitlementGate>
   );
 }

@@ -1,56 +1,11 @@
-"use client";
-
-import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { BookOpen, DollarSign, FileText, TrendingDown } from "lucide-react";
-
-import { useRestaurant } from "@/hooks/use-restaurant";
-import { isFinanceFeatureEnabled } from "@/lib/finance-feature-access";
-import { cn } from "@/lib/utils";
-
-const tabs = [
-  { href: "/finance/income", label: "Income", icon: DollarSign },
-  { href: "/finance/expenses", label: "Expenses", icon: TrendingDown },
-  { href: "/finance/reports", label: "Reports", icon: FileText },
-  { href: "/finance/accounting", label: "Accounting", icon: BookOpen },
-];
-
+/**
+ * Finance section navigation now lives exclusively in the main sidebar.
+ *
+ * Keeping this no-op component temporarily avoids a broad, risky edit across
+ * older finance report screens while removing the duplicated navigation from
+ * every rendered page. Call sites can be deleted gradually as those screens
+ * are touched.
+ */
 export function FinanceSectionTabs() {
-  const pathname = usePathname();
-  const restaurant = useRestaurant((state) => state.restaurant);
-  const visibleTabs = tabs.filter((tab) => {
-    if (tab.href === "/finance/reports") {
-      return isFinanceFeatureEnabled(restaurant, "reports");
-    }
-    if (tab.href === "/finance/accounting") {
-      return isFinanceFeatureEnabled(restaurant, "accounting");
-    }
-    return true;
-  });
-
-  return (
-    <div className="flex w-full overflow-x-auto border-b border-border">
-      <div className="flex min-w-max gap-1 px-1">
-        {visibleTabs.map((tab) => {
-          const Icon = tab.icon;
-          const active = pathname === tab.href || pathname.startsWith(`${tab.href}/`);
-          return (
-            <Link
-              key={tab.href}
-              href={tab.href}
-              className={cn(
-                "flex items-center gap-2 border-b-2 px-4 py-3 text-sm font-semibold transition-colors",
-                active
-                  ? "border-primary text-primary"
-                  : "border-transparent text-muted-foreground hover:text-foreground"
-              )}
-            >
-              <Icon className="h-4 w-4" />
-              {tab.label}
-            </Link>
-          );
-        })}
-      </div>
-    </div>
-  );
+  return null;
 }

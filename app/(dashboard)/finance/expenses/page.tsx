@@ -2,12 +2,16 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
-import { useRouter } from "next/navigation";
+import { hasPermission } from "@/lib/role-permissions";
+import { useRouter, useSearchParams } from "next/navigation";
 import apiClient from "@/lib/api-client";
 import {
-  DrawerSessionApis,
+  CashAndBanksApis,
+  CustomerApis,
   ExpenseApis,
   FinanceApis,
+  StaffProfileApis,
+  SupplierApis,
 } from "@/lib/api/endpoints";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -21,27 +25,20 @@ import {
 } from "@/components/ui/select";
 import {
   Loader2,
-  TrendingDown,
   Receipt,
   Download,
-  ArrowLeft,
   Plus,
   Calendar,
-  TrendingUp,
-  DollarSign,
   Utensils,
   Hotel,
-  CheckCircle2,
-  XCircle,
-  Clock,
   Pencil,
   Trash2,
   PackageSearch,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, formatCurrency, formatDate } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useRestaurant } from "@/hooks/use-restaurant";
+import { useCustomFinanceStations } from "@/hooks/use-custom-finance-stations";
 import {
   Dialog,
   DialogContent,
@@ -55,24 +52,33 @@ import { toast } from "sonner";
 import { Label } from "@/components/ui/label";
 import { startOfMonth, startOfWeek, endOfDay, subDays } from "date-fns";
 import Link from "next/link";
-import { FinanceSectionTabs } from "@/components/finance/finance-section-tabs";
+import {
+  AllocationLinesEditor,
+  AllocationLineItem,
+  EligibleHead,
+} from "@/components/finance/allocation-lines-editor";
+import { StationPicker } from "@/components/stations/station-picker";
+import { financeReportingApi } from "@/lib/api/finance-reporting-api";
 import type {
   FinanceExpensesResponse,
   FinanceTransactionRow,
 } from "@/types/finance";
-import { CASH_OUT_PAYMENT_METHOD_OPTIONS as PAYMENT_METHOD_OPTIONS } from "@/lib/payment-method-options";
-import {
-  buildCashExpenseDrawerPayload,
-  parseActiveCashDrawers,
-  type ActiveCashDrawerSession,
-} from "@/lib/cash-expense-drawer-selection";
 import {
   financeStationOptions,
   isFinanceStationAvailable,
+  legacyStationBucketForStationName,
   toFinanceAttributionStation,
   toFinanceStationParam,
 } from "@/lib/finance-station-scope";
 import { shouldUseFinanceMetrics } from "@/lib/finance-metric-authority";
+import {
+  TransactionDetailSheet,
+  type TransactionDetailModel,
+} from "@/components/finance/transaction-detail/transaction-detail-sheet";
+import { DataList, ListRow } from "@/components/patterns/data/data-list";
+import { AppPage } from "@/components/patterns/page/app-page";
+import { PageHeader } from "@/components/patterns/page/page-header";
+import { ReportFilters } from "@/components/reports/report-filters";
 
 function shouldUseFinanceEventMetrics(
   finance: FinanceExpensesResponse | null | undefined,
@@ -99,6 +105,17 @@ function shouldUseFinanceEventMetrics(
 }
 
 type BusinessLineFilter = "all" | "restaurant" | "hotel";
+
+interface CashBankAccount {
+  account_type: "drawer" | "bank";
+  id: number;
+  name: string;
+  current_balance: number | string;
+  drawer_session_id?: number | null;
+}
+
+type ExpensePartyType = "none" | "supplier" | "staff" | "customer";
+type ExpenseParty = { id: number; name: string };
 
 function normalizeExpensePaymentMethod(raw: string | null | undefined): string {
   const value = String(raw ?? "")
@@ -127,7 +144,11 @@ function normalizeExpensePaymentMethod(raw: string | null | undefined): string {
 function buildExpensePaymentMethodBreakdown(expenses: any[]) {
   const totals = new Map<string, number>();
   for (const expense of expenses) {
-    if (["cancelled", "corrected"].includes(String(expense.source_status || "").toLowerCase())) {
+    if (
+      ["cancelled", "corrected"].includes(
+        String(expense.source_status || "").toLowerCase(),
+      )
+    ) {
       continue;
     }
     const method = normalizeExpensePaymentMethod(expense.payment_method);
@@ -152,20 +173,33 @@ function buildFinanceExpensePaymentMethodBreakdown(
     "inventory_purchase_expensed",
     "inventory_cash_outflow",
     "supplier_payment_made",
+    "staff_salary_paid",
+    "staff_overtime_paid",
   ]);
   const totals = new Map<string, number>();
   for (const transaction of transactions ?? []) {
     const eventType = String(transaction.event_type || "");
-    const originalEventType = String(transaction.metadata_json?.original_event_type || "");
+    const originalEventType = String(
+      transaction.metadata_json?.original_event_type || "",
+    );
     const isReversal = eventType === "inventory_transaction_reversed";
-    if (!cashOutEventTypes.has(isReversal ? originalEventType : eventType)) continue;
+    if (!cashOutEventTypes.has(isReversal ? originalEventType : eventType))
+      continue;
     const amount = Number(transaction.amount) || 0;
     if (amount <= 0) continue;
     const method = normalizeExpensePaymentMethod(transaction.payment_method);
-    totals.set(method, (totals.get(method) ?? 0) + (isReversal ? -amount : amount));
+    totals.set(
+      method,
+      (totals.get(method) ?? 0) + (isReversal ? -amount : amount),
+    );
   }
-  const positiveTotals = Array.from(totals.entries()).filter(([, amount]) => amount > 0.0001);
-  const grandTotal = positiveTotals.reduce((sum, [, amount]) => sum + amount, 0);
+  const positiveTotals = Array.from(totals.entries()).filter(
+    ([, amount]) => amount > 0.0001,
+  );
+  const grandTotal = positiveTotals.reduce(
+    (sum, [, amount]) => sum + amount,
+    0,
+  );
   return positiveTotals
     .map(([method, amount]) => ({
       method,
@@ -180,43 +214,96 @@ function isFinanceEventExpense(expense: any): boolean {
 }
 
 function isInventoryFinanceExpense(expense: any): boolean {
-  return isFinanceEventExpense(expense) && String(expense?.source_type || "").includes("inventory_");
+  return (
+    isFinanceEventExpense(expense) &&
+    String(expense?.source_type || "").includes("inventory_")
+  );
+}
+
+function expenseStatusLabel(value: unknown) {
+  const labels: Record<string, string> = {
+    cancelled: "Cancelled",
+    completed: "Completed",
+    corrected: "Corrected",
+    paid: "Paid",
+    pending: "Pending",
+    posted: "Posted",
+    recorded: "Recorded",
+    reversed: "Reversed",
+    unpaid: "Unpaid",
+    voided: "Voided",
+  };
+  return (
+    labels[
+      String(value || "")
+        .trim()
+        .toLowerCase()
+    ] || "Recorded"
+  );
 }
 
 export default function ExpensesPage() {
+  const searchParams = useSearchParams();
   const [loading, setLoading] = useState(false);
   const [expenses, setExpenses] = useState<any[]>([]);
   const [expenseTotalCount, setExpenseTotalCount] = useState(0);
   const [expenseSummaryTotal, setExpenseSummaryTotal] = useState(0);
-  const [candidates, setCandidates] = useState<any[]>([]);
-  const [activeTab, setActiveTab] = useState("approved");
   const [financeExpenses, setFinanceExpenses] =
     useState<FinanceExpensesResponse | null>(null);
   const [categories, setCategories] = useState<any[]>([]);
   const [dateFilter, setDateFilter] = useState("this_month");
   const [businessLine, setBusinessLine] = useState<BusinessLineFilter>("all");
+  // The page filter controls what is shown. The entry itself owns the
+  // business line so a combined view can still create a correctly scoped
+  // Hotel or Restaurant expense.
+  const [entryBusinessLine, setEntryBusinessLine] = useState<
+    "restaurant" | "hotel"
+  >("restaurant");
   const [selectedStation, setSelectedStation] = useState("all");
-  const [selectedCategory, setSelectedCategory] = useState("all");
+  const [selectedReportingHeadId, setSelectedReportingHeadId] = useState("all");
+  const [expenseHeadFilterOptions, setExpenseHeadFilterOptions] = useState<
+    EligibleHead[]
+  >([]);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState<any | null>(null);
+  const [selectedExpense, setSelectedExpense] = useState<any | null>(null);
   const [saving, setSaving] = useState(false);
+  const [eligibleExpenseHeads, setEligibleExpenseHeads] = useState<
+    EligibleHead[]
+  >([]);
+  const [allocationLines, setAllocationLines] = useState<AllocationLineItem[]>(
+    [],
+  );
   const [newExpense, setNewExpense] = useState({
     amount: "",
     description: "",
     station: "general",
+    station_id: null as number | null,
     category_id: "",
     payment_method: "cash",
+    payment_status: "paid" as "paid" | "unpaid" | "partial",
+    paid_amount: "",
   });
-  const [cashDrawerControlsEnabled, setCashDrawerControlsEnabled] =
-    useState(false);
-  const [cashDrawerSessions, setCashDrawerSessions] = useState<
-    ActiveCashDrawerSession[]
-  >([]);
-  const [selectedCashDrawerSessionId, setSelectedCashDrawerSessionId] =
-    useState("");
-  const [cashDrawerLoading, setCashDrawerLoading] = useState(false);
-  const [cashDrawerResolved, setCashDrawerResolved] = useState(false);
-  const [cashDrawerError, setCashDrawerError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (searchParams.get("business_line") === "hotel") {
+      setBusinessLine("hotel");
+    }
+  }, [searchParams]);
+  const [partyType, setPartyType] = useState<ExpensePartyType>("none");
+  const [partyId, setPartyId] = useState("");
+  const [parties, setParties] = useState<
+    Record<Exclude<ExpensePartyType, "none">, ExpenseParty[]>
+  >({
+    supplier: [],
+    staff: [],
+    customer: [],
+  });
+  const [partiesLoading, setPartiesLoading] = useState(false);
+  const [accounts, setAccounts] = useState<CashBankAccount[]>([]);
+  const [selectedAccountKey, setSelectedAccountKey] = useState("");
+  const [accountsLoading, setAccountsLoading] = useState(false);
+  const [accountsError, setAccountsError] = useState<string | null>(null);
   const [customStartDate, setCustomStartDate] = useState("");
   const [customEndDate, setCustomEndDate] = useState("");
   const [customStartTime, setCustomStartTime] = useState("00:00");
@@ -225,9 +312,10 @@ export default function ExpensesPage() {
 
   const user = useAuth((state) => state.user);
   const me = useAuth((state) => state.me);
+  const customFinanceStations = useCustomFinanceStations(user?.restaurant_id);
   const router = useRouter();
   const restaurant = useRestaurant((s) => s.restaurant);
-  const selectedModule = useRestaurant((s) => s.selectedModule);
+  const canManageCoa = hasPermission(user, "finance.coa.manage");
 
   const dualBusinessLines =
     !!restaurant?.hotel_enabled && !!restaurant?.restaurant_enabled;
@@ -235,19 +323,12 @@ export default function ExpensesPage() {
   const listBusinessLineParam = businessLine;
 
   const createBusinessLine = useMemo((): "restaurant" | "hotel" => {
-    if (businessLine === "restaurant" || businessLine === "hotel") {
-      return businessLine;
-    }
-    if (selectedModule === "hotel" || selectedModule === "restaurant") {
-      return selectedModule;
-    }
     if (restaurant?.hotel_enabled && !restaurant?.restaurant_enabled) {
       return "hotel";
     }
-    return "restaurant";
+    return entryBusinessLine;
   }, [
-    businessLine,
-    selectedModule,
+    entryBusinessLine,
     restaurant?.hotel_enabled,
     restaurant?.restaurant_enabled,
   ]);
@@ -255,7 +336,10 @@ export default function ExpensesPage() {
     const existingBusinessLine = String(
       editingExpense?.business_line ?? "",
     ).toLowerCase();
-    if (existingBusinessLine === "hotel" || editingExpense?.station === "rooms") {
+    if (
+      existingBusinessLine === "hotel" ||
+      editingExpense?.station === "rooms"
+    ) {
       return "hotel";
     }
     if (existingBusinessLine === "restaurant") return "restaurant";
@@ -267,17 +351,24 @@ export default function ExpensesPage() {
       !isFinanceStationAvailable(selectedStation, {
         businessLine,
         hotelEnabled: Boolean(restaurant?.hotel_enabled),
+        customStations: customFinanceStations,
       })
     ) {
       setSelectedStation("all");
     }
-  }, [businessLine, restaurant?.hotel_enabled, selectedStation]);
+  }, [
+    businessLine,
+    restaurant?.hotel_enabled,
+    selectedStation,
+    customFinanceStations,
+  ]);
 
   useEffect(() => {
     if (
       !isFinanceStationAvailable(newExpense.station, {
         businessLine: expenseWriteBusinessLine,
         hotelEnabled: Boolean(restaurant?.hotel_enabled),
+        customStations: customFinanceStations,
       })
     ) {
       setNewExpense((current) => ({
@@ -286,66 +377,99 @@ export default function ExpensesPage() {
         category_id: "",
       }));
     }
-  }, [expenseWriteBusinessLine, newExpense.station, restaurant?.hotel_enabled]);
+  }, [
+    expenseWriteBusinessLine,
+    newExpense.station,
+    restaurant?.hotel_enabled,
+    customFinanceStations,
+  ]);
+
+  // Legacy ExpenseCategory is compatibility analytics data only (see
+  // FINANCE_PRODUCT_UX_BLUEPRINT.md 10.2) -- real classification now happens
+  // through the Allocation Lines editor below. New expenses silently get a
+  // sensible default category (the business line's generic "Others" bucket)
+  // instead of forcing a second, redundant-looking classification choice.
+  useEffect(() => {
+    if (editingExpense) return;
+    const scoped = categories.filter(
+      (cat: any) =>
+        String(cat.business_line ?? "restaurant").toLowerCase() ===
+        expenseWriteBusinessLine,
+    );
+    if (scoped.length === 0) return;
+    const current = scoped.find(
+      (cat: any) => String(cat.id) === newExpense.category_id,
+    );
+    if (current) return;
+    const exactOthers = scoped.find(
+      (cat: any) =>
+        String(cat.name ?? "")
+          .trim()
+          .toLowerCase() === "others",
+    );
+    const byOtherType = scoped.find(
+      (cat: any) =>
+        String(cat.type ?? "")
+          .trim()
+          .toLowerCase() === "other",
+    );
+    const fallback = exactOthers ?? byOtherType ?? scoped[0];
+    setNewExpense((current) => ({
+      ...current,
+      category_id: String(fallback.id),
+    }));
+  }, [
+    categories,
+    expenseWriteBusinessLine,
+    editingExpense,
+    newExpense.category_id,
+  ]);
 
   useEffect(() => {
     let cancelled = false;
 
-    const resetDrawerState = () => {
-      setCashDrawerControlsEnabled(false);
-      setCashDrawerSessions([]);
-      setSelectedCashDrawerSessionId("");
-      setCashDrawerResolved(false);
-      setCashDrawerError(null);
+    const resetAccountState = () => {
+      setAccounts([]);
+      setSelectedAccountKey("");
+      setAccountsError(null);
     };
 
-    const loadCashDrawers = async () => {
+    const loadAccounts = async () => {
       if (!isAddDialogOpen || editingExpense || !user?.restaurant_id) {
-        resetDrawerState();
+        resetAccountState();
         return;
       }
 
-      setCashDrawerLoading(true);
-      setCashDrawerResolved(false);
-      setCashDrawerError(null);
+      setAccountsLoading(true);
+      setAccountsError(null);
       try {
         const response = await apiClient.get(
-          DrawerSessionApis.active({
-            restaurantId: Number(user.restaurant_id),
-            businessLine: createBusinessLine,
-          }),
+          CashAndBanksApis.list(Number(user.restaurant_id), createBusinessLine),
         );
         if (cancelled) return;
-
-        const result = parseActiveCashDrawers(response.data);
-        setCashDrawerControlsEnabled(result.controlsEnabled);
-        setCashDrawerSessions(result.sessions);
-        setCashDrawerResolved(true);
-        setSelectedCashDrawerSessionId((current) => {
-          if (
-            current &&
-            result.sessions.some((session) => String(session.id) === current)
-          ) {
-            return current;
-          }
-          return result.sessions[0]?.id ? String(result.sessions[0].id) : "";
-        });
+        const rows = Array.isArray(response.data?.data)
+          ? (response.data.data as CashBankAccount[])
+          : [];
+        const available = rows.filter(
+          (account) =>
+            account.account_type === "bank" || account.drawer_session_id,
+        );
+        setAccounts(available);
+        setSelectedAccountKey(
+          available[0] ? `${available[0].account_type}:${available[0].id}` : "",
+        );
       } catch (error) {
         if (cancelled) return;
-        console.error("Failed to load active cash drawers", error);
-        setCashDrawerControlsEnabled(true);
-        setCashDrawerSessions([]);
-        setSelectedCashDrawerSessionId("");
-        setCashDrawerResolved(false);
-        setCashDrawerError(
-          "Unable to load open cash drawers. Refresh and try again.",
-        );
+        console.error("Failed to load Cash & Banks accounts", error);
+        setAccounts([]);
+        setSelectedAccountKey("");
+        setAccountsError("Unable to load Cash & Banks accounts.");
       } finally {
-        if (!cancelled) setCashDrawerLoading(false);
+        if (!cancelled) setAccountsLoading(false);
       }
     };
 
-    void loadCashDrawers();
+    void loadAccounts();
     return () => {
       cancelled = true;
     };
@@ -357,18 +481,98 @@ export default function ExpensesPage() {
   ]);
 
   useEffect(() => {
+    if (!isAddDialogOpen || !user?.restaurant_id) return;
+    let cancelled = false;
+    financeReportingApi
+      .getEligibleLeaves(user.restaurant_id, {
+        head_type: "expense" as any,
+        business_line: createBusinessLine,
+      })
+      .then((res: any) => {
+        if (!cancelled) {
+          setEligibleExpenseHeads(res || []);
+        }
+      })
+      .catch((err) => {
+        console.error("Failed to fetch eligible expense heads", err);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [createBusinessLine, isAddDialogOpen, user?.restaurant_id]);
+
+  // Independent of the Add/Edit dialog -- powers the list page's "Expense
+  // head" filter, which replaced the legacy Category filter (see
+  // FINANCE_PRODUCT_UX_BLUEPRINT.md 10.2: forms and reporting use reporting
+  // heads, not ExpenseCategory).
+  useEffect(() => {
+    if (!user?.restaurant_id) return;
+    let cancelled = false;
+    financeReportingApi
+      .getEligibleLeaves(user.restaurant_id, { head_type: "expense" as any })
+      .then((res: any) => {
+        if (!cancelled) setExpenseHeadFilterOptions(res || []);
+      })
+      .catch((err) => {
+        console.error("Failed to fetch expense head filter options", err);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.restaurant_id]);
+
+  useEffect(() => {
+    if (!isAddDialogOpen || editingExpense || !user?.restaurant_id) return;
+    let cancelled = false;
+    setPartiesLoading(true);
+    Promise.all([
+      apiClient.get(
+        SupplierApis.listSuppliers(Number(user.restaurant_id), true),
+      ),
+      apiClient.get(StaffProfileApis.list({ limit: 200 })),
+      apiClient.get(CustomerApis.listCustomers(Number(user.restaurant_id))),
+    ])
+      .then(([supplierRes, staffRes, customerRes]) => {
+        if (cancelled) return;
+        const supplierRows = supplierRes.data?.data?.suppliers ?? [];
+        const staffRows = staffRes.data?.data ?? [];
+        const customerRows = customerRes.data?.data?.customers ?? [];
+        setParties({
+          supplier: supplierRows.map((row: any) => ({
+            id: Number(row.id),
+            name: String(row.name ?? "Supplier"),
+          })),
+          staff: staffRows.map((row: any) => ({
+            id: Number(row.id),
+            name: String(row.user_name ?? row.name ?? "Staff"),
+          })),
+          customer: customerRows.map((row: any) => ({
+            id: Number(row.id),
+            name: String(row.name ?? row.business_name ?? "Customer"),
+          })),
+        });
+      })
+      .catch((error) => {
+        console.error("Failed to load expense parties", error);
+      })
+      .finally(() => {
+        if (!cancelled) setPartiesLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [editingExpense, isAddDialogOpen, user?.restaurant_id]);
+
+  useEffect(() => {
     if (!dualBusinessLines) {
       if (restaurant?.hotel_enabled && !restaurant?.restaurant_enabled) {
         setBusinessLine("hotel");
       } else {
         setBusinessLine("restaurant");
       }
-    } else if (selectedModule === "hotel" || selectedModule === "restaurant") {
-      setBusinessLine(selectedModule);
     }
   }, [
     dualBusinessLines,
-    selectedModule,
     restaurant?.hotel_enabled,
     restaurant?.restaurant_enabled,
   ]);
@@ -409,10 +613,10 @@ export default function ExpensesPage() {
   }, [user?.restaurant_id, fetchCategories]);
 
   useEffect(() => {
-    setSelectedCategory("all");
+    setSelectedReportingHeadId("all");
   }, [businessLine]);
 
-  const getDateRange = () => {
+  const getDateRange = useCallback(() => {
     const now = new Date();
     let start = "";
     let end = endOfDay(now).toISOString().split("T")[0];
@@ -434,7 +638,7 @@ export default function ExpensesPage() {
       start = subDays(now, 365).toISOString().split("T")[0];
     }
     return { start, end };
-  };
+  }, [customEndDate, customStartDate, dateFilter]);
 
   const fetchData = useCallback(async () => {
     if (!user?.restaurant_id) return;
@@ -443,6 +647,7 @@ export default function ExpensesPage() {
     const stationParam = toFinanceStationParam(selectedStation, {
       businessLine,
       hotelEnabled: Boolean(restaurant?.hotel_enabled),
+      customStations: customFinanceStations,
     });
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
     let startTimeVal: string | undefined = undefined;
@@ -486,11 +691,14 @@ export default function ExpensesPage() {
         date_from: start,
         date_to: end,
         station: stationParam,
-        category_id: selectedCategory === "all" ? undefined : selectedCategory,
+        reporting_head_id:
+          selectedReportingHeadId === "all"
+            ? undefined
+            : selectedReportingHeadId,
         business_line: listBusinessLineParam,
         timezone: tz,
       };
-      const [res, summaryRes, financeRes, candidatesRes] = await Promise.all([
+      const [res, summaryRes, financeRes] = await Promise.all([
         apiClient.get(ExpenseApis.list, {
           params: {
             ...expenseListParams,
@@ -501,16 +709,6 @@ export default function ExpensesPage() {
           params: expenseListParams,
         }),
         apiClient.get(financeExpensesUrl).catch(() => null),
-        apiClient
-          .get(ExpenseApis.pendingCandidates, {
-            params: {
-              restaurant_id: user.restaurant_id,
-              status: "pending",
-              include: "adjustment",
-              limit: 100,
-            },
-          })
-          .catch(() => null),
       ]);
       if (res.data.status === "success") {
         setExpenses(res.data.data.expenses || []);
@@ -528,9 +726,6 @@ export default function ExpensesPage() {
       } else {
         setFinanceExpenses(null);
       }
-      if (candidatesRes?.data?.status === "success") {
-        setCandidates(candidatesRes.data.data || []);
-      }
     } catch (err) {
       console.error("Failed to fetch expenses:", err);
     } finally {
@@ -539,7 +734,7 @@ export default function ExpensesPage() {
   }, [
     user?.restaurant_id,
     selectedStation,
-    selectedCategory,
+    selectedReportingHeadId,
     recentLimit,
     listBusinessLineParam,
     businessLine,
@@ -549,41 +744,97 @@ export default function ExpensesPage() {
     customEndDate,
     customStartTime,
     customEndTime,
+    customFinanceStations,
+    getDateRange,
   ]);
 
   const handleAddExpense = async () => {
-    if (!user?.restaurant_id || !newExpense.amount || !newExpense.category_id) {
+    if (!user?.restaurant_id || !newExpense.amount) {
       toast.error("Please fill in required fields");
       return;
+    }
+    if (partyType !== "none" && !partyId) {
+      toast.error("Select the expense party");
+      return;
+    }
+    const paidNow =
+      newExpense.payment_status === "paid"
+        ? Number(newExpense.amount)
+        : newExpense.payment_status === "unpaid"
+          ? 0
+          : Number(newExpense.paid_amount);
+    if (
+      !Number.isFinite(paidNow) ||
+      paidNow < 0 ||
+      paidNow > Number(newExpense.amount)
+    ) {
+      toast.error("Enter a valid amount paid now");
+      return;
+    }
+    if (newExpense.payment_status === "partial" && paidNow <= 0) {
+      toast.error("A partial expense needs an amount paid now");
+      return;
+    }
+
+    if (!editingExpense) {
+      if (allocationLines.length === 0) {
+        toast.error(
+          "Please allocate 100% of the expense amount to reporting heads.",
+        );
+        return;
+      }
+      const targetCents = Math.round(parseFloat(newExpense.amount) * 100);
+      const linesCents = allocationLines.reduce(
+        (sum, l) => sum + Math.round((Number(l.amount) || 0) * 100),
+        0,
+      );
+      if (targetCents !== linesCents) {
+        toast.error(
+          "Allocation lines must sum to exactly 100% of the total expense amount.",
+        );
+        return;
+      }
     }
 
     setSaving(true);
     try {
-      if (
-        !editingExpense &&
-        newExpense.payment_method === "cash" &&
-        !cashDrawerResolved
-      ) {
-        throw new Error(
-          cashDrawerError || "Wait for open cash drawers to finish loading.",
-        );
+      const selectedAccount = accounts.find(
+        (account) =>
+          `${account.account_type}:${account.id}` === selectedAccountKey,
+      );
+      if (!editingExpense && paidNow > 0 && !selectedAccount) {
+        throw new Error(accountsError || "Select a Cash & Banks account.");
       }
-      const drawerPayload = editingExpense
-        ? {}
-        : buildCashExpenseDrawerPayload({
-            paymentMethod: newExpense.payment_method,
-            controlsEnabled: cashDrawerControlsEnabled,
-            selectedDrawerSessionId: selectedCashDrawerSessionId,
-          });
       const payload = {
         restaurant_id: user.restaurant_id,
         amount: parseFloat(newExpense.amount),
         description: newExpense.description,
-        category_id: parseInt(newExpense.category_id, 10),
-        payment_method: newExpense.payment_method,
+        category_id: newExpense.category_id
+          ? parseInt(newExpense.category_id, 10)
+          : undefined,
+        payment_method: editingExpense
+          ? newExpense.payment_method
+          : selectedAccount?.account_type === "drawer"
+            ? "cash"
+            : "bank_transfer",
         station: toFinanceAttributionStation(newExpense.station),
+        station_id: newExpense.station_id,
         business_line: expenseWriteBusinessLine,
-        ...drawerPayload,
+        payment_status: newExpense.payment_status,
+        paid_amount: paidNow,
+        ...(allocationLines.length > 0 ? { lines: allocationLines } : {}),
+        ...(partyType !== "none"
+          ? { party_type: partyType, party_id: Number(partyId) }
+          : {}),
+        ...(!editingExpense && paidNow > 0 && selectedAccount
+          ? {
+              account_type: selectedAccount.account_type,
+              account_id: selectedAccount.id,
+              ...(selectedAccount.account_type === "drawer"
+                ? { drawer_session_id: selectedAccount.drawer_session_id }
+                : {}),
+            }
+          : {}),
       };
 
       const res = editingExpense
@@ -613,33 +864,6 @@ export default function ExpensesPage() {
       toast.error(message);
     } finally {
       setSaving(false);
-    }
-  };
-
-  const handleApproveCandidate = async (id: number) => {
-    try {
-      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-      const res = await apiClient.post(ExpenseApis.approveCandidate(id), null, {
-        params: { timezone: tz },
-      });
-      if (res.data.status === "success") {
-        toast.success("Expense approved");
-        void fetchData();
-      }
-    } catch {
-      toast.error("Failed to approve expense");
-    }
-  };
-
-  const handleRejectCandidate = async (id: number) => {
-    try {
-      const res = await apiClient.post(ExpenseApis.rejectCandidate(id));
-      if (res.data.status === "success") {
-        toast.success("Expense rejected");
-        void fetchData();
-      }
-    } catch {
-      toast.error("Failed to reject expense");
     }
   };
 
@@ -690,7 +914,6 @@ export default function ExpensesPage() {
     financeExpenseMetrics?.inventory_cash_outflow ?? 0;
   const simpleInventoryPurchases =
     inventoryDirectExpense + inventoryCashOutflow;
-  const supplierPayables = financeExpenseMetrics?.supplier_payables ?? 0;
   const inventoryCogs = financeExpenseMetrics?.inventory_cogs ?? 0;
   const inventoryWastage = financeExpenseMetrics?.inventory_wastage ?? 0;
   const inventoryVariance = financeExpenseMetrics?.inventory_variance ?? 0;
@@ -707,32 +930,126 @@ export default function ExpensesPage() {
         (acc: number, curr: any) => acc + (Number(curr.amount) || 0),
         0,
       );
+  const manualExpenseCount = filteredExpenses.filter(
+    (expense) => !isFinanceEventExpense(expense),
+  ).length;
+  const sourceManagedExpenseCount = filteredExpenses.filter((expense) =>
+    isFinanceEventExpense(expense),
+  ).length;
+
+  const expenseDetail: TransactionDetailModel | null = selectedExpense
+    ? {
+        eyebrow: "Expense",
+        title: selectedExpense.description || "Expense",
+        reference: null,
+        subtitle:
+          selectedExpense.party_name ||
+          selectedExpense.category?.name ||
+          "Business expense",
+        occurredAt:
+          selectedExpense.created_at ||
+          selectedExpense.expense_date ||
+          selectedExpense.paid_on,
+        status:
+          selectedExpense.source_status || selectedExpense.status || "recorded",
+        amount: selectedExpense.amount,
+        amountLabel: "Expense amount",
+        amountTone: "out",
+        sections: [
+          {
+            title: "Expense overview",
+            fields: [
+              {
+                label: "Expense date",
+                value: formatDate(
+                  selectedExpense.expense_date || selectedExpense.paid_on,
+                ),
+              },
+              {
+                label: "Category",
+                value: selectedExpense.category?.name || "Uncategorized",
+              },
+              {
+                label: "Party",
+                value: selectedExpense.party_name || "Not recorded",
+              },
+              { label: "Vendor", value: selectedExpense.vendor || "—" },
+            ],
+          },
+          {
+            title: "Payment",
+            fields: [
+              {
+                label: "Payment method",
+                value: normalizeExpensePaymentMethod(
+                  selectedExpense.payment_method,
+                ),
+              },
+            ],
+          },
+          {
+            title: "Account allocation",
+            description: "The expense account heads that receive this cost.",
+            table: selectedExpense.expense_lines?.length
+              ? {
+                  columns: ["Account head", "Description", "Amount"],
+                  rows: selectedExpense.expense_lines.map((line: any) => [
+                    line.reporting_head_name ||
+                      (line.reporting_head_id
+                        ? `Account #${line.reporting_head_id}`
+                        : "Expense"),
+                    line.description || "—",
+                    formatCurrency(line.amount || 0),
+                  ]),
+                }
+              : undefined,
+            emptyText:
+              "This record has no line-level allocation in the current response.",
+            internal: true,
+          },
+        ],
+      }
+    : null;
 
   const resetExpenseForm = () => {
     setEditingExpense(null);
+    setAllocationLines([]);
     setNewExpense({
       amount: "",
       description: "",
       station: "general",
+      station_id: null,
       category_id: "",
       payment_method: "cash",
+      payment_status: "paid",
+      paid_amount: "",
     });
-    setCashDrawerControlsEnabled(false);
-    setCashDrawerSessions([]);
-    setSelectedCashDrawerSessionId("");
-    setCashDrawerLoading(false);
-    setCashDrawerResolved(false);
-    setCashDrawerError(null);
+    setPartyType("none");
+    setPartyId("");
+    setAccounts([]);
+    setSelectedAccountKey("");
+    setAccountsLoading(false);
+    setAccountsError(null);
   };
 
   const handleEditExpense = (expense: any) => {
     setEditingExpense(expense);
+    setEntryBusinessLine(
+      String(expense.business_line ?? "").toLowerCase() === "hotel" ||
+        expense.station === "rooms"
+        ? "hotel"
+        : "restaurant",
+    );
     setNewExpense({
       amount: String(expense.amount ?? ""),
       description: expense.description || "",
       station: toFinanceAttributionStation(expense.station),
+      station_id: expense.station_id ?? null,
       category_id: expense.category_id ? String(expense.category_id) : "",
       payment_method: expense.payment_method || "cash",
+      payment_status: expense.payment_status || "paid",
+      paid_amount:
+        expense.paid_amount == null ? "" : String(expense.paid_amount),
     });
     setIsAddDialogOpen(true);
   };
@@ -759,10 +1076,8 @@ export default function ExpensesPage() {
       Description: expense.description || "Untitled",
       Category: expense.category?.name || "General",
       Amount: expense.amount,
-      Date: new Date(
-        expense.expense_date || expense.paid_on,
-      ).toLocaleDateString(),
-      Status: expense.status || "Completed",
+      Date: formatDate(expense.expense_date || expense.paid_on),
+      Status: expenseStatusLabel(expense.status || "completed"),
     }));
 
     const ws = XLSX.utils.json_to_sheet(dataToExport);
@@ -774,317 +1089,205 @@ export default function ExpensesPage() {
     );
   };
 
-  return (
-    <div className="flex flex-col gap-8 max-w-[1600px] mx-auto p-6">
-      <div className="flex flex-col gap-4 w-full">
-        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 w-full">
-          <div className="flex items-center gap-4">
-            <Link href="/manage">
-              <Button variant="ghost" size="icon" className="rounded-full">
-                <ArrowLeft className="h-5 w-5" />
-              </Button>
-            </Link>
-            <div>
-              <h1 className="text-2xl font-bold tracking-tight text-red-600 dark:text-red-500">
-                Expenses
-              </h1>
-              <p className="text-muted-foreground whitespace-nowrap">
-                Manage and track your operational costs.
-              </p>
-            </div>
-            <Link href="/finance/income">
-              <Button
-                variant="outline"
-                size="sm"
-                className="hidden sm:flex border-emerald-200 hover:bg-emerald-50 hover:text-emerald-600 dark:border-emerald-900/30 dark:hover:bg-emerald-950/20 gap-2"
-              >
-                <TrendingUp className="h-4 w-4" />
-                View Income
-              </Button>
-            </Link>
+  const openExpenseDialog = () => {
+    resetExpenseForm();
+    setEntryBusinessLine(
+      businessLine === "hotel"
+        ? "hotel"
+        : businessLine === "restaurant"
+          ? "restaurant"
+          : restaurant?.hotel_enabled && !restaurant?.restaurant_enabled
+            ? "hotel"
+            : "restaurant",
+    );
+    setIsAddDialogOpen(true);
+  };
+
+  const filterControls = (
+    <>
+      <div className="grid gap-3 md:flex md:flex-wrap md:items-end">
+        {dualBusinessLines ? (
+          <div className="grid grid-cols-3 rounded-xl bg-muted/70 p-1 md:w-auto">
+            <Button
+              variant={businessLine === "all" ? "secondary" : "ghost"}
+              size="sm"
+              className={cn(
+                "h-9 min-w-0 rounded-lg px-3 text-xs",
+                businessLine === "all" && "bg-background shadow-sm",
+              )}
+              onClick={() => setBusinessLine("all")}
+            >
+              All
+            </Button>
+            <Button
+              variant={businessLine === "restaurant" ? "secondary" : "ghost"}
+              size="sm"
+              className={cn(
+                "h-9 min-w-0 gap-1.5 rounded-lg px-3 text-xs",
+                businessLine === "restaurant" && "bg-background shadow-sm",
+              )}
+              onClick={() => setBusinessLine("restaurant")}
+            >
+              <Utensils className="h-3.5 w-3.5 text-orange-500" />
+              Restaurant
+            </Button>
+            <Button
+              variant={businessLine === "hotel" ? "secondary" : "ghost"}
+              size="sm"
+              className={cn(
+                "h-9 min-w-0 gap-1.5 rounded-lg px-3 text-xs",
+                businessLine === "hotel" && "bg-background shadow-sm",
+              )}
+              onClick={() => setBusinessLine("hotel")}
+            >
+              <Hotel className="h-3.5 w-3.5 text-blue-500" />
+              Hotel
+            </Button>
           </div>
-          <div className="flex flex-wrap items-center gap-2 w-full md:w-auto justify-start md:justify-end">
-            {dualBusinessLines ? (
-              <div className="flex items-center bg-muted/50 p-1 rounded-lg border border-border">
-                <Button
-                  variant={businessLine === "all" ? "secondary" : "ghost"}
-                  size="sm"
-                  className={cn(
-                    "h-8 px-3 text-xs gap-2",
-                    businessLine === "all" && "bg-background shadow-sm",
-                  )}
-                  onClick={() => setBusinessLine("all")}
-                >
-                  All
-                </Button>
-                <Button
-                  variant={
-                    businessLine === "restaurant" ? "secondary" : "ghost"
-                  }
-                  size="sm"
-                  className={cn(
-                    "h-8 px-3 text-xs gap-2",
-                    businessLine === "restaurant" && "bg-background shadow-sm",
-                  )}
-                  onClick={() => setBusinessLine("restaurant")}
-                >
-                  <Utensils className="h-3.5 w-3.5 text-orange-500" />
-                  Restaurant
-                </Button>
-                <Button
-                  variant={businessLine === "hotel" ? "secondary" : "ghost"}
-                  size="sm"
-                  className={cn(
-                    "h-8 px-3 text-xs gap-2",
-                    businessLine === "hotel" && "bg-background shadow-sm",
-                  )}
-                  onClick={() => setBusinessLine("hotel")}
-                >
-                  <Hotel className="h-3.5 w-3.5 text-blue-500" />
-                  Hotel
-                </Button>
-              </div>
-            ) : null}
-
-            <Select value={selectedStation} onValueChange={setSelectedStation}>
-              <SelectTrigger className="w-[140px]">
-                <SelectValue placeholder="Station" />
-              </SelectTrigger>
-              <SelectContent>
-                {financeStationOptions({
-                  businessLine,
-                  hotelEnabled: restaurant?.hotel_enabled,
-                }).map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            <Select value={dateFilter} onValueChange={setDateFilter}>
-              <SelectTrigger className="w-[140px]">
-                <SelectValue placeholder="Date Range" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="today">Today</SelectItem>
-                <SelectItem value="yesterday">Yesterday</SelectItem>
-                <SelectItem value="this_week">This Week</SelectItem>
-                <SelectItem value="this_month">This Month</SelectItem>
-                <SelectItem value="custom">Custom Date</SelectItem>
-                <SelectItem value="all">All Time</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-
-        <FinanceSectionTabs />
-
-        {dateFilter === "custom" && (
-          <div className="flex flex-wrap items-center gap-2 justify-start md:justify-end w-full animate-in fade-in slide-in-from-top-1 duration-200 bg-muted/30 p-3 rounded-xl border border-border">
-            <span className="text-xs font-semibold text-muted-foreground mr-1">
-              Time Slice:
-            </span>
-            <input
-              type="date"
-              value={customStartDate}
-              onChange={(e) => setCustomStartDate(e.target.value)}
-              className="flex h-9 w-[130px] rounded-md border border-input bg-background dark:bg-muted/50 px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-            />
-            <input
-              type="time"
-              value={customStartTime}
-              onChange={(e) => setCustomStartTime(e.target.value || "00:00")}
-              className="flex h-9 w-[100px] rounded-md border border-input bg-background dark:bg-muted/50 px-2 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-            />
-            <span className="text-xs text-muted-foreground font-semibold px-1">
-              to
-            </span>
-            <input
-              type="date"
-              value={customEndDate}
-              onChange={(e) => setCustomEndDate(e.target.value)}
-              className="flex h-9 w-[130px] rounded-md border border-input bg-background dark:bg-muted/50 px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-            />
-            <input
-              type="time"
-              value={customEndTime}
-              onChange={(e) => setCustomEndTime(e.target.value || "23:59")}
-              className="flex h-9 w-[100px] rounded-md border border-input bg-background dark:bg-muted/50 px-2 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-            />
-          </div>
-        )}
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-6">
-        <MetricCard
-          label="Operating Expenses"
-          value={operatingExpenseTotal}
-          icon={<TrendingDown className="w-5 h-5" />}
-          color="text-red-500"
-          bg="bg-red-50 dark:bg-red-950/20"
-        />
-        {accountingMode ? (
-          <>
-            <MetricCard
-              label="Inventory Direct Expense"
-              value={inventoryDirectExpense}
-              icon={<TrendingUp className="w-5 h-5" />}
-              color="text-orange-500"
-              bg="bg-orange-50 dark:bg-orange-950/20"
-            />
-            <MetricCard
-              label="Inventory Cash Outflow"
-              value={inventoryCashOutflow}
-              icon={<DollarSign className="w-5 h-5" />}
-              color="text-emerald-500"
-              bg="bg-emerald-50 dark:bg-emerald-950/20"
-            />
-          </>
-        ) : (
-          <MetricCard
-            label="Inventory Purchases"
-            value={simpleInventoryPurchases}
-            icon={<TrendingUp className="w-5 h-5" />}
-            color="text-orange-500"
-            bg="bg-orange-50 dark:bg-orange-950/20"
-          />
-        )}
-        {accountingMode ? (
-          <MetricCard
-            label="Supplier Payable"
-            value={supplierPayables}
-            icon={<Receipt className="w-5 h-5" />}
-            color="text-blue-500"
-            bg="bg-blue-50 dark:bg-blue-950/20"
-          />
         ) : null}
-        <MetricCard
-          label="Expense Entries"
-          value={expenseTotalCount || filteredExpenses.length}
-          isStringValue
-          icon={<Receipt className="w-5 h-5" />}
-          color="text-amber-500"
-          bg="bg-amber-50 dark:bg-amber-950/20"
-        />
-      </div>
 
-      {accountingMode ? (
-        <Card className="bg-card border-border shadow-sm">
-          <CardContent className="p-6">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <h3 className="font-bold text-sm text-foreground">
-                  Accounting expense detail
-                </h3>
-                <p className="text-xs text-muted-foreground">
-                  Expense recognition and payment movement are separated for
-                  ledger review.
-                </p>
-              </div>
-              <Link href="/finance/accounting/inventory">
-                <Button variant="outline" size="sm">
-                  Inventory accounting
-                </Button>
-              </Link>
-            </div>
-            <div className="mt-4 grid gap-3 md:grid-cols-4">
-              <MiniMetric label="COGS" value={inventoryCogs} />
-              <MiniMetric label="Wastage" value={inventoryWastage} />
-              <MiniMetric
-                label="Inventory variance"
-                value={inventoryVariance}
-              />
-              <MiniMetric
-                label="Paid to suppliers"
-                value={financeExpenseMetrics?.supplier_payments ?? 0}
-              />
-            </div>
-          </CardContent>
-        </Card>
-      ) : (
-        <Card className="bg-card border-border shadow-sm">
-          <CardContent className="p-5 text-sm text-muted-foreground">
-            Inventory purchases are shown as normal expenses. Use the
-            payment-method breakdown below to see whether they were paid by
-            cash, card, digital, Fonepay, or left unpaid.
-          </CardContent>
-        </Card>
-      )}
-
-      <Card className="bg-card border-border shadow-sm">
-        <CardContent className="p-6 space-y-4">
-          <div className="flex justify-between items-center pb-2 border-b border-border/40">
-            <h3 className="font-bold text-sm text-foreground flex items-center gap-2">
-              <TrendingDown className="w-4 h-4 text-red-500" />
-              Expenses by Payment Method
-            </h3>
-            <span className="text-[10px] text-muted-foreground uppercase font-black tracking-widest">
-              Outflow split
-            </span>
-          </div>
-          <div className="space-y-2">
-            {paymentMethodBreakdown.map((pm) => (
-              <div
-                key={pm.method}
-                className="flex justify-between items-center text-xs py-1 border-b border-border/10 last:border-0"
-              >
-                <span className="capitalize text-muted-foreground font-medium">
-                  {pm.method}
-                </span>
-                <div className="flex items-center gap-4">
-                  <span className="font-bold text-red-600 dark:text-red-500">
-                    Rs. {Number(pm.amount).toLocaleString()}
-                  </span>
-                  <span className="text-[10px] bg-muted px-2 py-0.5 rounded text-muted-foreground font-bold">
-                    {Math.round(pm.percentage * 100)}%
-                  </span>
-                </div>
-              </div>
-            ))}
-            {paymentMethodBreakdown.length === 0 && (
-              <div className="text-center py-4 text-xs text-muted-foreground">
-                No expense payment-method data for this period.
-              </div>
-            )}
-          </div>
-        </CardContent>
-      </Card>
-
-      <div className="flex flex-col md:flex-row items-center justify-between gap-4">
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-muted-foreground">Category:</span>
-          <Select value={selectedCategory} onValueChange={setSelectedCategory}>
-            <SelectTrigger className="w-[180px]">
-              <SelectValue placeholder="All Categories" />
+        <div className="grid gap-1.5">
+          <Label className="text-xs text-muted-foreground">Station</Label>
+          <Select value={selectedStation} onValueChange={setSelectedStation}>
+            <SelectTrigger className="h-11 w-full rounded-xl md:w-[160px]">
+              <SelectValue placeholder="All stations" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All Categories</SelectItem>
-              {categories.map((cat: any) => (
-                <SelectItem key={cat.id} value={cat.id.toString()}>
-                  {cat.name}
+              {financeStationOptions({
+                businessLine,
+                hotelEnabled: restaurant?.hotel_enabled,
+                customStations: customFinanceStations,
+              }).map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
         </div>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            onClick={handleExport}
-            disabled={!filteredExpenses.length}
+
+        <div className="grid gap-1.5">
+          <Label className="text-xs text-muted-foreground">Period</Label>
+          <Select value={dateFilter} onValueChange={setDateFilter}>
+            <SelectTrigger className="h-11 w-full rounded-xl md:w-[160px]">
+              <SelectValue placeholder="Date range" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="today">Today</SelectItem>
+              <SelectItem value="yesterday">Yesterday</SelectItem>
+              <SelectItem value="this_week">This week</SelectItem>
+              <SelectItem value="this_month">This month</SelectItem>
+              <SelectItem value="custom">Custom date</SelectItem>
+              <SelectItem value="all">All time</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="grid min-w-0 gap-1.5 md:w-[240px]">
+          <Label className="text-xs text-muted-foreground">Expense head</Label>
+          <Select
+            value={selectedReportingHeadId}
+            onValueChange={setSelectedReportingHeadId}
           >
-            <Download className="w-4 h-4 mr-2" /> Export Excel
-          </Button>
+            <SelectTrigger className="h-11 w-full rounded-xl">
+              <SelectValue placeholder="All expense heads" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All expense heads</SelectItem>
+              {expenseHeadFilterOptions.map((head) => (
+                <SelectItem key={head.id} value={head.id.toString()}>
+                  {head.path || head.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      {dateFilter === "custom" ? (
+        <div className="mt-3 grid grid-cols-2 gap-2 rounded-xl border border-border bg-muted/30 p-3 md:flex md:flex-wrap md:items-center">
+          <span className="col-span-2 text-xs font-medium text-muted-foreground md:mr-1">
+            Custom period
+          </span>
+          <input
+            type="date"
+            value={customStartDate}
+            onChange={(e) => setCustomStartDate(e.target.value)}
+            className="flex h-9 w-[130px] rounded-md border border-input bg-background dark:bg-muted/50 px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          />
+          <input
+            type="time"
+            value={customStartTime}
+            onChange={(e) => setCustomStartTime(e.target.value || "00:00")}
+            className="flex h-9 w-[100px] rounded-md border border-input bg-background dark:bg-muted/50 px-2 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          />
+          <span className="hidden px-1 text-xs font-semibold text-muted-foreground md:inline">
+            to
+          </span>
+          <input
+            type="date"
+            value={customEndDate}
+            onChange={(e) => setCustomEndDate(e.target.value)}
+            className="flex h-9 w-[130px] rounded-md border border-input bg-background dark:bg-muted/50 px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          />
+          <input
+            type="time"
+            value={customEndTime}
+            onChange={(e) => setCustomEndTime(e.target.value || "23:59")}
+            className="flex h-9 w-[100px] rounded-md border border-input bg-background dark:bg-muted/50 px-2 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          />
+        </div>
+      ) : null}
+    </>
+  );
+
+  return (
+    <AppPage
+      width="wide"
+      density="compact"
+      className="p-4 pb-24 sm:p-6 sm:pb-24"
+    >
+      <PageHeader
+        title="Expenses"
+        description="Record and review operating costs for the selected period."
+        actions={
           <Button
-            className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
-            onClick={() => {
-              resetExpenseForm();
-              setIsAddDialogOpen(true);
-            }}
+            className="h-11 w-full rounded-xl sm:w-auto"
+            onClick={openExpenseDialog}
           >
-            <Plus className="w-4 h-4 mr-2" /> Add Expense
+            <Plus className="mr-2 h-4 w-4" /> Record expense
           </Button>
+        }
+      />
+
+      <ReportFilters
+        title="Expense filters"
+        activeCount={
+          Number(businessLine !== "all") +
+          Number(selectedStation !== "all") +
+          Number(dateFilter !== "this_month") +
+          Number(selectedReportingHeadId !== "all")
+        }
+      >
+        {filterControls}
+      </ReportFilters>
+
+      <div className="grid grid-cols-2 overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
+        <div className="min-w-0 p-3.5 sm:p-4">
+          <p className="truncate text-xs font-medium text-muted-foreground">
+            Recognized expenses
+          </p>
+          <p className="mt-1 truncate text-lg font-semibold tabular-nums sm:text-xl">
+            {formatCurrency(operatingExpenseTotal || 0)}
+          </p>
+        </div>
+        <div className="min-w-0 border-l border-border p-3.5 sm:p-4">
+          <p className="truncate text-xs font-medium text-muted-foreground">
+            Manual entries
+          </p>
+          <p className="mt-1 text-lg font-semibold tabular-nums sm:text-xl">
+            {manualExpenseCount}
+          </p>
         </div>
       </div>
 
@@ -1095,7 +1298,7 @@ export default function ExpensesPage() {
           if (!open) resetExpenseForm();
         }}
       >
-        <DialogContent className="sm:max-w-[425px]">
+        <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
               {editingExpense ? "Edit Expense" : "Add New Expense"}
@@ -1106,16 +1309,43 @@ export default function ExpensesPage() {
                 : "Record a new business expense. Required fields are marked with *."}
             </DialogDescription>
           </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="amount" className="text-right">
-                Amount*
-              </Label>
+          <div className="grid gap-5 py-2">
+            {dualBusinessLines && !editingExpense ? (
+              <div className="grid gap-2">
+                <Label htmlFor="expense-business-line">Business*</Label>
+                <Select
+                  value={entryBusinessLine}
+                  onValueChange={(value: "restaurant" | "hotel") => {
+                    setEntryBusinessLine(value);
+                    setNewExpense((current) => ({
+                      ...current,
+                      station: "general",
+                      station_id: null,
+                    }));
+                    setSelectedAccountKey("");
+                    setAllocationLines([]);
+                  }}
+                >
+                  <SelectTrigger id="expense-business-line">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="restaurant">Restaurant</SelectItem>
+                    <SelectItem value="hotel">Hotel</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  This controls the financial owner of the expense. The page
+                  filter only controls what you are viewing.
+                </p>
+              </div>
+            ) : null}
+            <div className="grid gap-2">
+              <Label htmlFor="amount">Amount*</Label>
               <Input
                 id="amount"
                 type="number"
                 placeholder="0.00"
-                className="col-span-3"
                 value={newExpense.amount}
                 disabled={Boolean(editingExpense)}
                 onChange={(e) =>
@@ -1123,165 +1353,236 @@ export default function ExpensesPage() {
                 }
               />
             </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="station" className="text-right">
-                Station
-              </Label>
-              <Select
-                value={newExpense.station}
+
+            {user?.restaurant_id && (
+              <StationPicker
+                restaurantId={user.restaurant_id}
+                value={newExpense.station_id}
                 disabled={Boolean(editingExpense)}
-                onValueChange={(val) =>
+                onChange={(stationId, station) =>
                   setNewExpense({
                     ...newExpense,
-                    station: val,
-                    category_id: "",
+                    station_id: stationId,
+                    station: legacyStationBucketForStationName(
+                      station?.name,
+                      expenseWriteBusinessLine,
+                      newExpense.station,
+                    ),
                   })
                 }
-              >
-                <SelectTrigger className="col-span-3">
-                  <SelectValue placeholder="Select Station" />
-                </SelectTrigger>
-                <SelectContent>
-                  {financeStationOptions({
-                    businessLine: expenseWriteBusinessLine,
-                    hotelEnabled: restaurant?.hotel_enabled,
-                    includeAll: false,
-                  }).map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="category" className="text-right">
-                Category*
-              </Label>
-              <Select
-                value={newExpense.category_id}
-                disabled={Boolean(editingExpense)}
-                onValueChange={(val) =>
-                  setNewExpense({ ...newExpense, category_id: val })
-                }
-              >
-                <SelectTrigger className="col-span-3">
-                  <SelectValue placeholder="Select Category" />
-                </SelectTrigger>
-                <SelectContent>
-                  {categories
-                    .filter(
-                      (cat: any) =>
-                        String(cat.business_line ?? "restaurant").toLowerCase() ===
-                          expenseWriteBusinessLine &&
-                        toFinanceAttributionStation(cat.type) ===
-                          newExpense.station,
-                    )
-                    .map((cat: any) => (
-                      <SelectItem key={cat.id} value={cat.id.toString()}>
-                        {cat.name}
-                      </SelectItem>
-                    ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="method" className="text-right">
-                Payment
-              </Label>
-              <Select
-                value={newExpense.payment_method}
-                onValueChange={(val) =>
-                  setNewExpense({ ...newExpense, payment_method: val })
-                }
-                disabled={Boolean(editingExpense)}
-              >
-                <SelectTrigger className="col-span-3">
-                  <SelectValue placeholder="Method" />
-                </SelectTrigger>
-                <SelectContent>
-                  {PAYMENT_METHOD_OPTIONS.map((method) => (
-                    <SelectItem key={method.value} value={method.value}>
-                      {method.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            {editingExpense && (
-              <p className="col-start-2 col-span-3 -mt-2 text-xs text-muted-foreground">
-                Amount, station, category, payment method, and posting date are
-                immutable after posting. Delete and recreate the expense to
-                make an audited financial correction.
-              </p>
+              />
             )}
-            {!editingExpense &&
-              newExpense.payment_method === "cash" &&
-              cashDrawerControlsEnabled && (
-                <div className="grid grid-cols-4 items-start gap-4">
-                  <Label htmlFor="cash-drawer" className="pt-2 text-right">
-                    Cash Drawer*
-                  </Label>
-                  <div className="col-span-3 space-y-1.5">
-                    <Select
-                      value={selectedCashDrawerSessionId}
-                      onValueChange={setSelectedCashDrawerSessionId}
-                      disabled={
-                        cashDrawerLoading || cashDrawerSessions.length === 0
+
+            {editingExpense && (
+              <div className="grid gap-2">
+                <Label>Category</Label>
+                <p className="text-sm text-muted-foreground">
+                  {categories.find(
+                    (cat: any) => String(cat.id) === newExpense.category_id,
+                  )?.name || "General"}
+                </p>
+              </div>
+            )}
+
+            {editingExpense ? (
+              <div className="grid gap-2">
+                <Label>Payment</Label>
+                <p className="text-sm capitalize">
+                  {String(newExpense.payment_method || "-").replaceAll(
+                    "_",
+                    " ",
+                  )}
+                </p>
+              </div>
+            ) : (
+              <>
+                <div className="grid gap-2">
+                  <Label htmlFor="expense-party-type">Party</Label>
+                  <Select
+                    value={partyType}
+                    onValueChange={(value) => {
+                      const nextPartyType = value as ExpensePartyType;
+                      setPartyType(nextPartyType);
+                      setPartyId("");
+                      if (nextPartyType !== "supplier") {
+                        setNewExpense((current) => ({
+                          ...current,
+                          payment_status: "paid",
+                          paid_amount: current.amount,
+                        }));
                       }
+                    }}
+                  >
+                    <SelectTrigger id="expense-party-type">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">No linked party</SelectItem>
+                      <SelectItem value="supplier">Supplier</SelectItem>
+                      <SelectItem value="staff">Staff</SelectItem>
+                      <SelectItem value="customer">Customer</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {partyType !== "none" && (
+                  <div className="grid gap-2">
+                    <Label htmlFor="expense-party">
+                      {partyType[0].toUpperCase() + partyType.slice(1)}*
+                    </Label>
+                    <Select
+                      value={partyId}
+                      onValueChange={setPartyId}
+                      disabled={partiesLoading}
                     >
-                      <SelectTrigger id="cash-drawer">
+                      <SelectTrigger id="expense-party">
                         <SelectValue
                           placeholder={
-                            cashDrawerLoading
-                              ? "Loading open drawers..."
-                              : "Select open cash drawer"
+                            partiesLoading
+                              ? "Loading parties..."
+                              : `Select ${partyType}`
                           }
                         />
                       </SelectTrigger>
                       <SelectContent>
-                        {cashDrawerSessions.length === 0 ? (
-                          <SelectItem value="none" disabled>
-                            No open cash drawers
+                        {parties[partyType].map((party) => (
+                          <SelectItem key={party.id} value={String(party.id)}>
+                            {party.name}
                           </SelectItem>
-                        ) : (
-                          cashDrawerSessions.map((session) => (
-                            <SelectItem
-                              key={session.id}
-                              value={String(session.id)}
-                            >
-                              {`${session.name || session.drawer_key || "Drawer"} · ${session.station || "general"}${session.business_date ? ` · ${session.business_date}` : ""}`}
-                            </SelectItem>
-                          ))
-                        )}
+                        ))}
                       </SelectContent>
                     </Select>
-                    {cashDrawerError ? (
-                      <p className="text-xs text-destructive">
-                        {cashDrawerError}
-                      </p>
-                    ) : cashDrawerSessions.length === 0 &&
-                      !cashDrawerLoading ? (
-                      <p className="text-xs text-destructive">
-                        Open a cash drawer before recording a cash expense.
-                      </p>
-                    ) : (
-                      <p className="text-xs text-muted-foreground">
-                        This expense will reduce the selected drawer&apos;s
-                        expected cash.
-                      </p>
-                    )}
                   </div>
+                )}
+                <div className="grid gap-2">
+                  <Label htmlFor="expense-payment-status">Payment</Label>
+                  <Select
+                    value={newExpense.payment_status}
+                    onValueChange={(
+                      payment_status: "paid" | "unpaid" | "partial",
+                    ) =>
+                      setNewExpense({
+                        ...newExpense,
+                        payment_status,
+                        paid_amount:
+                          payment_status === "paid"
+                            ? newExpense.amount
+                            : payment_status === "unpaid"
+                              ? ""
+                              : newExpense.paid_amount,
+                      })
+                    }
+                  >
+                    <SelectTrigger id="expense-payment-status">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="paid">Paid in full</SelectItem>
+                      {partyType === "supplier" && (
+                        <SelectItem value="partial">Partially paid</SelectItem>
+                      )}
+                      {partyType === "supplier" && (
+                        <SelectItem value="unpaid">
+                          Unpaid (supplier payable)
+                        </SelectItem>
+                      )}
+                    </SelectContent>
+                  </Select>
                 </div>
-              )}
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="desc" className="text-right">
-                Notes
-              </Label>
+                {newExpense.payment_status === "partial" && (
+                  <div className="grid gap-2">
+                    <Label htmlFor="expense-paid-now">Paid now*</Label>
+                    <Input
+                      id="expense-paid-now"
+                      type="number"
+                      min="0"
+                      max={newExpense.amount || undefined}
+                      value={newExpense.paid_amount}
+                      onChange={(event) =>
+                        setNewExpense({
+                          ...newExpense,
+                          paid_amount: event.target.value,
+                        })
+                      }
+                    />
+                  </div>
+                )}
+              </>
+            )}
+
+            {editingExpense && (
+              <p className="-mt-3 text-xs text-muted-foreground">
+                Amount, station, category, payment method, and posting date are
+                immutable after posting. Delete and recreate the expense to make
+                an audited financial correction.
+              </p>
+            )}
+
+            {!editingExpense && newExpense.payment_status !== "unpaid" && (
+              <div className="grid gap-2">
+                <Label htmlFor="expense-account">Account*</Label>
+                <Select
+                  value={selectedAccountKey}
+                  onValueChange={setSelectedAccountKey}
+                  disabled={accountsLoading || accounts.length === 0}
+                >
+                  <SelectTrigger id="expense-account">
+                    <SelectValue
+                      placeholder={
+                        accountsLoading
+                          ? "Loading accounts..."
+                          : "Select account"
+                      }
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {accounts.map((account) => (
+                      <SelectItem
+                        key={`${account.account_type}:${account.id}`}
+                        value={`${account.account_type}:${account.id}`}
+                      >
+                        {account.name} ·{" "}
+                        {formatCurrency(account.current_balance || 0)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {accountsError ? (
+                  <p className="text-xs text-destructive">{accountsError}</p>
+                ) : !accountsLoading && accounts.length === 0 ? (
+                  <p className="text-xs text-destructive">
+                    Add or open an account under Cash & Banks first.
+                  </p>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    The expense reduces this account. Drawers record cash; bank
+                    accounts record a bank transfer.
+                  </p>
+                )}
+              </div>
+            )}
+
+            {!editingExpense && (
+              <AllocationLinesEditor
+                totalAmount={parseFloat(newExpense.amount) || 0}
+                eligibleHeads={eligibleExpenseHeads}
+                lines={allocationLines}
+                onChange={setAllocationLines}
+                headTypeLabel="Expense"
+                disabled={saving}
+                restaurantId={user?.restaurant_id ?? undefined}
+                headType="expense"
+                canCreateHead={canManageCoa}
+                onHeadCreated={(head) =>
+                  setEligibleExpenseHeads((prev) => [head, ...prev])
+                }
+              />
+            )}
+
+            <div className="grid gap-2">
+              <Label htmlFor="desc">Notes</Label>
               <Textarea
                 id="desc"
                 placeholder="What was this for?"
-                className="col-span-3"
                 value={newExpense.description}
                 onChange={(e) =>
                   setNewExpense({ ...newExpense, description: e.target.value })
@@ -1299,10 +1600,10 @@ export default function ExpensesPage() {
               disabled={
                 saving ||
                 (!editingExpense &&
-                  newExpense.payment_method === "cash" &&
-                  (!cashDrawerResolved ||
-                    (cashDrawerControlsEnabled &&
-                      (cashDrawerLoading || !selectedCashDrawerSessionId))))
+                  newExpense.payment_status !== "unpaid" &&
+                  (accountsLoading ||
+                    accounts.length === 0 ||
+                    !selectedAccountKey))
               }
             >
               {saving && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
@@ -1312,38 +1613,42 @@ export default function ExpensesPage() {
         </DialogContent>
       </Dialog>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="mb-4">
-          <TabsTrigger value="approved" className="gap-2">
-            <CheckCircle2 className="w-4 h-4" />
-            Approved Expenses
-          </TabsTrigger>
-          <TabsTrigger value="pending" className="gap-2">
-            <Clock className="w-4 h-4" />
-            Pending Approvals
-            {candidates.length > 0 && (
-              <Badge
-                variant="destructive"
-                className="ml-1 px-1.5 py-0 min-w-[20px] text-center"
-              >
-                {candidates.length}
-              </Badge>
-            )}
-          </TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="approved" className="mt-0">
-          {loading ? (
-            <div className="h-64 flex items-center justify-center">
-              <Loader2 className="w-8 h-8 animate-spin text-red-500" />
-            </div>
-          ) : filteredExpenses.length === 0 ? (
-            <div className="h-64 flex flex-col items-center justify-center text-muted-foreground border-2 border-dashed border-border rounded-xl bg-muted/20">
-              <Receipt className="w-12 h-12 mb-4 opacity-20" />
-              <p>No expenses found for the selected period.</p>
-            </div>
-          ) : (
-            <Card className="border-border">
+      <section className="overflow-hidden rounded-2xl border border-border bg-card">
+        <div className="flex min-h-14 items-center justify-between gap-3 border-b border-border px-4 py-3">
+          <div className="min-w-0">
+            <h2 className="font-medium">Expense register</h2>
+            <p className="truncate text-xs text-muted-foreground">
+              {filteredExpenses.length} visible entries
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleExport}
+            disabled={!filteredExpenses.length}
+            className="h-9 shrink-0 rounded-lg"
+          >
+            <Download className="mr-2 h-4 w-4" /> Export
+          </Button>
+        </div>
+        {loading ? (
+          <div className="h-64 flex items-center justify-center">
+            <Loader2 className="w-8 h-8 animate-spin text-red-500" />
+          </div>
+        ) : filteredExpenses.length === 0 ? (
+          <div className="h-64 flex flex-col items-center justify-center text-muted-foreground border-2 border-dashed border-border rounded-xl bg-muted/20">
+            <Receipt className="w-12 h-12 mb-4 opacity-20" />
+            <p>No expenses found for the selected period.</p>
+          </div>
+        ) : (
+          <>
+            <ExpenseMobileList
+              expenses={filteredExpenses}
+              onSelect={setSelectedExpense}
+              onEdit={handleEditExpense}
+              onDelete={handleDeleteExpense}
+            />
+            <Card className="hidden border-border lg:block">
               <CardContent className="p-0">
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm text-left">
@@ -1351,6 +1656,7 @@ export default function ExpensesPage() {
                       <tr>
                         <th className="px-6 py-4">Description</th>
                         <th className="px-6 py-4">Category</th>
+                        <th className="px-6 py-4">Party</th>
                         <th className="px-6 py-4">Amount</th>
                         <th className="px-6 py-4">Date</th>
                         <th className="px-6 py-4">Status</th>
@@ -1361,39 +1667,77 @@ export default function ExpensesPage() {
                       {filteredExpenses.map((expense: any) => {
                         const readOnlyFinanceRow =
                           isFinanceEventExpense(expense);
-                        const inventoryFinanceRow = isInventoryFinanceExpense(expense);
-                        const sourceStatus = String(expense.source_status || "").toLowerCase();
-                        const superseded = ["cancelled", "corrected"].includes(sourceStatus);
+                        const inventoryFinanceRow =
+                          isInventoryFinanceExpense(expense);
+                        const sourceStatus = String(
+                          expense.source_status || "",
+                        ).toLowerCase();
+                        const superseded = ["cancelled", "corrected"].includes(
+                          sourceStatus,
+                        );
                         return (
                           <tr
                             key={`${expense.source_type || "expense"}-${expense.id}`}
-                            className="hover:bg-muted/30 transition-colors"
+                            tabIndex={0}
+                            role="button"
+                            onClick={() => setSelectedExpense(expense)}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter" || event.key === " ") {
+                                event.preventDefault();
+                                setSelectedExpense(expense);
+                              }
+                            }}
+                            className="cursor-pointer transition-colors hover:bg-muted/30 focus-visible:bg-muted/40 focus-visible:outline-none"
                           >
-                            <td className={cn("px-6 py-4 font-medium", superseded && "text-muted-foreground line-through")}>
+                            <td
+                              className={cn(
+                                "px-6 py-4 font-medium",
+                                superseded &&
+                                  "text-muted-foreground line-through",
+                              )}
+                            >
                               {expense.description || "Untitled"}
                             </td>
                             <td className="px-6 py-4 text-muted-foreground">
                               {expense.category?.name || "General"}
                             </td>
-                            <td className={cn("px-6 py-4 font-bold text-red-600 dark:text-red-500", superseded && "text-muted-foreground line-through dark:text-muted-foreground")}>
-                              - Rs. {Number(expense.amount).toLocaleString()}
+                            <td className="px-6 py-4 text-muted-foreground">
+                              {expense.party_name ||
+                                (expense.party_type
+                                  ? `${expense.party_type} #${expense.party_id}`
+                                  : "—")}
+                            </td>
+                            <td
+                              className={cn(
+                                "px-6 py-4 font-bold text-red-600 dark:text-red-500",
+                                superseded &&
+                                  "text-muted-foreground line-through dark:text-muted-foreground",
+                              )}
+                            >
+                              - {formatCurrency(expense.amount)}
                             </td>
                             <td className="px-6 py-4 text-muted-foreground">
                               <div className="flex items-center gap-2">
                                 <Calendar className="w-3.5 h-3.5" />
-                                {new Date(
+                                {formatDate(
                                   expense.expense_date || expense.paid_on,
-                                ).toLocaleDateString()}
+                                )}
                               </div>
                             </td>
-                            <td className="px-6 py-4">
+                            <td
+                              className="px-6 py-4"
+                              onClick={(event) => event.stopPropagation()}
+                              onKeyDown={(event) => event.stopPropagation()}
+                            >
                               <Badge
                                 variant="outline"
                                 className="border-border text-muted-foreground capitalize"
                               >
-                                {readOnlyFinanceRow
-                                  ? sourceStatus || "Recorded"
-                                  : expense.status || "Completed"}
+                                {expenseStatusLabel(
+                                  readOnlyFinanceRow
+                                    ? sourceStatus || "recorded"
+                                    : expense.status || "completed",
+                                )}
                               </Badge>
                             </td>
                             <td className="px-6 py-4">
@@ -1401,12 +1745,17 @@ export default function ExpensesPage() {
                                 <div className="flex justify-end">
                                   {inventoryFinanceRow && expense.source_id ? (
                                     <Button asChild size="sm" variant="outline">
-                                      <Link href={`/inventory?view=activity&adjustment=${expense.source_id}`}>
-                                        <PackageSearch className="mr-2 h-4 w-4" /> Manage in inventory
+                                      <Link
+                                        href={`/inventory?view=activity&adjustment=${expense.source_id}`}
+                                      >
+                                        <PackageSearch className="mr-2 h-4 w-4" />{" "}
+                                        Manage in inventory
                                       </Link>
                                     </Button>
                                   ) : (
-                                    <Badge variant="secondary">Finance event</Badge>
+                                    <Badge variant="secondary">
+                                      Finance event
+                                    </Badge>
                                   )}
                                 </div>
                               ) : (
@@ -1454,121 +1803,148 @@ export default function ExpensesPage() {
                 )}
               </CardContent>
             </Card>
-          )}
-        </TabsContent>
-
-        <TabsContent value="pending" className="mt-0">
-          <Card className="border-border">
-            <CardContent className="p-0">
-              <div className="overflow-x-auto">
-                {candidates.length === 0 ? (
-                  <div className="h-64 flex flex-col items-center justify-center text-muted-foreground border-2 border-dashed border-border rounded-xl bg-muted/20">
-                    <CheckCircle2 className="w-12 h-12 mb-4 opacity-20" />
-                    <p>No pending expenses to approve.</p>
-                  </div>
-                ) : (
-                  <table className="w-full text-sm text-left">
-                    <thead className="bg-muted/50 text-muted-foreground font-medium border-b border-border">
-                      <tr>
-                        <th className="px-6 py-4">Description</th>
-                        <th className="px-6 py-4">Source</th>
-                        <th className="px-6 py-4">Amount</th>
-                        <th className="px-6 py-4">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border">
-                      {candidates.map((candidate: any) => (
-                        <tr
-                          key={candidate.id}
-                          className="hover:bg-muted/30 transition-colors"
-                        >
-                          <td className="px-6 py-4 font-medium">
-                            {candidate.description || "Untitled"}
-                          </td>
-                          <td className="px-6 py-4 text-muted-foreground capitalize">
-                            {candidate.source_type}
-                          </td>
-                          <td className="px-6 py-4 font-bold text-orange-600 dark:text-orange-500">
-                            Rs. {Number(candidate.amount).toLocaleString()}
-                          </td>
-                          <td className="px-6 py-4">
-                            <div className="flex items-center gap-2">
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="bg-emerald-50 text-emerald-600 border-emerald-200 hover:bg-emerald-100 dark:bg-emerald-950/30 dark:border-emerald-900/50"
-                                onClick={() =>
-                                  handleApproveCandidate(candidate.id)
-                                }
-                              >
-                                <CheckCircle2 className="w-4 h-4 mr-1" />{" "}
-                                Approve
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="text-destructive hover:bg-destructive/10 border-destructive/20"
-                                onClick={() =>
-                                  handleRejectCandidate(candidate.id)
-                                }
-                              >
-                                <XCircle className="w-4 h-4 mr-1" /> Reject
-                              </Button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
-    </div>
+          </>
+        )}
+      </section>
+      <TransactionDetailSheet
+        open={selectedExpense != null}
+        onOpenChange={(open) => !open && setSelectedExpense(null)}
+        detail={expenseDetail}
+        actionHref={
+          isInventoryFinanceExpense(selectedExpense) &&
+          selectedExpense?.source_id
+            ? `/inventory?view=activity&adjustment=${selectedExpense.source_id}`
+            : null
+        }
+        actionLabel="Open inventory activity"
+      />
+    </AppPage>
   );
 }
 
-function MetricCard({
-  label,
-  value,
-  icon,
-  color,
-  bg,
-  href,
-  isStringValue,
-}: any) {
-  const content = (
-    <Card
-      className={cn(
-        "overflow-hidden border-border bg-card transition-colors",
-        href && "hover:bg-muted/50 cursor-pointer",
-      )}
-    >
-      <CardContent className="p-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1">
-              {label}
-            </p>
-            <h3 className="text-2xl font-bold">
-              {isStringValue
-                ? value
-                : `Rs. ${Number(value || 0).toLocaleString()}`}
-            </h3>
+function ExpenseMobileList({
+  expenses,
+  onSelect,
+  onEdit,
+  onDelete,
+}: {
+  expenses: any[];
+  onSelect: (expense: any) => void;
+  onEdit: (expense: any) => void;
+  onDelete: (expense: any) => void;
+}) {
+  return (
+    <DataList className="lg:hidden">
+      {expenses.map((expense: any) => {
+        const readOnlyFinanceRow = isFinanceEventExpense(expense);
+        const inventoryFinanceRow = isInventoryFinanceExpense(expense);
+        const sourceStatus = String(expense.source_status || "").toLowerCase();
+        const superseded = ["cancelled", "corrected"].includes(sourceStatus);
+        const status = expenseStatusLabel(
+          readOnlyFinanceRow
+            ? sourceStatus || "recorded"
+            : expense.status || "completed",
+        );
+
+        return (
+          <div
+            key={`${expense.source_type || "expense"}-${expense.id}`}
+            role="button"
+            tabIndex={0}
+            onClick={() => onSelect(expense)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                onSelect(expense);
+              }
+            }}
+            className="cursor-pointer focus-visible:bg-muted/50 focus-visible:outline-none"
+          >
+            <ListRow
+              leading={<Receipt className="h-4 w-4" />}
+              title={
+                <span
+                  className={cn(
+                    superseded && "text-muted-foreground line-through",
+                  )}
+                >
+                  {expense.description || "Untitled"}
+                </span>
+              }
+              description={`${expense.category?.name || "General"} · ${formatDate(
+                expense.expense_date || expense.paid_on,
+              )}${expense.party_name ? ` · ${expense.party_name}` : ""}`}
+              meta={
+                <span
+                  className={cn(
+                    "font-semibold tabular-nums text-destructive",
+                    superseded && "text-muted-foreground line-through",
+                  )}
+                >
+                  - {formatCurrency(expense.amount || 0)}
+                </span>
+              }
+              trailing={
+                <Badge
+                  variant="outline"
+                  className="max-w-24 truncate text-[11px] text-muted-foreground"
+                >
+                  {status}
+                </Badge>
+              }
+              interactive
+            />
+            {!readOnlyFinanceRow ||
+            (inventoryFinanceRow && expense.source_id) ? (
+              <div
+                className="flex min-h-10 items-center justify-end gap-2 border-t border-border/60 px-3 py-1.5"
+                onClick={(event) => event.stopPropagation()}
+                onKeyDown={(event) => event.stopPropagation()}
+              >
+                {readOnlyFinanceRow ? (
+                  <Button
+                    asChild
+                    size="sm"
+                    variant="outline"
+                    className="h-8 text-xs"
+                  >
+                    <Link
+                      href={`/inventory?view=activity&adjustment=${expense.source_id}`}
+                    >
+                      Inventory
+                    </Link>
+                  </Button>
+                ) : (
+                  <div className="flex items-center gap-1">
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      className="h-8 w-8"
+                      onClick={() => onEdit(expense)}
+                      aria-label="Edit expense"
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      className="h-8 w-8 text-destructive hover:text-destructive"
+                      onClick={() => onDelete(expense)}
+                      aria-label="Delete expense"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                )}
+              </div>
+            ) : null}
           </div>
-          <div className={`p-3 rounded-xl ${bg} ${color}`}>{icon}</div>
-        </div>
-      </CardContent>
-    </Card>
+        );
+      })}
+    </DataList>
   );
-
-  if (href) {
-    return <Link href={href}>{content}</Link>;
-  }
-
-  return content;
 }
 
 function MiniMetric({ label, value }: { label: string; value: number }) {
@@ -1577,13 +1953,7 @@ function MiniMetric({ label, value }: { label: string; value: number }) {
       <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
         {label}
       </div>
-      <div className="mt-1 text-sm font-bold">
-        Rs.{" "}
-        {Number(value || 0).toLocaleString(undefined, {
-          minimumFractionDigits: 2,
-          maximumFractionDigits: 2,
-        })}
-      </div>
+      <div className="mt-1 text-sm font-bold">{formatCurrency(value || 0)}</div>
     </div>
   );
 }

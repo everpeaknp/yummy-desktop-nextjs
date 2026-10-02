@@ -24,12 +24,15 @@ import {
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Loader2 } from "lucide-react";
+import { useRestaurant } from "@/hooks/use-restaurant";
 
 const formSchema = z.object({
   name: z.string().min(1, "Name is required"),
   price_adjustment: z.coerce.number().default(0),
   is_active: z.boolean().default(true),
 });
+
+export type ModifierItemFormValues = z.infer<typeof formSchema>;
 
 export interface ModifierItem {
   id: number;
@@ -42,7 +45,7 @@ export interface ModifierItem {
 interface ModifierItemDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSubmit: (data: z.infer<typeof formSchema>) => Promise<void>;
+  onSubmit: (data: ModifierItemFormValues) => Promise<void>;
   initialData?: ModifierItem | null;
   groupName: string;
 }
@@ -52,9 +55,11 @@ export function ModifierItemDialog({
   onOpenChange,
   onSubmit,
   initialData,
-  groupName
+  groupName,
 }: ModifierItemDialogProps) {
-  const form = useForm<z.infer<typeof formSchema>>({
+  const restaurant = useRestaurant((state) => state.restaurant);
+  const currency = restaurant?.currency || "NPR";
+  const form = useForm<ModifierItemFormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
       name: "",
@@ -79,14 +84,14 @@ export function ModifierItemDialog({
     }
   }, [initialData, form, open]);
 
-  const handleSubmit = async (values: z.infer<typeof formSchema>) => {
+  const handleSubmit = async (values: ModifierItemFormValues) => {
     await onSubmit(values);
     onOpenChange(false);
   };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[425px]">
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-[425px]">
         <DialogHeader>
           <DialogTitle>
             {initialData ? "Edit Option" : "Add Option"}
@@ -96,7 +101,10 @@ export function ModifierItemDialog({
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
+          <form
+            onSubmit={form.handleSubmit(handleSubmit)}
+            className="space-y-5"
+          >
             <FormField
               control={form.control}
               name="name"
@@ -110,43 +118,47 @@ export function ModifierItemDialog({
                 </FormItem>
               )}
             />
-            
-            <div className="flex gap-4">
-                 <FormField
-                  control={form.control}
-                  name="price_adjustment"
-                  render={({ field }) => (
-                    <FormItem className="flex-1">
-                      <FormLabel>Price adjustment (e.g. +50 or -20)</FormLabel>
-                      <FormControl>
-                        <Input type="number" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-            
-                <FormField
-                  control={form.control}
-                  name="is_active"
-                  render={({ field }) => (
-                    <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm flex-1 mt-auto">
-                      <div className="space-y-0.5">
-                        <FormLabel>Active</FormLabel>
-                      </div>
-                      <FormControl>
-                        <Switch
-                          checked={field.value}
-                          onCheckedChange={field.onChange}
-                        />
-                      </FormControl>
-                    </FormItem>
-                  )}
-                />
+
+            <div className="grid gap-4 border-t pt-5 sm:grid-cols-[1fr_auto]">
+              <FormField
+                control={form.control}
+                name="price_adjustment"
+                render={({ field }) => (
+                  <FormItem className="flex-1">
+                    <FormLabel>Price adjustment ({currency})</FormLabel>
+                    <FormControl>
+                      <Input type="number" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="is_active"
+                render={({ field }) => (
+                  <FormItem className="flex min-h-11 flex-row items-center justify-between rounded-xl border px-3 py-2.5 sm:mt-auto">
+                    <div className="space-y-0.5 pr-4">
+                      <FormLabel>Active</FormLabel>
+                    </div>
+                    <FormControl>
+                      <Switch
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                      />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
             </div>
 
             <DialogFooter>
-              <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => onOpenChange(false)}
+              >
                 Cancel
               </Button>
               <Button type="submit" disabled={form.formState.isSubmitting}>

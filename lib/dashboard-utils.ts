@@ -35,17 +35,23 @@ export type DateRangePreset =
   | "last30"
   | "month"
   | "lastMonth"
+  | "thisYear"
+  | "lastYear"
+  | "lifetime"
   | "custom"
 
 export function resolveDateRange(
   activeRange: DateRangePreset,
-  customRange?: { from?: Date; to?: Date }
+  customRange?: { from?: Date; to?: Date },
+  presetRange?: { date_from?: string; date_to?: string }
 ): { dateFrom: string; dateTo: string; startTime?: string; endTime?: string } {
   const now = new Date()
   let dateFrom = formatDateYmd(now)
   let dateTo = formatDateYmd(now)
 
-  if (activeRange === "yesterday") {
+  if (activeRange === "lifetime") {
+    dateFrom = presetRange?.date_from ?? dateFrom
+  } else if (activeRange === "yesterday") {
     const y = new Date(now)
     y.setDate(y.getDate() - 1)
     dateFrom = formatDateYmd(y)
@@ -66,9 +72,19 @@ export function resolveDateRange(
     const end = new Date(now.getFullYear(), now.getMonth(), 0)
     dateFrom = formatDateYmd(start)
     dateTo = formatDateYmd(end)
+  } else if (activeRange === "thisYear") {
+    dateFrom = formatDateYmd(new Date(now.getFullYear(), 0, 1))
+  } else if (activeRange === "lastYear") {
+    dateFrom = formatDateYmd(new Date(now.getFullYear() - 1, 0, 1))
+    dateTo = formatDateYmd(new Date(now.getFullYear() - 1, 11, 31))
   } else if (activeRange === "custom" && customRange?.from) {
     dateFrom = formatDateYmd(customRange.from)
     dateTo = customRange.to ? formatDateYmd(customRange.to) : dateFrom
+  }
+
+  if (activeRange !== "custom" && presetRange?.date_from && presetRange.date_to) {
+    dateFrom = presetRange.date_from
+    dateTo = presetRange.date_to
   }
 
   let startTime: string | undefined
@@ -97,6 +113,12 @@ export function getPeriodLabel(activeRange: DateRangePreset): string {
       return "This month"
     case "lastMonth":
       return "Last month"
+    case "thisYear":
+      return "This year"
+    case "lastYear":
+      return "Last year"
+    case "lifetime":
+      return "Lifetime"
     case "custom":
       return "Custom range"
     default:
@@ -111,6 +133,8 @@ export function getCompareLabel(activeRange: DateRangePreset): string {
   if (activeRange === "last30") return "the previous 30 days"
   if (activeRange === "month") return "the previous month"
   if (activeRange === "lastMonth") return "the month before last"
+  if (activeRange === "thisYear") return "the same period last year"
+  if (activeRange === "lastYear") return "the year before last"
   return "previous period"
 }
 
@@ -120,17 +144,19 @@ export type MergedInsight = {
   level?: string
   type?: string
   route?: string
-  source: "ai" | "quick"
+  source: "operational" | "ai_assisted"
+  domain?: string
+  data_status?: string
 }
 
 export function mergeDashboardInsights(
   quickInsights: any[],
-  aiInsights: any[]
+  analyticsInsights: any[]
 ): MergedInsight[] {
   const seen = new Set<string>()
   const result: MergedInsight[] = []
 
-  const add = (item: any, source: "ai" | "quick") => {
+  const add = (item: any) => {
     const message = String(item?.message || item?.title || "").trim()
     if (!message) return
     const key = message.toLowerCase().slice(0, 100)
@@ -142,12 +168,14 @@ export function mergeDashboardInsights(
       level: item?.level || item?.type,
       type: item?.type,
       route: item?.route,
-      source,
+      source: item?.source === "ai_assisted" ? "ai_assisted" : "operational",
+      domain: item?.domain,
+      data_status: item?.data_status,
     })
   }
 
-  aiInsights.forEach((item) => add(item, "ai"))
-  quickInsights.forEach((item) => add(item, "quick"))
+  analyticsInsights.forEach((item) => add(item))
+  quickInsights.forEach((item) => add(item))
 
   return result.slice(0, 6)
 }

@@ -1,12 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { History } from "lucide-react";
+
+import apiClient from "@/lib/api-client";
+import { DrawerSessionApis } from "@/lib/api/endpoints";
+import { canAccessBusinessModule, hasPermission } from "@/lib/role-permissions";
 import { useAuth } from "@/hooks/use-auth";
 import { useRestaurant } from "@/hooks/use-restaurant";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { AppPage } from "@/components/patterns/page/app-page";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Select,
   SelectContent,
@@ -14,305 +18,166 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { DayCloseModal } from "@/components/analytics/day-close-modal";
+import { DayCloseFlow } from "@/components/day-close/day-close-flow";
 import {
   DayCloseHistory,
   type DayCloseHistoryHandle,
 } from "@/components/analytics/day-close-history";
-import {
-  DayCloseMetricCard,
-  DC_METRIC_ACCENT_IN,
-  DC_METRIC_ACCENT_OUT,
-  DC_METRIC_ICON_IN,
-  DC_METRIC_ICON_OUT,
-  DC_METRIC_VALUE_IN,
-  DC_METRIC_VALUE_OUT,
-} from "@/components/analytics/day-close-metric-card";
-import { cn } from "@/lib/utils";
-import {
-  Calendar,
-  CheckCircle2,
-  DollarSign,
-  RefreshCw,
-  Wallet,
-} from "lucide-react";
-import apiClient from "@/lib/api-client";
-import { toast } from "sonner";
-import { DayCloseApis } from "@/lib/api/endpoints";
-import {
-  formatDayCloseCurrency,
-  formatDayCloseListHeading,
-  pickBackendAmount,
-} from "@/lib/day-close-format";
-import {
-  parseDayCloseCurrent,
-  parseDayCloseSnapshotData,
-  unwrapApiData,
-  type DayCloseCurrent,
-  type DayCloseSnapshotData,
-  type BusinessLine,
-} from "@/types/day-close";
+import type { BusinessLine } from "@/types/day-close";
+
+function todayIso() {
+  const date = new Date();
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
 
 export default function DayClosePage() {
-  const user = useAuth((s) => s.user);
-  const restaurant = useRestaurant((s) => s.restaurant);
+  const searchParams = useSearchParams();
+  const user = useAuth((state) => state.user);
+  const restaurant = useRestaurant((state) => state.restaurant);
   const restaurantId = user?.restaurant_id ?? undefined;
-  const [closeOpen, setCloseOpen] = useState(false);
-  const [businessLine, setBusinessLine] = useState<BusinessLine>("restaurant");
-  const [currentLoading, setCurrentLoading] = useState(false);
-  const [currentClose, setCurrentClose] = useState<DayCloseCurrent | null>(null);
-  const [snapshotPreview, setSnapshotPreview] = useState<DayCloseSnapshotData | null>(null);
-  const dayCloseHistoryRef = useRef<DayCloseHistoryHandle | null>(null);
-
-  const showBusinessLinePicker = Boolean(
-    restaurant?.hotel_enabled && restaurant?.restaurant_enabled,
+  const requestedBusinessLine = searchParams.get("business_line");
+  const requestedBusinessDate = searchParams.get("business_date");
+  const targetDayCloseId =
+    Number(searchParams.get("day_close_id") || "") || null;
+  const detailId = Number(searchParams.get("detail") || "") || null;
+  const [businessDate, setBusinessDate] = useState(
+    requestedBusinessDate || todayIso(),
   );
+  const [businessLine, setBusinessLine] = useState<BusinessLine>(
+    requestedBusinessLine === "hotel" || requestedBusinessLine === "combined"
+      ? requestedBusinessLine
+      : "restaurant",
+  );
+  const [cashControlMode, setCashControlMode] = useState<
+    "separate" | "combined"
+  >("separate");
+  const [showHistory, setShowHistory] = useState(Boolean(detailId));
+  const historyRef = useRef<DayCloseHistoryHandle | null>(null);
 
-  const loadCurrent = useCallback(async () => {
-    if (!restaurantId) return;
-    setCurrentLoading(true);
-    try {
-      const [sessionRes, snapshotRes] = await Promise.all([
-        apiClient.get(DayCloseApis.current({ restaurantId, businessLine })),
-        apiClient.get(DayCloseApis.generateSnapshot({ restaurantId, businessLine })),
-      ]);
-
-      if (sessionRes.data?.status === "success") {
-        setCurrentClose(unwrapApiData(sessionRes.data, parseDayCloseCurrent));
-      } else {
-        setCurrentClose(null);
-      }
-
-      if (snapshotRes.data?.status === "success") {
-        setSnapshotPreview(unwrapApiData(snapshotRes.data, parseDayCloseSnapshotData));
-      } else {
-        setSnapshotPreview(null);
-      }
-    } catch (err: unknown) {
-      setCurrentClose(null);
-      setSnapshotPreview(null);
-      const message =
-        (err as { response?: { data?: { message?: string; detail?: string } } })?.response?.data
-          ?.message ??
-        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
-        "Failed to load day close data.";
-      toast.error(message);
-    } finally {
-      setCurrentLoading(false);
-    }
-  }, [restaurantId, businessLine]);
+  const canViewDayClose = hasPermission(user, "reports.dayclose.view");
+  const canUseRestaurant = canAccessBusinessModule(user, "restaurant");
+  const canUseHotel =
+    Boolean(restaurant?.hotel_enabled) &&
+    canAccessBusinessModule(user, "hotel") &&
+    canViewDayClose;
+  const showBusinessLinePicker = Boolean(
+    cashControlMode !== "combined" &&
+    restaurant?.restaurant_enabled &&
+    restaurant?.hotel_enabled &&
+    canUseRestaurant &&
+    canUseHotel,
+  );
 
   useEffect(() => {
-    if (restaurantId) loadCurrent();
-  }, [restaurantId, loadCurrent]);
+    if (!restaurantId) return;
+    let active = true;
+    void apiClient
+      .get(
+        DrawerSessionApis.cashControlPolicy({
+          restaurantId,
+          effectiveDate: businessDate,
+        }),
+      )
+      .then((response) => {
+        if (!active) return;
+        const mode =
+          response.data?.data?.mode === "combined" ? "combined" : "separate";
+        setCashControlMode(mode);
+        if (mode === "combined") setBusinessLine("combined");
+      })
+      .catch(() => {
+        if (active) setCashControlMode("separate");
+      });
+    return () => {
+      active = false;
+    };
+  }, [businessDate, restaurantId]);
 
-  const actionLabel = useMemo(() => {
-    const label = currentClose?.action_label?.trim();
-    if (label) return label;
-    const status = String(currentClose?.status ?? "open").toLowerCase();
-    if (status === "pending") return "Continue Close";
-    if (status === "confirmed") return "View Current Day";
-    return "Close Today";
-  }, [currentClose?.action_label, currentClose?.status]);
+  useEffect(() => {
+    if (cashControlMode === "combined") return;
+    if (requestedBusinessLine === "hotel" && canUseHotel)
+      setBusinessLine("hotel");
+    else if (!canUseRestaurant && canUseHotel) setBusinessLine("hotel");
+    else setBusinessLine("restaurant");
+  }, [canUseHotel, canUseRestaurant, cashControlMode, requestedBusinessLine]);
 
-  const handlePrimaryAction = useCallback(async () => {
-    if (currentClose?.id) {
-      await dayCloseHistoryRef.current?.openDayCloseDetail(currentClose.id);
-      return;
-    }
-    setCloseOpen(true);
-  }, [currentClose?.id]);
+  useEffect(() => {
+    if (!detailId) return;
+    setShowHistory(true);
+  }, [detailId]);
 
-  const displayNetSales = pickBackendAmount(
-    snapshotPreview?.net_sales,
-    currentClose?.snapshot_preview?.net_sales,
-  );
-  const displayExpenseTotal = pickBackendAmount(
-    snapshotPreview?.expense_total,
-    currentClose?.snapshot_preview?.expense_total,
-  );
+  useEffect(() => {
+    if (!detailId || !showHistory) return;
+    const timer = window.setTimeout(() => {
+      void historyRef.current?.openDayCloseDetail(detailId);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [detailId, showHistory]);
 
-  const businessLineLabel = businessLine === "hotel" ? "Hotel Close" : "Restaurant Close";
-  const statusLabel = String(currentClose?.status ?? "—").replace(/_/g, " ");
-  const statusTone = (() => {
-    const normalized = statusLabel.toLowerCase();
-    if (normalized === "open") return "bg-emerald-500/10 text-emerald-600 border-emerald-200";
-    if (normalized === "confirmed") return "bg-primary/10 text-primary border-primary/20";
-    if (normalized === "pending") return "bg-amber-500/10 text-amber-600 border-amber-200";
-    if (normalized === "reopened") return "bg-blue-500/10 text-blue-600 border-blue-200";
-    return "bg-muted text-muted-foreground border-border";
-  })();
+  const scopeLabel = useMemo(() => {
+    if (businessLine === "combined") return "Restaurant + hotel";
+    if (businessLine === "hotel") return "Hotel";
+    return "Restaurant";
+  }, [businessLine]);
+
+  if (!restaurantId || !canViewDayClose) return null;
 
   return (
-    <div className="day-close-page day-close-ui flex flex-col gap-10 max-w-[1600px] mx-auto pb-20 px-4">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="space-y-1">
-          <h1 className="dc-page-title">Day Close</h1>
-          <p className="dc-page-subtitle">
-            Period and totals come from the backend day-close service
-          </p>
-        </div>
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 shrink-0">
-          {showBusinessLinePicker ? (
+    <AppPage width="wide" className="pb-6">
+      <div className="mx-auto w-full max-w-3xl">
+        <div className="mb-5 flex items-center justify-between gap-3">
+          {cashControlMode === "combined" ? (
+            <p className="text-sm font-medium text-muted-foreground">
+              {scopeLabel}
+            </p>
+          ) : showBusinessLinePicker ? (
             <Select
               value={businessLine}
               onValueChange={(value) => setBusinessLine(value as BusinessLine)}
             >
-              <SelectTrigger className="dc-filter-control dc-filter-control-active h-11 rounded-2xl font-medium min-w-[200px]">
-                <SelectValue placeholder="Business line" />
+              <SelectTrigger className="h-11 w-[190px]">
+                <SelectValue placeholder="Business area" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="restaurant">Restaurant Close</SelectItem>
-                <SelectItem value="hotel">Hotel Close</SelectItem>
+                <SelectItem value="restaurant">Restaurant</SelectItem>
+                <SelectItem value="hotel">Hotel</SelectItem>
               </SelectContent>
             </Select>
-          ) : null}
+          ) : (
+            <p className="text-sm font-medium text-muted-foreground">
+              {scopeLabel}
+            </p>
+          )}
           <Button
-            onClick={handlePrimaryAction}
-            className="bg-primary hover:bg-primary/90 text-white font-medium h-11 px-6 rounded-2xl shadow-md gap-2"
-            disabled={!restaurantId}
+            type="button"
+            variant="ghost"
+            className="h-11"
+            onClick={() => setShowHistory((value) => !value)}
           >
-            <CheckCircle2 className="w-4 h-4" />
-            {actionLabel}
+            <History className="mr-2 h-4 w-4" />
+            {showHistory ? "Back to close" : "History"}
           </Button>
         </div>
-      </div>
 
-      <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <Card
-          className="dc-card lg:col-span-1 relative overflow-hidden group transition-all duration-300"
-          role={currentClose?.id ? "button" : undefined}
-          tabIndex={currentClose?.id ? 0 : undefined}
-          onClick={currentClose?.id ? () => void handlePrimaryAction() : undefined}
-          onKeyDown={
-            currentClose?.id
-              ? (event) => {
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault();
-                    void handlePrimaryAction();
-                  }
-                }
-              : undefined
-          }
-        >
-          <div className="absolute top-0 right-0 w-24 h-24 bg-primary/5 rounded-bl-[80px] -mr-4 -mt-4 transition-transform group-hover:scale-110" />
-          <CardHeader className="pb-3 relative z-10">
-            <div className="flex items-center justify-between gap-3">
-              <CardTitle className="dc-card-title flex items-center gap-2">
-                <Calendar className="h-4 w-4 text-primary" />
-                {businessLineLabel}
-              </CardTitle>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="dc-filter-control h-8 w-8 rounded-full shrink-0"
-                onClick={loadCurrent}
-                disabled={!restaurantId || currentLoading}
-                aria-label="Refresh current day close"
-              >
-                <RefreshCw className={currentLoading ? "h-4 w-4 animate-spin" : "h-4 w-4"} />
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent className="relative z-10 space-y-3">
-            <p className="dc-eyebrow">Current day</p>
-            <p className="text-lg font-medium tracking-tight break-words text-foreground">
-              {currentClose?.id
-                ? formatDayCloseListHeading({
-                    id: currentClose.id,
-                    business_line: currentClose.business_line,
-                    period_start_at: currentClose.period_start_at,
-                    period_end_at: currentClose.period_end_at,
-                    timezone: restaurant?.timezone ?? currentClose.timezone,
-                  })
-                : "—"}
-            </p>
-            <Badge
-              variant="outline"
-              className={cn("capitalize font-medium border", statusTone)}
-            >
-              {statusLabel}
-            </Badge>
-          </CardContent>
-        </Card>
-
-        <div className="lg:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-6">
-          <DayCloseMetricCard
-            label="Net Sales"
-            value={formatDayCloseCurrency(displayNetSales)}
-            icon={<DollarSign className="h-4 w-4" />}
-            iconPosition="top-right"
-            iconClassName={DC_METRIC_ICON_IN}
-            accent={DC_METRIC_ACCENT_IN}
-            valueClassName={DC_METRIC_VALUE_IN}
-          />
-          <DayCloseMetricCard
-            label="Total Expenses"
-            value={formatDayCloseCurrency(displayExpenseTotal)}
-            icon={<Wallet className="h-4 w-4" />}
-            iconPosition="top-right"
-            iconClassName={DC_METRIC_ICON_OUT}
-            accent={DC_METRIC_ACCENT_OUT}
-            valueClassName={DC_METRIC_VALUE_OUT}
-          />
-        </div>
-      </section>
-
-      <Tabs defaultValue="history" className="w-full">
-        <TabsList className="dc-tabs-list grid grid-cols-2 rounded-2xl">
-          <TabsTrigger value="history" className="dc-tab-trigger">
-            History
-          </TabsTrigger>
-          <TabsTrigger value="about" className="dc-tab-trigger">
-            What This Does
-          </TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="history" className="mt-5">
+        {showHistory ? (
           <DayCloseHistory
-            ref={dayCloseHistoryRef}
+            ref={historyRef}
             restaurantId={restaurantId}
             timezone={restaurant?.timezone}
-            liveCurrentClose={currentClose}
-            liveSnapshotPreview={snapshotPreview}
-            onLiveCurrentRefresh={loadCurrent}
+            initialBusinessLine={businessLine}
           />
-        </TabsContent>
-
-        <TabsContent value="about" className="mt-5">
-          <Card className="shadow-sm rounded-2xl border-border/50 bg-card/80 backdrop-blur-sm overflow-hidden">
-            <CardContent className="p-8 space-y-4">
-              <p className="text-sm text-muted-foreground">
-                A Day Close locks in your daily totals (sales, payments, expenses, refunds) and records a cash
-                reconciliation. If you spot a mistake later, you can reopen or adjust the close with a reason so the
-                system keeps an audit trail.
-              </p>
-              <div className="text-sm text-muted-foreground space-y-2">
-                <p>
-                  Use <span className="font-semibold text-foreground">{actionLabel}</span> to run the close wizard.
-                </p>
-                <p>
-                  Use <span className="font-semibold text-foreground">History</span> to export PDF/Excel and review
-                  saved snapshots from the backend.
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
-
-      {restaurantId ? (
-        <DayCloseModal
-          isOpen={closeOpen}
-          onClose={() => {
-            setCloseOpen(false);
-            loadCurrent();
-          }}
-          restaurantId={restaurantId}
-          businessLine={businessLine}
-        />
-      ) : null}
-    </div>
+        ) : (
+          <DayCloseFlow
+            restaurantId={restaurantId}
+            businessLine={businessLine}
+            businessDate={businessDate}
+            timezone={restaurant?.timezone}
+            targetDayCloseId={targetDayCloseId}
+            onBusinessDateChange={setBusinessDate}
+          />
+        )}
+      </div>
+    </AppPage>
   );
 }

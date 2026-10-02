@@ -44,9 +44,9 @@ export function normalizeRoles(roles?: string[] | null): UserRole[] {
   if (!roles || roles.length === 0) return [];
 
   // Backend sometimes returns concatenated roles like "Waiter + Cashier + Rooms"
-  const splitRoles = roles.flatMap(r => {
+  const splitRoles = roles.flatMap((r) => {
     if (!r) return [];
-    return r.split(/[\+,\&]/).map(part => part.trim());
+    return r.split(/[\+,\&]/).map((part) => part.trim());
   });
 
   return splitRoles
@@ -62,7 +62,11 @@ export function normalizeRoles(roles?: string[] | null): UserRole[] {
  * would otherwise produce an empty array.
  */
 export function normalizeRolesForUser(
-  user: { role?: string | null; roles?: string[] | null; primary_role?: string | null } | null
+  user: {
+    role?: string | null;
+    roles?: string[] | null;
+    primary_role?: string | null;
+  } | null,
 ): UserRole[] {
   if (!user) return [];
 
@@ -85,12 +89,9 @@ export const isAdmin = (r: UserRole | null) => r === "admin";
 export const isManager = (r: UserRole | null) => r === "manager";
 export const isCashier = (r: UserRole | null) => r === "cashier";
 export const isWaiter = (r: UserRole | null) => r === "waiter";
-export const isKitchen = (r: UserRole | null) =>
-  r === "kitchen" || r === "bar";
-export const isCafe = (r: UserRole | null) =>
-  r === "cafe" || r === "barista";
-export const isFunctional = (r: UserRole | null) =>
-  isKitchen(r) || isCafe(r);
+export const isKitchen = (r: UserRole | null) => r === "kitchen" || r === "bar";
+export const isCafe = (r: UserRole | null) => r === "cafe" || r === "barista";
+export const isFunctional = (r: UserRole | null) => isKitchen(r) || isCafe(r);
 
 // Multi-role checks
 export const hasAdmin = (roles: UserRole[]) => roles.includes("admin");
@@ -138,8 +139,16 @@ export type PermissionKey =
   | "hotel.manage"
   | "hotel.checkin"
   | "hotel.checkout"
+  | "hotel.early_departure.override"
   | "hotel.folio.view"
   | "hotel.folio.edit"
+  | "hotel.folio.override"
+  | "hotel.bookings.manage"
+  | "hotel.inventory.manage"
+  | "hotel.housekeeping.view"
+  | "hotel.housekeeping.manage"
+  | "hotel.rates.manage"
+  | "hotel.night_audit.run"
   // Menu & Category
   | "menu.view"
   | "menu.manage"
@@ -161,6 +170,12 @@ export type PermissionKey =
   | "customers.manage"
   | "customers.loyalty.manage"
   | "customers.credit.manage"
+  // Yummy Grow
+  | "grow.view"
+  | "grow.campaigns.manage"
+  | "grow.campaigns.approve"
+  | "grow.campaigns.send"
+  | "grow.settings.manage"
   // Reports & Day Close
   | "reports.daily.view"
   | "reports.dayclose.view"
@@ -201,7 +216,16 @@ export type PermissionKey =
   | "finance.variance.approve"
   | "finance.daybook.view"
   | "finance.ledger.view"
+  | "finance.coa.view"
   | "finance.coa.manage"
+  | "finance.coa.group.manage"
+  | "finance.coa.opening_balances.manage"
+  | "finance.sales.view"
+  | "finance.sales.create"
+  | "finance.sales.return"
+  | "finance.journal.view"
+  | "finance.journal.manage"
+  | "finance.journal.reverse"
   | "finance.mapping.manage"
   | "finance.accounting.adjust"
   | "finance.payment_instruments.manage"
@@ -225,6 +249,8 @@ export type PermissionKey =
   | "finance.expenses.approve"
   | "finance.payroll.view"
   | "finance.payroll.manage"
+  // Admin & Settings (staff financial ledger)
+  | "admin.staff.credit.manage"
   // Attendance
   | "attendance.view"
   | "attendance.manage"
@@ -257,6 +283,7 @@ export const CANONICAL_ROUTE_GATES = {
   income: "finance.income.view",
   accounting: "finance.accounting.view",
   inventory: "inventory.view",
+  grow: "grow.view",
 } as const satisfies Record<string, PermissionKey>;
 
 function isAnalyticsGatedPath(pathname: string): boolean {
@@ -273,7 +300,7 @@ function isAnalyticsGatedPath(pathname: string): boolean {
  */
 export function hasExplicitPermission(
   user: { permissions?: string[] } | null,
-  permission: PermissionKey
+  permission: PermissionKey,
 ): boolean {
   if (!user) return false;
   return user.permissions?.includes(permission) ?? false;
@@ -286,7 +313,11 @@ export function hasExplicitPermission(
  * analytics permission.
  */
 export function hasAnalyticsViewPermission(
-  user: { role?: string | null; roles?: string[] | null; permissions?: string[] } | null
+  user: {
+    role?: string | null;
+    roles?: string[] | null;
+    permissions?: string[];
+  } | null,
 ): boolean {
   if (!user) return false;
   const roles = normalizeRolesForUser(user);
@@ -306,8 +337,12 @@ export function hasAnalyticsViewPermission(
  * Custom-role users are checked via their permissions array.
  */
 export function hasPermission(
-  user: { role?: string | null; roles?: string[] | null; permissions?: string[] } | null,
-  permission: PermissionKey
+  user: {
+    role?: string | null;
+    roles?: string[] | null;
+    permissions?: string[];
+  } | null,
+  permission: PermissionKey,
 ): boolean {
   if (!user) return false;
   if (permission === ANALYTICS_VIEW_PERMISSION) {
@@ -315,9 +350,55 @@ export function hasPermission(
   }
   // Admin and Platform Staff bypass
   const roles = normalizeRolesForUser(user);
-  if (roles.includes("admin") || (user.permissions?.includes("platform.restaurants.view") ?? false)) return true;
+  if (
+    roles.includes("admin") ||
+    (user.permissions?.includes("platform.restaurants.view") ?? false)
+  )
+    return true;
+  const permissions = user.permissions ?? [];
+  if (permission.startsWith("hotel.") && permissions.includes("hotel.manage"))
+    return true;
+  if (
+    permission === "hotel.housekeeping.view" &&
+    permissions.includes("hotel.housekeeping.manage")
+  )
+    return true;
   // Granular permission check (works for all custom-role users)
-  return user.permissions?.includes(permission) ?? false;
+  return permissions.includes(permission);
+}
+
+/**
+ * Keeps operational workspaces separated for staff assigned to only one
+ * business module. Finance administrators retain access through their admin
+ * role, while a hotel-only staff member cannot switch into restaurant close
+ * screens merely because both modules share the same property.
+ */
+export function canAccessBusinessModule(
+  user: {
+    role?: string | null;
+    roles?: string[] | null;
+    permissions?: string[];
+  } | null,
+  businessLine: "restaurant" | "hotel",
+): boolean {
+  if (!user) return false;
+  const roles = normalizeRolesForUser(user);
+  const permissions = user.permissions ?? [];
+  if (
+    roles.includes("admin") ||
+    permissions.includes("platform.restaurants.view")
+  ) {
+    return true;
+  }
+  if (businessLine === "hotel") {
+    return permissions.some((permission) => permission.startsWith("hotel."));
+  }
+  return permissions.some(
+    (permission) =>
+      permission.startsWith("pos.") ||
+      permission.startsWith("billing.") ||
+      permission.startsWith("station."),
+  );
 }
 
 // ─── Permission checks (match Flutter RolePermissions) ──────────────────────
@@ -325,8 +406,7 @@ export function hasPermission(
 export const canAccessSettings = (r: UserRole | null) =>
   isAdmin(r) || isManager(r);
 export const canManageUsers = (r: UserRole | null) => isAdmin(r);
-export const canManageMenu = (r: UserRole | null) =>
-  isAdmin(r) || isManager(r);
+export const canManageMenu = (r: UserRole | null) => isAdmin(r) || isManager(r);
 export const canViewInventory = (r: UserRole | null) =>
   isAdmin(r) || isManager(r);
 export const canManageInventory = (r: UserRole | null) =>
@@ -441,10 +521,28 @@ export const SIDEBAR_ROLE_MAP: SidebarItemDef[] = [
     requiredPermission: "menu.view",
   },
   {
+    title: "Categories",
+    href: "/menu/categories",
+    allowedRoles: ALL_DASHBOARD_ROLES,
+    requiredPermission: "menu.view",
+  },
+  {
+    title: "Options & add-ons",
+    href: "/menu/modifiers",
+    allowedRoles: ALL_DASHBOARD_ROLES,
+    requiredPermission: "menu.view",
+  },
+  {
     title: "Inventory",
     href: "/inventory",
     allowedRoles: ALL_DASHBOARD_ROLES,
     requiredPermission: "inventory.view",
+  },
+  {
+    title: "Suppliers",
+    href: "/suppliers",
+    allowedRoles: ADMIN_MANAGER,
+    requiredPermission: "inventory.suppliers.manage",
   },
   {
     title: "Finance",
@@ -471,12 +569,6 @@ export const SIDEBAR_ROLE_MAP: SidebarItemDef[] = [
     requiredPermission: "tables.view",
   },
   {
-    title: "Rooms",
-    href: "/rooms",
-    allowedRoles: ALL_DASHBOARD_ROLES,
-    requiredPermission: "hotel.manage",
-  },
-  {
     title: "Reservations",
     href: "/reservations",
     allowedRoles: ALL_DASHBOARD_ROLES,
@@ -489,8 +581,8 @@ export const SIDEBAR_ROLE_MAP: SidebarItemDef[] = [
     requiredPermission: "pos.order.discount.apply",
   },
   {
-    title: "Manage",
-    href: "/manage",
+    title: "Settings",
+    href: "/settings",
     allowedRoles: ALL_DASHBOARD_ROLES,
     requiredPermission: "admin.staff.view",
   },
@@ -501,6 +593,24 @@ export const SIDEBAR_ROLE_MAP: SidebarItemDef[] = [
     requiredPermission: "attendance.manage",
   },
   {
+    title: "Overview",
+    href: "/grow",
+    allowedRoles: ADMIN_MANAGER,
+    requiredPermission: "grow.view",
+  },
+  {
+    title: "Campaigns",
+    href: "/grow/campaigns",
+    allowedRoles: ADMIN_MANAGER,
+    requiredPermission: "grow.view",
+  },
+  {
+    title: "Subscribers",
+    href: "/grow/subscribers",
+    allowedRoles: ADMIN_MANAGER,
+    requiredPermission: "grow.view",
+  },
+  {
     title: "Feedback",
     href: "/feedback",
     allowedRoles: ALL_DASHBOARD_ROLES,
@@ -509,14 +619,16 @@ export const SIDEBAR_ROLE_MAP: SidebarItemDef[] = [
 
 export function getSidebarItemsForRole(role: UserRole | null) {
   if (!role) return [];
-  return SIDEBAR_ROLE_MAP.filter((item) =>
-    item.allowedRoles.includes(role)
-  );
+  return SIDEBAR_ROLE_MAP.filter((item) => item.allowedRoles.includes(role));
 }
 
 export function getSidebarItemsForRoles(
   roles: UserRole[],
-  user?: { role?: string | null; roles?: string[] | null; permissions?: string[] } | null
+  user?: {
+    role?: string | null;
+    roles?: string[] | null;
+    permissions?: string[];
+  } | null,
 ) {
   return SIDEBAR_ROLE_MAP.filter((item) => {
     // ─── Key design principle ─────────────────────────────────────────────
@@ -550,12 +662,22 @@ export const ROUTE_PERMISSIONS: Record<string, PermissionKey> = {
   // Management
   "/menu": "menu.view",
   "/inventory": "inventory.view",
+  "/suppliers": "inventory.suppliers.manage",
   "/tables": "tables.view",
   "/reservations": "tables.reservation.view",
   "/discounts": "pos.order.discount.apply",
   "/customers": "customers.view",
+  "/grow/campaigns/new": "grow.campaigns.manage",
+  "/grow/campaigns": "grow.view",
+  "/grow/subscribers": "grow.view",
+  "/grow": "grow.view",
   "/rooms": "hotel.manage",
+  "/hotel": "hotel.view",
   // Finance
+  "/finance/heads": "finance.coa.view",
+  "/finance/sales/returns": "finance.sales.return",
+  "/finance/sales": "finance.sales.view",
+  "/finance/journals": "finance.journal.view",
   "/finance/accounting/inventory": "inventory.accounting.view",
   "/finance/accounting": "finance.accounting.view",
   "/finance": "finance.income.view",
@@ -580,9 +702,11 @@ export const ROUTE_ROLES: Record<string, UserRole[]> = {
   "/menu": ADMIN_MANAGER,
   "/kitchen": KITCHEN_ROLES,
   "/inventory": ADMIN_MANAGER,
+  "/finance/heads": ADMIN_SHELL_ROLES,
   "/finance/income": ADMIN_SHELL_ROLES,
   "/finance/expenses": ADMIN_SHELL_ROLES,
   "/customers": ADMIN_SHELL_ROLES,
+  "/grow": ADMIN_MANAGER,
   "/tables": ADMIN_MANAGER,
   "/rooms": ["admin", "manager", "cashier", "waiter"],
   "/reservations": ADMIN_SHELL_ROLES,
@@ -590,12 +714,11 @@ export const ROUTE_ROLES: Record<string, UserRole[]> = {
   "/manage": ADMIN_MANAGER,
   "/manage/additional-settings": ADMIN_MANAGER,
   "/staff": ADMIN_MANAGER,
-  "/payroll": ["admin", "cashier"],
   "/attendance": ADMIN_MANAGER,
   "/workforce": ADMIN_MANAGER,
-  "/period-reports": ADMIN_MANAGER,
   "/settings": ALL_DASHBOARD_ROLES,
   "/feedback": ALL_DASHBOARD_ROLES,
+  "/help-center": ALL_DASHBOARD_ROLES,
   "/premium": ADMIN_MANAGER,
   "/welcome": ["user", ...ALL_DASHBOARD_ROLES],
   "/gateway": ["user", ...ALL_DASHBOARD_ROLES],
@@ -603,9 +726,19 @@ export const ROUTE_ROLES: Record<string, UserRole[]> = {
 
 export function isRouteAllowed(
   pathname: string,
-  user: { role?: string | null; roles?: string[] | null; primary_role?: string | null; permissions?: string[]; restaurant_id?: number | null } | null
+  user: {
+    role?: string | null;
+    roles?: string[] | null;
+    primary_role?: string | null;
+    permissions?: string[];
+    restaurant_id?: number | null;
+  } | null,
 ): boolean {
   if (!user) return false;
+
+  // The Profile tab is self-service; every signed-in user can edit their own
+  // account details without needing staff-management permission.
+  if (pathname === "/manage/profile") return true;
 
   // Leaving is membership self-service. Do not tie it to a tenant permission
   // that may not exist for a legitimate custom-role or legacy-association
@@ -621,13 +754,15 @@ export function isRouteAllowed(
 
   // Build the set of normalized legacy roles for this user
   const roles = normalizeRolesForUser(user);
-  const isGlobalAdmin = roles.includes("admin") || (user.permissions?.includes("platform.restaurants.view") ?? false);
+  const isGlobalAdmin =
+    roles.includes("admin") ||
+    (user.permissions?.includes("platform.restaurants.view") ?? false);
 
   if (isGlobalAdmin) return true;
 
   // 1. Check Granular Permissions first (works for both legacy & custom-role users)
   const sortedPermissionPrefixes = Object.keys(ROUTE_PERMISSIONS).sort(
-    (a, b) => b.length - a.length
+    (a, b) => b.length - a.length,
   );
   for (const prefix of sortedPermissionPrefixes) {
     if (pathname === prefix || pathname.startsWith(prefix + "/")) {
@@ -643,12 +778,12 @@ export function isRouteAllowed(
   if (!roles.length) return false;
 
   const sortedPrefixes = Object.keys(ROUTE_ROLES).sort(
-    (a, b) => b.length - a.length
+    (a, b) => b.length - a.length,
   );
 
   for (const prefix of sortedPrefixes) {
     if (pathname === prefix || pathname.startsWith(prefix + "/")) {
-      return roles.some(role => ROUTE_ROLES[prefix].includes(role));
+      return roles.some((role) => ROUTE_ROLES[prefix].includes(role));
     }
   }
 
@@ -657,7 +792,13 @@ export function isRouteAllowed(
 
 export function isRouteAllowedMulti(
   pathname: string,
-  user: { role: string; roles?: string[]; primary_role?: string | null; permissions?: string[]; restaurant_id?: number | null } | null
+  user: {
+    role: string;
+    roles?: string[];
+    primary_role?: string | null;
+    permissions?: string[];
+    restaurant_id?: number | null;
+  } | null,
 ): boolean {
   return isRouteAllowed(pathname, user);
 }
@@ -665,28 +806,38 @@ export function isRouteAllowedMulti(
 /** Route guard helper for sidebar/manage links (strips query strings). */
 export function isPathAccessible(
   href: string,
-  user: { role?: string | null; roles?: string[] | null; primary_role?: string | null; permissions?: string[]; restaurant_id?: number | null } | null
+  user: {
+    role?: string | null;
+    roles?: string[] | null;
+    primary_role?: string | null;
+    permissions?: string[];
+    restaurant_id?: number | null;
+  } | null,
 ): boolean {
   const path = href.split("?")[0];
   return isRouteAllowed(path, user);
 }
 
 /** Hotel sidebar href → permission key (matches ROUTE_PERMISSIONS where applicable). */
-export const HOTEL_SIDEBAR_PERMISSIONS: Partial<Record<string, PermissionKey>> = {
-  "/rooms": "hotel.manage",
-  "/rooms/checkin": "hotel.manage",
-  "/orders": "pos.view",
-  "/orders/new": "pos.order.create",
-  "/reservations": "tables.reservation.view",
-  "/finance/income": "finance.income.view",
-  "/customers": "customers.view",
-  "/manage": "admin.staff.view",
-  "/analytics": "reports.analytics.view",
-};
+export const HOTEL_SIDEBAR_PERMISSIONS: Partial<Record<string, PermissionKey>> =
+  {
+    "/hotel": "hotel.view",
+    "/rooms": "hotel.manage",
+    "/rooms/checkin": "hotel.manage",
+    "/orders": "pos.view",
+    "/orders/new": "pos.order.create",
+    "/reservations": "tables.reservation.view",
+    "/finance/income": "finance.income.view",
+    "/customers": "customers.view",
+    "/manage": "admin.staff.view",
+    "/settings": "admin.staff.view",
+    "/analytics": "reports.analytics.view",
+  };
 
-export function filterSidebarLinksByAccess<
-  T extends { href: string }
->(items: T[], user: Parameters<typeof isPathAccessible>[1]): T[] {
+export function filterSidebarLinksByAccess<T extends { href: string }>(
+  items: T[],
+  user: Parameters<typeof isPathAccessible>[1],
+): T[] {
   return items.filter((item) => {
     const hotelPerm = HOTEL_SIDEBAR_PERMISSIONS[item.href];
     if (hotelPerm) {
@@ -724,7 +875,8 @@ export function getHomeRouteForRoles(roles: UserRole[]): string {
   if (!roles.length) return "/";
   if (hasAnyRole(roles, ["admin", "manager", "cashier"])) return "/dashboard";
   if (roles.includes("waiter")) return "/orders/active";
-  if (hasAnyRole(roles, ["kitchen", "bar", "cafe", "barista"])) return "/kitchen";
+  if (hasAnyRole(roles, ["kitchen", "bar", "cafe", "barista"]))
+    return "/kitchen";
   if (roles.includes("user")) return "/welcome";
   return "/";
 }
@@ -741,7 +893,7 @@ export function getHomeRouteForUser(
     primary_role?: string | null;
     permissions?: string[];
     restaurant_id?: number | null;
-  } | null
+  } | null,
 ): string {
   if (!user) return "/";
 

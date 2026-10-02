@@ -1,3 +1,4 @@
+@import url("https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&display=swap");
 @import "leaflet/dist/leaflet.css";
 
 @tailwind base;
@@ -84,6 +85,52 @@
     --input: 217 13% 20%;
     --ring: 13 88% 53%;
   }
+
+  .dark .dashboard-executive {
+    --foreground: 0 0% 95%;
+    --muted-foreground: 218 10% 66%;
+    --primary: 13 88% 53%;
+    --primary-foreground: 222 39% 11%;
+    --ring: 13 88% 53%;
+    --dashboard-chart-orange: #f97316;
+  }
+}
+
+@layer components {
+  .settings-dialog {
+    @apply gap-5 rounded-xl border-border/60 bg-background p-6 shadow-2xl sm:rounded-xl;
+  }
+
+  .settings-dialog > div:first-child h2,
+  .settings-dialog .settings-dialog-title {
+    @apply normal-case font-semibold tracking-tight;
+    font-style: normal;
+  }
+
+  .settings-dialog .italic {
+    font-style: normal;
+    text-transform: none;
+    letter-spacing: normal;
+  }
+
+  .settings-dialog > div:first-child p {
+    @apply text-sm font-normal text-muted-foreground;
+  }
+
+  .settings-dialog input:not([type="checkbox"]),
+  .settings-dialog [role="combobox"] {
+    @apply h-10 rounded-md border-border/70 font-normal;
+  }
+
+  .settings-dialog .settings-dialog-footer {
+    @apply gap-2 border-t border-border/60 pt-4;
+  }
+
+  .settings-dialog .settings-dialog-footer > button {
+    @apply min-h-10 rounded-md px-4 text-sm font-medium tracking-normal;
+    text-transform: none;
+    font-style: normal;
+  }
 }
 
 @layer base {
@@ -96,10 +143,16 @@
   }
 
   /* Prevent Radix select/dialog scroll-lock from shifting the page sideways */
-  body[data-scroll-locked] {
-    margin-right: 0 !important;
-    padding-right: 0 !important;
-  }
+body[data-scroll-locked] {
+  margin-right: 0 !important;
+  padding-right: 0 !important;
+}
+
+/* Let modal sheets own the foreground; the Orders launcher is not an action inside them. */
+body[data-scroll-locked] .orders-new-order-cta {
+  opacity: 0;
+  pointer-events: none;
+}
 }
 
 @layer utilities {
@@ -155,26 +208,28 @@
 
   .sidebar-scroll {
     scrollbar-width: thin;
-    scrollbar-color: hsl(var(--primary) / 0.55) hsl(var(--muted) / 0.35);
+    scrollbar-color: transparent transparent;
+    transition: scrollbar-color 0.2s ease;
+  }
+  .sidebar-scroll:hover {
+    scrollbar-color: hsl(var(--foreground) / 0.2) transparent;
   }
   .sidebar-scroll::-webkit-scrollbar {
-    width: 10px;
+    width: 4px;
   }
   .sidebar-scroll::-webkit-scrollbar-track {
-    background: hsl(var(--muted) / 0.35);
-    border-radius: 999px;
+    background: transparent;
   }
   .sidebar-scroll::-webkit-scrollbar-thumb {
-    background: linear-gradient(
-      180deg,
-      hsl(var(--primary) / 0.6) 0%,
-      hsl(var(--primary) / 0.8) 100%
-    );
+    background: transparent;
     border-radius: 999px;
-    border: 2px solid hsl(var(--card));
+    transition: background-color 0.2s ease;
+  }
+  .sidebar-scroll:hover::-webkit-scrollbar-thumb {
+    background: hsl(var(--foreground) / 0.18);
   }
   .sidebar-scroll::-webkit-scrollbar-thumb:hover {
-    background: hsl(var(--primary) / 0.95);
+    background: hsl(var(--foreground) / 0.35);
   }
 
   .no-scrollbar::-webkit-scrollbar {
@@ -430,6 +485,11 @@
   100% { transform: scaleX(1); opacity: 0; }
 }
 
+@keyframes shine {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(200%); }
+}
+
 /* Day-close detail / wizard — overrides centered DialogContent; animates maximize/minimize */
 .resizable-dialog-panel {
   translate: none !important;
@@ -460,6 +520,47 @@
 
 .payment-bar-shimmer {
   animation: payment-bar-shimmer 2.4s ease-in-out infinite;
+}
+
+/* Mobile Orders: expand the chooser from the CTA, then fold it back into it. */
+@keyframes new-order-sheet-expand {
+  from {
+    opacity: 0;
+    transform: translateY(1.5rem) scale(0.12);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes new-order-sheet-collapse {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(1.5rem) scale(0.12);
+  }
+}
+
+.new-order-sheet-motion {
+  transform-origin: center bottom;
+}
+
+.new-order-sheet-motion[data-state="open"] {
+  animation: new-order-sheet-expand 460ms cubic-bezier(0.22, 1, 0.36, 1) both !important;
+}
+
+.new-order-sheet-motion[data-state="closed"] {
+  animation: new-order-sheet-collapse 420ms cubic-bezier(0.55, 0, 1, 0.45) both !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .new-order-sheet-motion[data-state] {
+    animation-duration: 0.01ms !important;
+  }
 }
 
 /* Leaflet: Tailwind preflight breaks tile sizing without this */
@@ -586,4 +687,67 @@
 .phone-input-field .PhoneInput--disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.dashboard-executive {
+  --dashboard-chart-orange: #f97316;
+}
+
+.dark .dashboard-executive .dashboard-muted-card {
+  border-color: hsl(var(--border)) !important;
+  background-color: hsl(var(--card)) !important;
+  background-image: none !important;
+}
+
+/* Hide the clear/clean icon in react-phone-number-input */
+.phone-input-field .PhoneInputInput::-webkit-search-cancel-button,
+.phone-input-field .PhoneInputInput::-webkit-search-decoration,
+.phone-input-field .PhoneInputInput::-webkit-clear-button,
+.phone-input-field .PhoneInputInput::-ms-clear {
+  display: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+/* Email Preview Dark Mode Styles */
+.email-preview-content.dark-mode-email table {
+  background-color: #1a1a1a !important;
+}
+
+.email-preview-content.dark-mode-email td[style*="background-color: #fef6f0"] {
+  background-color: #2d2416 !important;
+}
+
+.email-preview-content.dark-mode-email td[style*="background-color: #ffffff"] {
+  background-color: #1a1a1a !important;
+}
+
+.email-preview-content.dark-mode-email h1,
+.email-preview-content.dark-mode-email p {
+  color: #e5e5e5 !important;
+}
+
+.email-preview-content.dark-mode-email div[style*="color: #8b5a2b"] {
+  color: #d4a574 !important;
+}
+
+.email-preview-content.dark-mode-email div[style*="background-color: #fffbf7"] {
+  background-color: #2d2416 !important;
+  border-color: #d4a574 !important;
+}
+
+.email-preview-content.dark-mode-email div[style*="color: #1a1a1a"] {
+  color: #f5f5f5 !important;
+}
+
+.email-preview-content.dark-mode-email p[style*="color: #999999"] {
+  color: #a3a3a3 !important;
+}
+
+.email-preview-content.dark-mode-email p[style*="color: #b3b3b3"] {
+  color: #737373 !important;
+}
+
+.email-preview-content.dark-mode-email a {
+  color: #737373 !important;
 }

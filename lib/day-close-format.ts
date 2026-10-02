@@ -1,6 +1,11 @@
 /** Display formatting for day close — no financial calculations. */
 
-import type { DayCloseDetail, DayCloseListItem, DayCloseSession } from "@/types/day-close";
+import type {
+  DayCloseDetail,
+  DayCloseListItem,
+  DayCloseSession,
+} from "@/types/day-close";
+import { formatMoney } from "@/lib/presentation-format";
 
 type BackendNumeric = number | string | null | undefined;
 
@@ -14,10 +19,7 @@ function parseBackendNumber(value: BackendNumeric): number | undefined {
 export function formatDayCloseCurrency(value: BackendNumeric): string {
   const amount = parseBackendNumber(value);
   if (amount == null) return "—";
-  return `Rs. ${amount.toLocaleString(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
+  return formatMoney(amount);
 }
 
 export function formatDayCloseNumber(value: BackendNumeric): string {
@@ -29,7 +31,7 @@ export function formatDayCloseNumber(value: BackendNumeric): string {
 export function formatDayClosePeriod(
   periodStart?: string | null,
   periodEnd?: string | null,
-  timezone?: string
+  timezone?: string,
 ): string {
   if (!periodStart || !periodEnd) return "—";
   const tz = timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -54,9 +56,43 @@ export function formatDayClosePeriod(
   return `${startLabel} – ${endFmt.format(end)}`;
 }
 
+export function getDayClosePeriodContext(
+  periodStart?: string | null,
+  periodEnd?: string | null,
+): { durationLabel?: string; isMultiDay: boolean } {
+  if (!periodStart || !periodEnd) return { isMultiDay: false };
+  const start = new Date(periodStart);
+  const end = new Date(periodEnd);
+  const durationMs = end.getTime() - start.getTime();
+  if (
+    Number.isNaN(start.getTime()) ||
+    Number.isNaN(end.getTime()) ||
+    durationMs < 0
+  ) {
+    return { isMultiDay: false };
+  }
+
+  const totalMinutes = Math.round(durationMs / 60_000);
+  const days = Math.floor(totalMinutes / 1_440);
+  const hours = Math.floor((totalMinutes % 1_440) / 60);
+  const minutes = totalMinutes % 60;
+  const parts: string[] = [];
+
+  if (days > 0) parts.push(`${days} ${days === 1 ? "day" : "days"}`);
+  if (hours > 0) parts.push(`${hours} ${hours === 1 ? "hr" : "hrs"}`);
+  if (minutes > 0 || parts.length === 0) {
+    parts.push(`${minutes} ${minutes === 1 ? "min" : "mins"}`);
+  }
+
+  return {
+    durationLabel: parts.join(" "),
+    isMultiDay: durationMs >= 86_400_000,
+  };
+}
+
 export function formatDayCloseCloseName(businessLine?: string | null): string {
   return String(businessLine ?? "restaurant").toLowerCase() === "hotel"
-    ? "Hotel Close"
+    ? "Hotel Daybook"
     : "Restaurant Close";
 }
 
@@ -142,8 +178,11 @@ export function formatDayCloseExportFilename(
   extension: "pdf" | "xlsx",
 ): string {
   const line = String(detail.business_line ?? "restaurant").toLowerCase();
-  const prefix = line === "hotel" ? "hotel_close" : "day_close";
-  const period = formatDayClosePeriod(detail.period_start_at, detail.period_end_at);
+  const prefix = line === "hotel" ? "hotel_daybook" : "day_close";
+  const period = formatDayClosePeriod(
+    detail.period_start_at,
+    detail.period_end_at,
+  );
   if (period !== "—") {
     const safe = period
       .replace(/[^\w\d-]+/g, "_")
@@ -155,7 +194,9 @@ export function formatDayCloseExportFilename(
   return `${prefix}_${detail.id}.${extension}`;
 }
 
-export function dayCloseSessionToListItem(session: DayCloseSession): DayCloseListItem {
+export function dayCloseSessionToListItem(
+  session: DayCloseSession,
+): DayCloseListItem {
   return {
     id: session.id,
     business_date: session.business_date,

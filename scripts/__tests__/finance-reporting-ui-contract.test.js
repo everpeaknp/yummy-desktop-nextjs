@@ -177,7 +177,10 @@ test("reporting screens send All as an explicit business-line scope", () => {
   const staffSource = read("app/(dashboard)/analytics/staff/page.tsx");
 
   assert.match(analyticsSource, /businessLine: queryBusinessLine \?\? "all"/);
-  assert.match(compareSource, /businessLine: showBusinessLine \? businessLine : "all"/);
+  assert.match(
+    compareSource,
+    /businessLine: showBusinessLine \? businessLine : "all"/,
+  );
   assert.match(incomeSource, /business_line: businessLine/);
   assert.doesNotMatch(incomeSource, /businessLine === 'all' \? undefined/);
   assert.match(expensesSource, /const listBusinessLineParam = businessLine;/);
@@ -186,7 +189,10 @@ test("reporting screens send All as an explicit business-line scope", () => {
   assert.match(menuSource, /businessLine: "all"/);
   assert.match(inventorySource, /businessLine: "all"/);
   for (const source of [kitchenSource, staffSource]) {
-    assert.match(source, /businessLine: showBusinessLine \? businessLine : "all"/);
+    assert.match(
+      source,
+      /businessLine: showBusinessLine \? businessLine : "all"/,
+    );
   }
 });
 
@@ -240,13 +246,17 @@ test("executive dashboard reads sectioned analytics finance metrics", () => {
 });
 
 test("operational finance reports are exposed as real UI routes", () => {
-  const tabs = read("components/finance/finance-section-tabs.tsx");
+  const directory = read("app/(dashboard)/finance/reports/page.tsx");
+  const catalog = read("components/finance/reports/finance-report-catalog.ts");
   const client = read(
     "components/finance/reports/operational-finance-report-client.tsx",
   );
 
-  assert.match(tabs, /href: "\/finance\/reports"/);
-  assert.match(tabs, /label: "Reports"/);
+  assert.match(directory, /reportGroups\.map/);
+  assert.match(directory, /Choose the business question/);
+  assert.doesNotMatch(client, /FinanceReportNavigation|showReportNavigation/);
+  assert.match(catalog, /href: "\/finance\/reports\/refunds"/);
+  assert.match(catalog, /href: "\/finance\/reports\/vat-sales"/);
 
   for (const route of [
     "app/(dashboard)/finance/reports/page.tsx",
@@ -270,10 +280,10 @@ test("operational finance reports are exposed as real UI routes", () => {
   }
 
   for (const label of [
-    "Sales Book",
+    "Sales report",
     "Invoices",
     "Payments",
-    "Refunds",
+    "Sales returns & refunds",
     "VAT Sales",
   ]) {
     assert.match(client, new RegExp(label));
@@ -298,22 +308,21 @@ test("general purchase dialog submits backend payment status values", () => {
   assert.doesNotMatch(source, /payment_status: "unpaid"/);
 });
 
-test("unpaid inventory and purchases require a supplier before submit", () => {
-  const inventorySource = read("app/(dashboard)/inventory/page.tsx");
+test("unpaid general purchases require a supplier before submit", () => {
   const purchaseSource = read(
     "components/manage/purchases/purchase-dialog.tsx",
   );
 
-  assert.match(
-    inventorySource,
-    /Supplier is required for unpaid inventory purchases\./,
-  );
-  assert.match(inventorySource, /opening_stock_payment_status/);
-  assert.match(inventorySource, /payment_status/);
-
   assert.match(purchaseSource, /Supplier is required for unpaid purchases\./);
   assert.match(purchaseSource, /payment_status/);
   assert.match(purchaseSource, /supplier_id/);
+});
+
+test("inventory opening stock payment status is captured on the item form", () => {
+  const inventorySource = read("app/(dashboard)/inventory/page.tsx");
+
+  assert.match(inventorySource, /opening_stock_payment_status/);
+  assert.match(inventorySource, /payment_status/);
 });
 
 test("expense page exposes edit and delete actions for recorded expenses", () => {
@@ -387,23 +396,24 @@ test("payable payment dialog submits selected payment instruments", () => {
   assert.match(source, /No card instruments configured/);
 });
 
-test("inventory paid receipts require explicit cash-out payment method", () => {
+test("inventory item opening stock requires an explicit cash-out account when paid", () => {
   const source = read("app/(dashboard)/inventory/page.tsx");
 
+  assert.match(source, /opening_stock_account_type/);
+  assert.match(source, /opening_stock_account_id/);
+  assert.match(source, /openingPaymentAccount/);
   assert.match(
     source,
-    /CASH_OUT_PAYMENT_METHOD_OPTIONS as PAYMENT_METHOD_OPTIONS/,
+    /isCostedOpeningStock && itemForm\.opening_stock_payment_status === "paid"/,
   );
-  assert.match(source, /opening_stock_payment_method/);
-  assert.match(
-    source,
-    /payload\.payment_method = \(adjustForm as any\)\.payment_method/,
-  );
-  assert.match(
-    source,
-    /opening_stock_payment_method:[\s\S]*itemForm\.opening_stock_payment_method/,
-  );
-  assert.match(source, /Supplier is required for unpaid inventory purchases\./);
+});
+
+test("paid purchase receipts require an explicit cash-out account, and every purchase requires a supplier", () => {
+  const source = read("app/(dashboard)/inventory/purchases/page.tsx");
+
+  assert.match(source, /CashBankAccountSelect/);
+  assert.match(source, /receivePaymentStatus === "paid" && !receiveAccount/);
+  assert.match(source, /!user\?\.restaurant_id \|\| !createForm\.supplier_id/);
 });
 
 test("refund payout methods exclude customer credit", () => {

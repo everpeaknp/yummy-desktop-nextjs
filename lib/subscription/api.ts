@@ -41,6 +41,11 @@ export const subscriptionApi = {
     );
     return normalizeUpgradeRequest(response.data);
   },
+
+  async resolveQuotaCompliance(payload: { table_ids: number[]; menu_item_ids: number[]; user_ids: number[] }, restaurantId?: number | null) {
+    const response = await apiClient.post(restaurantContext(SubscriptionApis.quotaCompliance, restaurantId), payload);
+    return response.data;
+  },
 };
 
 export type SubscriptionApi = typeof subscriptionApi;

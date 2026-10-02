@@ -1,27 +1,34 @@
-const { app, BrowserWindow, ipcMain, shell, session, dialog } = require('electron');
-const { autoUpdater } = require('electron-updater');
-const path = require('path');
-const fs = require('fs');
-const net = require('net');
+const {
+  app,
+  BrowserWindow,
+  ipcMain,
+  shell,
+  session,
+  dialog,
+} = require("electron");
+const { autoUpdater } = require("electron-updater");
+const path = require("path");
+const fs = require("fs");
+const net = require("net");
 const {
   attachAuthPersistence,
   readWebAuthSnapshot,
   clearAuthBackup,
-} = require('./electron-auth-persist');
+} = require("./electron-auth-persist");
 
 const isDev = !app.isPackaged;
 
 // One stable profile dir for portable + installer (package name is "yummy-web" otherwise).
-const USER_DATA_DIR = path.join(app.getPath('appData'), 'Yummy POS');
+const USER_DATA_DIR = path.join(app.getPath("appData"), "Yummy POS");
 try {
-  app.setPath('userData', USER_DATA_DIR);
+  app.setPath("userData", USER_DATA_DIR);
 } catch (_) {
   // setPath can throw if called after ready; safe to ignore in dev hot-reload.
 }
 
 let mainWindow;
 let splashWindow;
-const DEV_URL = 'http://localhost:3000';
+const DEV_URL = "http://localhost:3000";
 
 /** Returns mainWindow only when it is safe to touch; clears stale refs. */
 function getLiveMainWindow() {
@@ -54,18 +61,20 @@ function getLiveWebContents(preferred) {
     return null;
   }
 }
-const PROD_URL = 'https://app.yummyever.com';
-const PERSIST_PARTITION = 'persist:yummy-pos';
+const PROD_URL = "https://app.yummyever.com";
+const PERSIST_PARTITION = "persist:yummy-pos";
 
 // Helps Windows associate taskbar icon correctly.
-try { app.setAppUserModelId('com.yummy.pos'); } catch (_) {}
+try {
+  app.setAppUserModelId("com.yummy.pos");
+} catch (_) {}
 
 function getLogPath() {
   // keep logs somewhere writable without admin
   try {
-    return path.join(app.getPath('userData'), 'main.log');
+    return path.join(app.getPath("userData"), "main.log");
   } catch (_) {
-    return path.join(process.cwd(), 'main.log');
+    return path.join(process.cwd(), "main.log");
   }
 }
 
@@ -73,7 +82,7 @@ function log(line) {
   const msg = `[${new Date().toISOString()}] ${String(line)}\n`;
   try {
     fs.mkdirSync(path.dirname(getLogPath()), { recursive: true });
-    fs.appendFileSync(getLogPath(), msg, 'utf8');
+    fs.appendFileSync(getLogPath(), msg, "utf8");
   } catch (_) {
     // ignore
   }
@@ -82,11 +91,15 @@ function log(line) {
 async function logAuthStorageDiagnostics(label) {
   try {
     const ses = session.fromPartition(PERSIST_PARTITION);
-    const userData = app.getPath('userData');
-    const partitionPath = path.join(userData, 'Partitions', PERSIST_PARTITION.replace(':', '_'));
-    const cookies = await ses.cookies.get({ domain: 'app.yummyever.com' });
+    const userData = app.getPath("userData");
+    const partitionPath = path.join(
+      userData,
+      "Partitions",
+      PERSIST_PARTITION.replace(":", "_"),
+    );
+    const cookies = await ses.cookies.get({ domain: "app.yummyever.com" });
     log(
-      `[auth-diag:${label}] userData=${userData} partition=${PERSIST_PARTITION} partitionPath=${partitionPath} cookies(app.yummyever.com)=${cookies.length}`
+      `[auth-diag:${label}] userData=${userData} partition=${PERSIST_PARTITION} partitionPath=${partitionPath} cookies(app.yummyever.com)=${cookies.length}`,
     );
   } catch (err) {
     log(`[auth-diag:${label}] failed ${String(err?.message || err)}`);
@@ -101,7 +114,7 @@ async function logWebAuthSnapshot(label) {
     const snap = await readWebAuthSnapshot(contents);
     const url = contents.getURL();
     log(
-      `[auth-web:${label}] url=${url} hasAccess=${!!snap?.accessToken} hasRefresh=${!!snap?.refreshToken}`
+      `[auth-web:${label}] url=${url} hasAccess=${!!snap?.accessToken} hasRefresh=${!!snap?.refreshToken}`,
     );
   } catch (err) {
     log(`[auth-web:${label}] failed ${String(err?.message || err)}`);
@@ -110,18 +123,18 @@ async function logWebAuthSnapshot(label) {
 
 function getIconPath() {
   const candidates = [
-    path.join(__dirname, 'electron-resources', 'icon.ico'),
-    path.join(__dirname, 'electron-resources', 'icon.png'),
-    path.join(__dirname, 'electron-resources', 'icon-256.png'),
-    path.join(__dirname, 'build', 'icon.ico'),
-    path.join(__dirname, 'build', 'icon.png'),
-    path.join(__dirname, 'build', 'icon-256.png'),
-    path.join(process.resourcesPath || '', 'electron-resources', 'icon.ico'),
-    path.join(process.resourcesPath || '', 'build', 'icon.ico'),
-    path.join(process.resourcesPath || '', 'build', 'icon.png'),
-    path.join(process.resourcesPath || '', 'build', 'icon-256.png'),
-    path.join(process.resourcesPath || '', 'icon.png'),
-    path.join(process.resourcesPath || '', 'icon.ico')
+    path.join(__dirname, "electron-resources", "icon.ico"),
+    path.join(__dirname, "electron-resources", "icon.png"),
+    path.join(__dirname, "electron-resources", "icon-256.png"),
+    path.join(__dirname, "build", "icon.ico"),
+    path.join(__dirname, "build", "icon.png"),
+    path.join(__dirname, "build", "icon-256.png"),
+    path.join(process.resourcesPath || "", "electron-resources", "icon.ico"),
+    path.join(process.resourcesPath || "", "build", "icon.ico"),
+    path.join(process.resourcesPath || "", "build", "icon.png"),
+    path.join(process.resourcesPath || "", "build", "icon-256.png"),
+    path.join(process.resourcesPath || "", "icon.png"),
+    path.join(process.resourcesPath || "", "icon.ico"),
   ];
   return candidates.find((candidate) => candidate && fs.existsSync(candidate));
 }
@@ -129,21 +142,26 @@ function getIconPath() {
 /** Base64 data URI for splash — file:// URLs are blocked inside data: HTML pages. */
 function getLogoDataUri() {
   const iconPath = getIconPath();
-  if (!iconPath) return '';
+  if (!iconPath) return "";
   try {
     const buf = fs.readFileSync(iconPath);
     const ext = path.extname(iconPath).toLowerCase();
-    const mime = ext === '.png' ? 'image/png' : ext === '.ico' ? 'image/x-icon' : 'image/jpeg';
-    return `data:${mime};base64,${buf.toString('base64')}`;
+    const mime =
+      ext === ".png"
+        ? "image/png"
+        : ext === ".ico"
+          ? "image/x-icon"
+          : "image/jpeg";
+    return `data:${mime};base64,${buf.toString("base64")}`;
   } catch (err) {
     log(`[getLogoDataUri] ${String(err?.message || err)}`);
-    return '';
+    return "";
   }
 }
 
 function getStartUrl() {
   // Default: production app. Set ELECTRON_START_URL=http://localhost:3000 for local Next.js (see npm run electron:dev).
-  const override = String(process.env.ELECTRON_START_URL || '').trim();
+  const override = String(process.env.ELECTRON_START_URL || "").trim();
   if (override) return override;
   return PROD_URL;
 }
@@ -153,15 +171,15 @@ function isOAuthPopupUrl(url) {
   try {
     const u = new URL(url);
     const host = u.hostname.toLowerCase();
-    if (host === 'accounts.google.com') return true;
-    if (host.endsWith('.googleusercontent.com')) return true;
-    if (host.endsWith('.firebaseapp.com')) return true;
-    if (host.endsWith('.web.app')) return true;
-    if (u.pathname.includes('/__/auth/')) return true;
+    if (host === "accounts.google.com") return true;
+    if (host.endsWith(".googleusercontent.com")) return true;
+    if (host.endsWith(".firebaseapp.com")) return true;
+    if (host.endsWith(".web.app")) return true;
+    if (u.pathname.includes("/__/auth/")) return true;
     const start = getStartUrl();
-    if (start.startsWith('http')) {
+    if (start.startsWith("http")) {
       const appHost = new URL(start).hostname.toLowerCase();
-      if (host === appHost && u.pathname.includes('/__/auth/')) return true;
+      if (host === appHost && u.pathname.includes("/__/auth/")) return true;
     }
     return false;
   } catch (_) {
@@ -174,7 +192,7 @@ function attachOAuthPopupHandler(webContents) {
   webContents.setWindowOpenHandler(({ url }) => {
     if (isOAuthPopupUrl(url)) {
       return {
-        action: 'allow',
+        action: "allow",
         overrideBrowserWindowOptions: {
           width: 520,
           height: 720,
@@ -182,7 +200,7 @@ function attachOAuthPopupHandler(webContents) {
           parent: getLiveMainWindow() || undefined,
           modal: false,
           webPreferences: {
-            preload: path.join(__dirname, 'preload.js'),
+            preload: path.join(__dirname, "preload.js"),
             contextIsolation: true,
             nodeIntegration: false,
             partition: PERSIST_PARTITION,
@@ -193,12 +211,12 @@ function attachOAuthPopupHandler(webContents) {
     try {
       shell.openExternal(url);
     } catch (_) {}
-    return { action: 'deny' };
+    return { action: "deny" };
   });
 }
 
 function getOfflineHtml(startUrl) {
-  const safeUrl = String(startUrl).replace(/"/g, '&quot;');
+  const safeUrl = String(startUrl).replace(/"/g, "&quot;");
   return `<!doctype html>
 <html>
 <head>
@@ -273,13 +291,13 @@ function createSplashWindow(iconPath) {
       alwaysOnTop: true,
       center: true,
       show: true,
-      backgroundColor: '#0b0f19',
+      backgroundColor: "#0b0f19",
       icon: iconPath,
       webPreferences: {
         contextIsolation: true,
         nodeIntegration: false,
-        sandbox: true
-      }
+        sandbox: true,
+      },
     });
 
     const logoSrc = getLogoDataUri();
@@ -330,7 +348,7 @@ function createSplashWindow(iconPath) {
 </head>
 <body>
   <div class="wrap">
-    <div class="logo">${logoSrc ? `<img alt="Yummy" src="${logoSrc}" />` : ''}</div>
+    <div class="logo">${logoSrc ? `<img alt="Yummy" src="${logoSrc}" />` : ""}</div>
     <div class="title">Yummy POS</div>
     <div class="subtitle">Opening…</div>
     <div class="bar"><i></i></div>
@@ -338,8 +356,10 @@ function createSplashWindow(iconPath) {
 </body>
 </html>`;
 
-    splashWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(splashHtml)}`);
-    splashWindow.on('closed', () => {
+    splashWindow.loadURL(
+      `data:text/html;charset=utf-8,${encodeURIComponent(splashHtml)}`,
+    );
+    splashWindow.on("closed", () => {
       splashWindow = null;
     });
   } catch (_) {
@@ -371,14 +391,14 @@ function createWindow() {
     autoHideMenuBar: true,
     icon: iconPath,
     show: false,
-    backgroundColor: '#0b0f19',
+    backgroundColor: "#0b0f19",
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
+      preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
       // Ensure cookies/localStorage persist across restarts (avoid accidental temp sessions).
-      partition: PERSIST_PARTITION
-    }
+      partition: PERSIST_PARTITION,
+    },
   });
 
   let mainReadyToShow = false;
@@ -397,25 +417,25 @@ function createWindow() {
     destroySplashWindow();
   };
 
-  mainWindow.on('closed', () => {
+  mainWindow.on("closed", () => {
     mainWindow = null;
   });
 
-  mainWindow.once('ready-to-show', () => {
+  mainWindow.once("ready-to-show", () => {
     mainReadyToShow = true;
     if (isDev) tryShowMain();
   });
 
-  mainWindow.webContents.on('did-finish-load', () => {
+  mainWindow.webContents.on("did-finish-load", () => {
     mainFinishedLoad = true;
-    logAuthStorageDiagnostics('did-finish-load');
-    void logWebAuthSnapshot('did-finish-load');
+    logAuthStorageDiagnostics("did-finish-load");
+    void logWebAuthSnapshot("did-finish-load");
     if (mainReadyToShow || !isDev) tryShowMain();
   });
 
   // Log again after the SPA hydrates and may restore session.
-  mainWindow.webContents.on('did-navigate-in-page', () => {
-    void logWebAuthSnapshot('did-navigate-in-page');
+  mainWindow.webContents.on("did-navigate-in-page", () => {
+    void logWebAuthSnapshot("did-navigate-in-page");
   });
 
   // Backup: never block the user forever.
@@ -437,22 +457,31 @@ function createWindow() {
       log(`[loadURL] ${String(err?.message || err)}`);
       const win = getLiveMainWindow();
       if (!win) return;
-      win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(getOfflineHtml(startUrl))}`);
+      win.loadURL(
+        `data:text/html;charset=utf-8,${encodeURIComponent(getOfflineHtml(startUrl))}`,
+      );
     });
   }
 
   // Fallback if the live app fails to load (e.g., no internet / DNS / SSL issues).
-  mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL, isMainFrame) => {
-    if (!isMainFrame) return;
-    if (isDev) return;
-    const win = getLiveMainWindow();
-    if (!win) return;
-    log(`[did-fail-load] code=${errorCode} desc=${errorDescription} url=${validatedURL}`);
-    win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(getOfflineHtml(startUrl))}`);
-    // Offline HTML counts as "loaded" for our splash dismissal.
-    mainFinishedLoad = true;
-    tryShowMain();
-  });
+  mainWindow.webContents.on(
+    "did-fail-load",
+    (event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+      if (!isMainFrame) return;
+      if (isDev) return;
+      const win = getLiveMainWindow();
+      if (!win) return;
+      log(
+        `[did-fail-load] code=${errorCode} desc=${errorDescription} url=${validatedURL}`,
+      );
+      win.loadURL(
+        `data:text/html;charset=utf-8,${encodeURIComponent(getOfflineHtml(startUrl))}`,
+      );
+      // Offline HTML counts as "loaded" for our splash dismissal.
+      mainFinishedLoad = true;
+      tryShowMain();
+    },
+  );
 
   // Allow Firebase/Google OAuth popups in-app; other links open in the system browser.
   attachOAuthPopupHandler(mainWindow.webContents);
@@ -474,28 +503,31 @@ function setupAutoUpdater() {
     debug: (m) => log(`[updater] ${m}`),
   };
 
-  autoUpdater.on('error', (err) => {
+  autoUpdater.on("error", (err) => {
     log(`[updater] error ${String(err?.message || err)}`);
   });
 
-  autoUpdater.on('update-downloaded', (info) => {
-    const version = info?.version || 'new';
+  autoUpdater.on("update-downloaded", (info) => {
+    const version = info?.version || "new";
     log(`[updater] downloaded ${version}`);
     const parent = getLiveMainWindow();
     dialog
       .showMessageBox(parent ?? undefined, {
-        type: 'info',
-        title: 'Update ready',
+        type: "info",
+        title: "Update ready",
         message: `Yummy POS ${version} is ready to install.`,
-        detail: 'Restart now to finish updating, or continue working and install on quit.',
-        buttons: ['Restart now', 'Later'],
+        detail:
+          "Restart now to finish updating, or continue working and install on quit.",
+        buttons: ["Restart now", "Later"],
         defaultId: 0,
         cancelId: 1,
       })
       .then(({ response }) => {
         if (response === 0) autoUpdater.quitAndInstall(false, true);
       })
-      .catch((err) => log(`[updater] dialog failed ${String(err?.message || err)}`));
+      .catch((err) =>
+        log(`[updater] dialog failed ${String(err?.message || err)}`),
+      );
   });
 
   // Let the UI load first; then check GitHub Releases (latest.yml from NSIS publish).
@@ -507,79 +539,88 @@ function setupAutoUpdater() {
 }
 
 app.whenReady().then(() => {
-  logAuthStorageDiagnostics('startup');
+  logAuthStorageDiagnostics("startup");
   createWindow();
   setupAutoUpdater();
 
-  app.on('activate', () => {
+  app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow();
     }
   });
 });
 
-app.on('before-quit', () => {
+app.on("before-quit", () => {
   const contents = getLiveWebContents();
   if (!contents) return;
-  const { writeAuthBackup } = require('./electron-auth-persist');
+  const { writeAuthBackup } = require("./electron-auth-persist");
   void readWebAuthSnapshot(contents).then((snap) => {
     if (snap) writeAuthBackup(USER_DATA_DIR, snap);
   });
 });
 
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
+app.on("window-all-closed", () => {
+  if (process.platform !== "darwin") {
     app.quit();
   }
 });
 
 // --- IPC Handlers for Printing ---
 
-ipcMain.handle('clear-auth-backup', async () => {
+ipcMain.handle("clear-auth-backup", async () => {
   clearAuthBackup(USER_DATA_DIR);
   return { ok: true };
 });
 
-ipcMain.handle('get-printers', async (event) => {
+ipcMain.handle("get-printers", async (event) => {
   const contents = getLiveWebContents(event.sender);
   if (!contents) return [];
   return contents.getPrintersAsync();
 });
 
 // Print the CURRENT window silently (relies on CSS @media print just like browser)
-ipcMain.handle('print-silent', async (event, options = {}) => {
+ipcMain.handle("print-silent", async (event, options = {}) => {
   const contents = getLiveWebContents(event.sender);
   if (!contents) {
-    return Promise.reject({ success: false, error: 'window_destroyed' });
+    return Promise.reject({ success: false, error: "window_destroyed" });
   }
   return new Promise((resolve, reject) => {
-    contents.print({
-      silent: true,
-      deviceName: options.printerName || undefined,
-      margins: { marginType: 'none' },
-      ...options
-    }, (success, errorType) => {
-      if (success) {
-        resolve({ success: true });
-      } else {
-        reject({ success: false, error: errorType });
-      }
-    });
+    contents.print(
+      {
+        silent: true,
+        deviceName: options.printerName || undefined,
+        margins: { marginType: "none" },
+        ...options,
+      },
+      (success, errorType) => {
+        if (success) {
+          resolve({ success: true });
+        } else {
+          reject({ success: false, error: errorType });
+        }
+      },
+    );
   });
 });
 
-// Send raw text payload to TCP network printer (ESC/POS compatible simulators).
-ipcMain.handle('print-network-raw', async (event, options = {}) => {
-  const host = String(options.host || '').trim();
+// Send an exact binary ESC/POS payload to a TCP network printer. New callers
+// use base64 so bytes survive the renderer -> IPC -> Node boundary unchanged.
+// `payload` remains temporarily supported for older callers.
+ipcMain.handle("print-network-raw", async (event, options = {}) => {
+  const host = String(options.host || "").trim();
   const port = Number(options.port || 9100);
-  const payload = String(options.payload || '');
-  const timeoutMs = Math.max(800, Math.min(8000, Number(options.timeoutMs || 2000)));
+  const payloadBase64 = String(options.payloadBase64 || "").trim();
+  const payload = String(options.payload || "");
+  const timeoutMs = Math.max(
+    800,
+    Math.min(8000, Number(options.timeoutMs || 2000)),
+  );
 
   if (!host || !port) {
-    return { success: false, message: 'Invalid printer host/port' };
+    return { success: false, message: "Invalid printer host/port" };
   }
-  if (!payload) {
-    return { success: false, message: 'Empty print payload' };
+  if (!payloadBase64 && !payload) {
+    return { success: false, message: "Empty print payload" };
   }
 
   return new Promise((resolve) => {
@@ -589,28 +630,42 @@ ipcMain.handle('print-network-raw', async (event, options = {}) => {
     const finish = (result) => {
       if (settled) return;
       settled = true;
-      try { socket.destroy(); } catch (_) {}
+      try {
+        socket.destroy();
+      } catch (_) {}
       resolve(result);
     };
 
     socket.setTimeout(timeoutMs);
-    socket.once('connect', () => {
+    socket.once("connect", () => {
       try {
-        const buffer = Buffer.from(payload, 'utf8');
+        const buffer = payloadBase64
+          ? Buffer.from(payloadBase64, "base64")
+          : Buffer.from(payload, "utf8");
         socket.write(buffer, (err) => {
           if (err) {
             finish({ success: false, message: String(err?.message || err) });
             return;
           }
           socket.end();
-          finish({ success: true, message: `Raw print sent to ${host}:${port} (${buffer.length} bytes)` });
+          finish({
+            success: true,
+            message: `Raw print sent to ${host}:${port} (${buffer.length} bytes)`,
+          });
         });
       } catch (err) {
         finish({ success: false, message: String(err?.message || err) });
       }
     });
-    socket.once('timeout', () => finish({ success: false, message: `Timeout connecting to ${host}:${port}` }));
-    socket.once('error', (err) => finish({ success: false, message: String(err?.message || err) }));
+    socket.once("timeout", () =>
+      finish({
+        success: false,
+        message: `Timeout connecting to ${host}:${port}`,
+      }),
+    );
+    socket.once("error", (err) =>
+      finish({ success: false, message: String(err?.message || err) }),
+    );
 
     try {
       socket.connect({ host, port, family: 4 });
@@ -621,44 +676,68 @@ ipcMain.handle('print-network-raw', async (event, options = {}) => {
 });
 
 // Electron-local network printer connectivity test (desktop -> printer IP:port).
-ipcMain.handle('test-network-printer', async (event, options = {}) => {
-  const rawHost = String(options.host || '').trim();
+ipcMain.handle("test-network-printer", async (event, options = {}) => {
+  const rawHost = String(options.host || "").trim();
   const host = rawHost
-    .replace(/^tcp:\/\//i, '')
-    .replace(/^https?:\/\//i, '')
-    .split('/')[0]
+    .replace(/^tcp:\/\//i, "")
+    .replace(/^https?:\/\//i, "")
+    .split("/")[0]
     .trim();
   const port = Number(options.port || 9100);
   const timeoutMs = Math.max(4000, Number(options.timeoutMs || 8000));
 
   if (!host || !port) {
-    return { success: false, message: 'Invalid printer host/port' };
+    return { success: false, message: "Invalid printer host/port" };
   }
 
-  const tryConnect = (family) => new Promise((resolve) => {
-    const socket = new net.Socket();
-    let settled = false;
+  const tryConnect = (family) =>
+    new Promise((resolve) => {
+      const socket = new net.Socket();
+      let settled = false;
 
-    const finish = (result) => {
-      if (settled) return;
-      settled = true;
-      try { socket.destroy(); } catch (_) {}
-      resolve(result);
-    };
+      const finish = (result) => {
+        if (settled) return;
+        settled = true;
+        try {
+          socket.destroy();
+        } catch (_) {}
+        resolve(result);
+      };
 
-    socket.setNoDelay(true);
-    socket.setKeepAlive(true, 1000);
-    socket.setTimeout(timeoutMs);
-    socket.once('connect', () => finish({ success: true, message: `Connected to ${host}:${port} (${family === 4 ? 'IPv4' : 'IPv6'})` }));
-    socket.once('timeout', () => finish({ success: false, reason: 'timeout', message: `Timeout connecting to ${host}:${port} (${family === 4 ? 'IPv4' : 'IPv6'})` }));
-    socket.once('error', (err) => finish({ success: false, reason: 'error', message: String(err?.message || err) }));
+      socket.setNoDelay(true);
+      socket.setKeepAlive(true, 1000);
+      socket.setTimeout(timeoutMs);
+      socket.once("connect", () =>
+        finish({
+          success: true,
+          message: `Connected to ${host}:${port} (${family === 4 ? "IPv4" : "IPv6"})`,
+        }),
+      );
+      socket.once("timeout", () =>
+        finish({
+          success: false,
+          reason: "timeout",
+          message: `Timeout connecting to ${host}:${port} (${family === 4 ? "IPv4" : "IPv6"})`,
+        }),
+      );
+      socket.once("error", (err) =>
+        finish({
+          success: false,
+          reason: "error",
+          message: String(err?.message || err),
+        }),
+      );
 
-    try {
-      socket.connect({ port, host, family });
-    } catch (err) {
-      finish({ success: false, reason: 'error', message: String(err?.message || err) });
-    }
-  });
+      try {
+        socket.connect({ port, host, family });
+      } catch (err) {
+        finish({
+          success: false,
+          reason: "error",
+          message: String(err?.message || err),
+        });
+      }
+    });
 
   const ipv4Result = await tryConnect(4);
   if (ipv4Result.success) return ipv4Result;
@@ -668,6 +747,6 @@ ipcMain.handle('test-network-printer', async (event, options = {}) => {
 
   return {
     success: false,
-    message: `Unable to connect to ${host}:${port}. IPv4: ${ipv4Result.message}. IPv6: ${ipv6Result.message}`
+    message: `Unable to connect to ${host}:${port}. IPv4: ${ipv4Result.message}. IPv6: ${ipv6Result.message}`,
   };
 });

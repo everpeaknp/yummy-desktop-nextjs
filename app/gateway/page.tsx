@@ -8,6 +8,7 @@ import { useEffect } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { canAccessOnboarding } from "@/lib/onboarding";
 
+/** Compatibility redirect for bookmarks created before the unified dashboard. */
 export default function GatewayPage() {
   const restaurant = useRestaurant((s) => s.restaurant);
   const setSelectedModule = useRestaurant((s) => s.setSelectedModule);

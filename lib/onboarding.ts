@@ -26,16 +26,10 @@ export function canAccessOnboarding(user: OnboardingUser): boolean {
   if (!user) return false;
   // First registration — any authenticated account without a restaurant can create or join.
   if (!user.restaurant_id) return true;
-  // Existing restaurant members: admin/owner/manager only (replay uses canReplayOnboarding).
+  // Existing restaurant members: admin/owner/manager only.
   return collectRoles(user).some(
     (r) => r === "admin" || r === "owner" || r === "manager",
   );
-}
-
-/** Replay from Help is admin-only after the restaurant already exists. */
-export function canReplayOnboarding(user: OnboardingUser): boolean {
-  if (!user) return false;
-  return collectRoles(user).some((r) => r === "admin");
 }
 
 /** True when the user still needs first registration (no restaurant yet). */

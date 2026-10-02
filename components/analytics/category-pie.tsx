@@ -1,8 +1,22 @@
 "use client";
 
 import { useTheme } from "next-themes";
-import { Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Cell,
+  Legend,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+} from "recharts";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { formatCurrency } from "@/lib/utils";
 
 interface CategoryPieChartProps {
   data: any[];
@@ -13,7 +27,14 @@ interface CategoryPieChartProps {
   embedded?: boolean;
 }
 
-const COLORS = ['#f97316', '#3b82f6', '#10b981', '#a855f7', '#ec4899', '#eab308'];
+const COLORS = [
+  "#f97316",
+  "#3b82f6",
+  "#10b981",
+  "#a855f7",
+  "#ec4899",
+  "#eab308",
+];
 
 export function CategoryPieChart({
   data,
@@ -28,7 +49,9 @@ export function CategoryPieChart({
     <div className="h-[300px] w-full min-w-0 shrink-0">
       {loading ? (
         <div className="h-full w-full flex items-center justify-center bg-muted/20 animate-pulse rounded-md">
-          <span className="text-muted-foreground text-sm">Loading chart...</span>
+          <span className="text-muted-foreground text-sm">
+            Loading chart...
+          </span>
         </div>
       ) : data && data.length > 0 ? (
         <ResponsiveContainer width="100%" height={300} debounce={50}>
@@ -44,17 +67,23 @@ export function CategoryPieChart({
               nameKey="name"
             >
               {data.map((entry, index) => (
-                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                <Cell
+                  key={`cell-${index}`}
+                  fill={COLORS[index % COLORS.length]}
+                />
               ))}
             </Pie>
             <Tooltip
               contentStyle={{
-                backgroundColor: theme === 'dark' ? '#1e1e1e' : '#fff',
-                borderRadius: '8px',
-                border: 'none',
-                boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
+                backgroundColor: theme === "dark" ? "#1e1e1e" : "#fff",
+                borderRadius: "8px",
+                border: "none",
+                boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
               }}
-              formatter={(value: any, name?: string) => [`Rs. ${Number(value).toLocaleString()}`, name || '']}
+              formatter={(value: number | undefined, name?: string) => [
+                formatCurrency(value),
+                name || "",
+              ]}
             />
             <Legend />
           </PieChart>
@@ -79,9 +108,7 @@ export function CategoryPieChart({
           {description}
         </CardDescription>
       </CardHeader>
-      <CardContent>
-        {chartBody}
-      </CardContent>
+      <CardContent>{chartBody}</CardContent>
     </Card>
   );
 }

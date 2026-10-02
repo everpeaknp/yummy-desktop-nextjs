@@ -164,7 +164,7 @@ function PlanFeatureList({ features, planCode, onShowMore }: { features: PlanFea
           className="flex h-5 w-full items-center gap-2.5 text-sm leading-5 text-left transition-colors hover:text-primary"
         >
           <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
-          <span className="truncate">
+          <span className="truncate font-medium text-primary">
             +{hiddenFeatures.length} more included capabilities
           </span>
         </button>
@@ -298,6 +298,9 @@ export default function PremiumPage() {
   };
 
   const handlePlanRequest = async (plan: SubscriptionPlan) => {
+    if (plan.code.toLowerCase() === "free") {
+      return;
+    }
     const selectedAddons = (catalog?.addons ?? []).filter((addon) =>
       selectedAddonCodes.includes(addon.code),
     );
@@ -348,7 +351,7 @@ export default function PremiumPage() {
             <Crown className="h-4 w-4" />
             Billing & subscription
           </div>
-          <h1 className="text-3xl font-black tracking-tight md:text-4xl">Choose the right Yummy plan</h1>
+          <h1 className="text-2xl font-semibold leading-tight tracking-tight md:text-3xl">Choose the right Yummy plan</h1>
           <p className="mt-2 max-w-2xl text-sm text-muted-foreground md:text-base">
             Plans, prices, limits, and add-ons come directly from Yummy billing. Backend checks remain authoritative for every protected action.
           </p>
@@ -367,7 +370,7 @@ export default function PremiumPage() {
                 Current account
               </p>
               <div className="flex flex-wrap items-center gap-2">
-                <h2 className="text-xl font-black tracking-tight md:text-2xl">
+                <h2 className="text-xl font-semibold tracking-tight md:text-2xl">
                   {currentLoading && !current
                     ? "Loading plan..."
                     : currentPlanDisplayName(current, restaurant)}
@@ -428,7 +431,7 @@ export default function PremiumPage() {
       <section className="space-y-5">
         <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
           <div>
-            <h2 className="text-2xl font-black">Published plans</h2>
+            <h2 className="text-xl font-semibold tracking-tight">Published plans</h2>
             <p className="text-sm text-muted-foreground">Flat, initial, and renewal pricing are shown exactly as published.</p>
           </div>
           {intervals.length > 0 && (
@@ -475,9 +478,11 @@ export default function PremiumPage() {
               const isCurrent = currentCode === plan.code;
               const isFreePlan = plan.code.toLowerCase() === "free";
               const canRequest =
-                (isCurrent && selectedAddonCodes.length > 0) ||
-                prices.quoteOnly ||
-                Boolean(primaryPrice);
+                !isFreePlan && (
+                  (isCurrent && selectedAddonCodes.length > 0) ||
+                  prices.quoteOnly ||
+                  Boolean(primaryPrice)
+                );
               const isRequesting = requestingPlan === plan.code && requestLoading;
               const showContact = savedRequestPlan === plan.code;
 
@@ -485,8 +490,8 @@ export default function PremiumPage() {
                 <Card
                   key={String(plan.id)}
                   className={cn(
-                    "relative flex h-full min-h-[640px] flex-col overflow-hidden border-border/50 transition-all duration-200 hover:border-border",
-                    isCurrent && "border-2 border-primary",
+                    "relative flex h-full min-h-[600px] flex-col overflow-hidden rounded-2xl border-border/70 bg-card shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-border hover:shadow-md",
+                    isCurrent && "border-2 border-primary/80 shadow-md shadow-primary/5",
                   )}
                 >
                   <div
@@ -498,25 +503,25 @@ export default function PremiumPage() {
                   >
                     Current plan
                   </div>
-                  <CardHeader className="shrink-0 space-y-1.5 pb-3 pt-5">
-                    <CardTitle className="flex items-center justify-between gap-3 text-xl">
+                  <CardHeader className="shrink-0 space-y-2 pb-4 pt-5">
+                    <CardTitle className="flex items-center justify-between gap-3 text-2xl font-semibold tracking-tight">
                       <span className="truncate">{plan.name}</span>
                       {prices.quoteOnly ? <Badge variant="outline">Custom</Badge> : null}
                     </CardTitle>
                     {(plan.current_version?.subtitle || plan.description) ? (
-                      <p className="line-clamp-2 text-sm text-muted-foreground">
+                      <p className="line-clamp-2 text-sm leading-relaxed text-muted-foreground">
                         {plan.current_version?.subtitle || plan.description}
                       </p>
                     ) : null}
                   </CardHeader>
                   <CardContent className="flex flex-1 flex-col gap-5 pt-0">
                     <div
-                      className="flex min-h-[148px] shrink-0 flex-col justify-between rounded-2xl border bg-muted/20 p-4"
+                      className="flex min-h-[148px] shrink-0 flex-col justify-between rounded-xl border border-border/60 bg-gradient-to-br from-muted/40 via-background to-background p-5"
                     >
                       {prices.quoteOnly ? (
                         <>
                           <div>
-                            <p className="text-2xl font-black">Let&apos;s chat</p>
+                            <p className="text-2xl font-semibold tracking-tight">Let&apos;s chat</p>
                             <p className="mt-1 text-xs text-muted-foreground">
                               Custom - {intervalLabel(prices.billingIntervalMonths)}
                             </p>
@@ -532,7 +537,7 @@ export default function PremiumPage() {
                       ) : primaryPrice ? (
                         <>
                           <div>
-                            <p className="text-2xl font-black">
+                            <p className="text-3xl font-semibold tracking-tight tabular-nums">
                               {formatPrice(primaryPrice.amount, primaryPrice.currency)}
                             </p>
                             <p className="mt-1 text-xs text-muted-foreground">
@@ -560,7 +565,7 @@ export default function PremiumPage() {
                       ) : (
                         <>
                           <div>
-                            <p className="text-2xl font-black">N/A</p>
+                            <p className="text-2xl font-semibold tracking-tight">N/A</p>
                             <p className="mt-1 text-xs text-muted-foreground">
                               Not offered for this billing cycle.
                             </p>
@@ -577,6 +582,11 @@ export default function PremiumPage() {
                       onClick={(event) => event.stopPropagation()}
                       onKeyDown={(event) => event.stopPropagation()}
                     >
+                      {isFreePlan ? (
+                        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-center text-sm font-medium text-emerald-800">
+                          Included automatically when your trial or paid access ends.
+                        </div>
+                      ) : <>
                       <Button
                         className="w-full"
                         variant={isCurrent ? "outline" : "default"}
@@ -617,6 +627,7 @@ export default function PremiumPage() {
                         <MessageSquare className="mr-2 h-4 w-4" />
                         Contact Yummy (optional)
                       </Button>
+                      </>}
                     </div>
                   </CardContent>
                 </Card>
@@ -894,7 +905,7 @@ export default function PremiumPage() {
             <div className="inline-flex w-fit rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
               Contact Yummy
             </div>
-            <DialogTitle className="text-3xl font-black tracking-tight">Let&apos;s Get In Touch.</DialogTitle>
+            <DialogTitle className="text-xl font-semibold tracking-tight sm:text-2xl">Let&apos;s Get In Touch.</DialogTitle>
             <DialogDescription>
               <span className="block text-foreground/90">
                 Your plan request is already saved. Use the prepared email below if you would also like to contact the Yummy team directly.
@@ -972,7 +983,7 @@ export default function PremiumPage() {
             <div className="inline-flex w-fit rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
               Contact Yummy
             </div>
-            <DialogTitle className="text-3xl font-black tracking-tight">Let&apos;s Get In Touch.</DialogTitle>
+            <DialogTitle className="text-xl font-semibold tracking-tight sm:text-2xl">Let&apos;s Get In Touch.</DialogTitle>
             <DialogDescription>
               <span className="block text-foreground/90">
                 Your plan request is already saved. Use the prepared email below if you would also like to contact the Yummy team directly.
@@ -1049,7 +1060,7 @@ export default function PremiumPage() {
           <DialogHeader>
             <div className="flex items-start justify-between gap-6">
               <div className="flex-1">
-                <DialogTitle className="text-2xl font-black">
+                <DialogTitle className="text-xl font-semibold tracking-tight">
                   {catalog?.plans.find((p) => p.code === featureListPlan)?.name} Features
                 </DialogTitle>
                 <DialogDescription>

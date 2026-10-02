@@ -1,5 +1,5 @@
-import { OperationalFinanceReportClient } from "@/components/finance/reports/operational-finance-report-client";
+import { redirect } from "next/navigation";
 
 export default function PaymentsReportPage() {
-  return <OperationalFinanceReportClient mode="payments" />;
+  redirect("/finance/payments");
 }
