@@ -1,8 +1,7 @@
 "use client";
 
 import { useMemo, useState, useEffect } from "react";
-import { FileImage, Mail, ZoomIn, Loader2 } from "lucide-react";
-import { FaWhatsapp } from "react-icons/fa";
+import { FileImage, Mail, MessageSquareText, ZoomIn, Loader2 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -35,6 +34,7 @@ export function TemplatePreview({ campaign, template }: TemplatePreviewProps) {
   const [loadingAsset, setLoadingAsset] = useState(false);
 
   const isEmail = campaign.channel === "email";
+  const isSms = campaign.channel === "sms";
 
   // The approved_message_snapshot is stored as a JSONB object with keys like
   // email_subject, email_body_html, email_template, etc. We need to extract
@@ -103,12 +103,12 @@ export function TemplatePreview({ campaign, template }: TemplatePreviewProps) {
         <CardHeader className="pb-4 border-b border-black/[0.08] dark:border-white/10">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-muted border border-black/[0.08] dark:border-white/15">
-              {isEmail ? <Mail className="h-4 w-4 text-blue-500" /> : <FaWhatsapp className="h-4 w-4 text-green-500" />}
+              {isEmail ? <Mail className="h-4 w-4 text-blue-500" /> : <MessageSquareText className="h-4 w-4 text-violet-500" />}
             </div>
             <div>
               <CardTitle className="dc-card-title">Campaign Content</CardTitle>
               <CardDescription className="text-xs text-muted-foreground mt-1">
-                What customers will see in their {isEmail ? "inbox" : "WhatsApp"}
+                What customers will see in their {isEmail ? "inbox" : isSms ? "SMS app" : "legacy channel"}
               </CardDescription>
             </div>
           </div>
@@ -120,7 +120,7 @@ export function TemplatePreview({ campaign, template }: TemplatePreviewProps) {
               {/* Template Details */}
               <div className="rounded-lg border border-border bg-muted/50 p-4">
                 <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-3">
-                  {isEmail ? "Email" : "WhatsApp"} Template
+                  {isEmail ? "Email" : isSms ? "SMS" : "Legacy"} Template
                 </p>
                 <p className="text-sm font-bold mb-2">
                   {template?.provider_template_name || "No template selected"}
@@ -210,7 +210,7 @@ export function TemplatePreview({ campaign, template }: TemplatePreviewProps) {
                   </div>
                 )
               ) : (
-                <div className="rounded-xl border border-border bg-gradient-to-br from-green-50 to-white p-5 overflow-auto min-h-[520px] max-h-[520px] scrollbar-thin scrollbar-thumb-green-300 scrollbar-track-green-100">
+                <div className="rounded-xl border border-border bg-gradient-to-br from-violet-50 to-white p-5 overflow-auto min-h-[520px] max-h-[520px] scrollbar-thin scrollbar-thumb-violet-300 scrollbar-track-violet-100">
                   <div className="rounded-lg bg-white border border-border p-4 shadow-sm space-y-4">
                     {/* Image if available */}
                     {loadingAsset ? (
@@ -308,15 +308,15 @@ export function TemplatePreview({ campaign, template }: TemplatePreviewProps) {
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {/* WhatsApp Message with Image */}
+                  {/* SMS / legacy message */}
                   <div className="mx-auto max-w-md">
-                    <div className="rounded-xl border border-border bg-gradient-to-br from-green-50 to-white p-6">
+                    <div className="rounded-xl border border-border bg-gradient-to-br from-violet-50 to-white p-6">
                       <div className="flex items-center gap-2 mb-4">
-                        <FaWhatsapp className="h-5 w-5 text-green-600" />
-                        <span className="font-semibold text-green-700">WhatsApp Message</span>
+                        <MessageSquareText className="h-5 w-5 text-violet-600" />
+                        <span className="font-semibold text-violet-700">{isSms ? "SMS message" : "Legacy message"}</span>
                       </div>
                       
-                      {/* WhatsApp Message Bubble */}
+                      {/* Message Bubble */}
                       <div className="rounded-lg bg-white p-4 shadow-sm space-y-3">
                         {/* Image if available */}
                         {creativeAsset?.secure_url && (

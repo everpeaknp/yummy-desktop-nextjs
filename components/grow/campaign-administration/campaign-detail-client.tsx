@@ -239,7 +239,7 @@ export function CampaignDetailClient({ campaignId }: { campaignId: string }) {
       if (templateResponse.status === "fulfilled") setTemplates(templateResponse.value);
       else {
         setTemplates([]);
-        warnings.push("Approved WhatsApp template readiness could not be confirmed.");
+        warnings.push("Approved message template readiness could not be confirmed.");
       }
       if (audienceResponse.status === "fulfilled") setAudience(audienceResponse.value);
       else {
@@ -249,7 +249,7 @@ export function CampaignDetailClient({ campaignId }: { campaignId: string }) {
       if (settingsResponse.status === "fulfilled") setSettings(settingsResponse.value);
       else {
         setSettings(null);
-        warnings.push("WhatsApp delivery settings and quiet hours could not be confirmed.");
+        warnings.push("Delivery settings and quiet hours could not be confirmed.");
       }
       setSecondaryWarnings(warnings);
     } catch (loadError) {
@@ -272,7 +272,9 @@ export function CampaignDetailClient({ campaignId }: { campaignId: string }) {
   const channelDisabled =
     campaign?.channel === "email"
       ? settings?.email_enabled === false
-      : settings?.whatsapp_enabled === false;
+      : campaign?.channel === "sms"
+        ? settings?.sms_enabled === false
+        : true;
   const schedulePayload = useMemo(() => {
     if (!scheduleLocal || !timeZone) return { value: null, error: null };
     try {
@@ -302,7 +304,7 @@ export function CampaignDetailClient({ campaignId }: { campaignId: string }) {
 
   const actions = campaignActions(campaign.status, permissions);
   const currentCampaignId = campaign.id;
-  const approvalChecks = campaignApprovalChecks(campaign, templates);
+  const approvalChecks = campaignApprovalChecks(campaign, templates, audience);
   const approvalReady = isCampaignApprovalReady(approvalChecks);
   const selectedTemplate = templates.find(
     (template) => String(template.id) === String(campaign.message_template_id),
@@ -468,7 +470,7 @@ export function CampaignDetailClient({ campaignId }: { campaignId: string }) {
             </Button>
           )}
           {actions.approve && (
-            <Button size="sm" onClick={() => setApprovalOpen(true)} disabled={!approvalReady} className="dc-btn-close-day h-9 gap-2 rounded-2xl px-4 font-medium">
+            <Button size="sm" onClick={() => setApprovalOpen(true)} disabled={!approvalReady || Boolean(busyAction)} title={!approvalReady ? "A verified eligible audience and complete campaign bundle are required" : undefined} className="dc-btn-close-day h-9 gap-2 rounded-2xl px-4 font-medium">
               <LockKeyhole className="h-4 w-4" />Approve
             </Button>
           )}
@@ -581,10 +583,10 @@ export function CampaignDetailClient({ campaignId }: { campaignId: string }) {
                 <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-2">Why Excluded</p>
                 <div className="space-y-1">
                   {Object.entries(audience.exclusions).slice(0, 3).map(([reasonKey, count]) => {
-                    // Channel-specific labels: WhatsApp needs phone, Email needs email
+                    // Channel-specific labels: SMS needs phone, Email needs email
                     const isEmail = campaign.channel === "email";
                     const friendlyLabels: Record<string, string> = {
-                      // Phone-related (WhatsApp) - but show as "No contact" for email
+                      // Phone-related (SMS) - but show as "No contact" for email
                       "missing valid e164": isEmail ? "No email" : "No phone number",
                       "missing_valid_e164": isEmail ? "No email" : "No phone number",
                       "no phone": isEmail ? "No email" : "No phone number",
@@ -592,7 +594,7 @@ export function CampaignDetailClient({ campaignId }: { campaignId: string }) {
                       "invalid phone": isEmail ? "Invalid email" : "Invalid phone number",
                       "invalid_phone": isEmail ? "Invalid email" : "Invalid phone number",
                       
-                      // Email-related (Email) - but show as "No contact" for WhatsApp
+                      // Email-related (Email) - but show as "No contact" for SMS
                       "missing email": isEmail ? "No email address" : "No phone",
                       "missing_email": isEmail ? "No email address" : "No phone",
                       "no email": isEmail ? "No email address" : "No phone",
@@ -745,7 +747,9 @@ export function CampaignDetailClient({ campaignId }: { campaignId: string }) {
           <AlertDialogHeader>
             <AlertDialogTitle>Approve this campaign?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will lock the campaign details and {audience ? `${formatCount(audience.included_count)} customers` : "customer list"}. You can schedule it after approval. No messages will be sent yet.
+              {approvalReady
+                ? `This will lock the campaign details and ${formatCount(audience!.included_count)} customers. You can schedule it after approval. No messages will be sent yet.`
+                : "Approval is blocked because there is no verified eligible audience or the campaign bundle is incomplete."}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -785,7 +789,7 @@ export function CampaignDetailClient({ campaignId }: { campaignId: string }) {
             {!timeZone ? (
               <Alert variant="destructive"><AlertCircle className="h-4 w-4" /><AlertDescription>Restaurant timezone is not configured. Please set it up first.</AlertDescription></Alert>
             ) : channelDisabled ? (
-              <Alert variant="destructive"><AlertCircle className="h-4 w-4" /><AlertDescription>{campaign.channel === "email" ? "Email" : "WhatsApp"} is disabled. Please enable it in Grow settings first.</AlertDescription></Alert>
+              <Alert variant="destructive"><AlertCircle className="h-4 w-4" /><AlertDescription>{campaign.channel === "email" ? "Email" : campaign.channel === "sms" ? "SMS" : "This legacy channel"} is disabled. Please enable an active Grow channel first.</AlertDescription></Alert>
             ) : (
               <>
                 <div className="space-y-2">

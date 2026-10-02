@@ -4,7 +4,6 @@ import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import PhoneInput from "react-phone-number-input";
 import "react-phone-number-input/style.css";
-import { FaWhatsapp } from "react-icons/fa";
 import { MdEmail } from "react-icons/md";
 import {
   AlertCircle,
@@ -52,8 +51,8 @@ export function PublicGrowthSignup({ publicSlug }: { publicSlug: string | null }
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
   const [language, setLanguage] = useState<GrowthLanguage>("en");
-  const [whatsappConsent, setWhatsappConsent] = useState(false);
   const [emailConsent, setEmailConsent] = useState(false);
+  const [smsConsent, setSmsConsent] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(false);
@@ -112,7 +111,7 @@ export function PublicGrowthSignup({ publicSlug }: { publicSlug: string | null }
   const consentText = useMemo(
     () =>
       restaurant?.consent_text ||
-      `I agree to receive promotional offers from ${displayName} on WhatsApp. I can opt out at any time.`,
+      `I agree to receive promotional offers from ${displayName} by SMS or email. I can opt out at any time.`,
     [displayName, restaurant],
   );
   const supportedLanguages = restaurant?.approved_languages?.length
@@ -157,8 +156,8 @@ export function PublicGrowthSignup({ publicSlug }: { publicSlug: string | null }
         phone: phone.trim(),
         email: trimmedEmail || undefined,
         preferred_language: language,
-        whatsapp_marketing_opt_in: whatsappConsent,
         email_marketing_opt_in: trimmedEmail ? emailConsent : undefined,
+        sms_marketing_opt_in: smsConsent,
         policy_version: restaurant.consent_policy_version,
         consent_text_hash: restaurant.consent_text_hash,
       });
@@ -215,7 +214,7 @@ export function PublicGrowthSignup({ publicSlug }: { publicSlug: string | null }
               </div>
               <h1 className="mt-5 text-2xl font-bold">Your preference has been saved</h1>
               <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                Thanks for connecting with {displayName}. {whatsappConsent ? "You chose to receive relevant WhatsApp offers and can opt out at any time." : "You did not give WhatsApp marketing consent, so promotional WhatsApp messages remain off."}
+                Thanks for connecting with {displayName}. Your communication preferences were saved and you can opt out at any time.
               </p>
               {preferenceToken && (
                 <Button asChild variant="outline" className="mt-6">
@@ -247,9 +246,9 @@ export function PublicGrowthSignup({ publicSlug }: { publicSlug: string | null }
                   )}
                   <p className="mt-8 text-xs font-bold uppercase tracking-[0.2em] text-emerald-100">Powered by Yummy Grow</p>
                   <h1 className="mt-3 text-3xl font-black tracking-tight">Join {displayName} rewards</h1>
-                  <p className="mt-4 text-sm leading-6 text-emerald-50/90">Get exclusive offers on WhatsApp and email. Choose your preferred channels and control what you receive.</p>
+                  <p className="mt-4 text-sm leading-6 text-emerald-50/90">Get exclusive offers by SMS and email. Choose your preferred channels and control what you receive.</p>
                   <div className="mt-8 space-y-3 text-sm text-emerald-50/90">
-                    <p className="flex items-start gap-2"><FaWhatsapp className="mt-0.5 h-4 w-4 shrink-0" />WhatsApp offers sent to your mobile number</p>
+                    <p className="flex items-start gap-2"><HandCoins className="mt-0.5 h-4 w-4 shrink-0" />SMS offers sent to your mobile number</p>
                     <p className="flex items-start gap-2"><MdEmail className="mt-0.5 h-4 w-4 shrink-0" />Email deals available too (optional)</p>
                     <p className="flex items-start gap-2"><ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" />Your choice, unsubscribe anytime</p>
                   </div>
@@ -315,17 +314,17 @@ export function PublicGrowthSignup({ publicSlug }: { publicSlug: string | null }
                 <div className="rounded-2xl border bg-muted/30 p-4">
                   <div className="flex items-start gap-3">
                     <Checkbox
-                      id="growth-whatsapp-consent"
-                      checked={whatsappConsent}
-                      onCheckedChange={(checked) => setWhatsappConsent(checked === true)}
-                      aria-describedby="growth-consent-help"
+                      id="growth-sms-consent"
+                      checked={smsConsent}
+                      onCheckedChange={(checked) => setSmsConsent(checked === true)}
+                      aria-describedby="growth-sms-consent-help"
                     />
                     <div>
-                      <Label htmlFor="growth-whatsapp-consent" className="cursor-pointer text-sm leading-5 font-medium">
-                        Yes, send me exclusive offers on WhatsApp
+                      <Label htmlFor="growth-sms-consent" className="cursor-pointer text-sm leading-5 font-medium">
+                        Yes, send me occasional offers by SMS
                       </Label>
-                      <p id="growth-consent-help" className="mt-1.5 text-xs leading-5 text-muted-foreground">
-                        Completely optional. You can unsubscribe anytime with one tap.
+                      <p id="growth-sms-consent-help" className="mt-1.5 text-xs leading-5 text-muted-foreground">
+                        SMS consent is optional. You can opt out at any time.
                       </p>
                     </div>
                   </div>

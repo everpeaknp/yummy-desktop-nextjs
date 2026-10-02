@@ -3,8 +3,7 @@
 import { useEffect, useState } from "react";
 import Image from "next/image";
 import QRCode from "qrcode";
-import { Grid3x3, List, Phone, RefreshCw, Search, Users, Filter, ChevronLeft, ChevronRight, Share2, Copy, Check, ExternalLink, Download, QrCode as QrCodeIcon, PencilLine, Loader2, UserCheck, UserMinus } from "lucide-react";
-import { FaWhatsapp } from "react-icons/fa";
+import { Grid3x3, List, Phone, MessageSquareText, RefreshCw, Search, Users, Filter, ChevronLeft, ChevronRight, Share2, Copy, Check, ExternalLink, Download, QrCode as QrCodeIcon, PencilLine, Loader2, UserCheck, UserMinus } from "lucide-react";
 import { MdEmail } from "react-icons/md";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -54,14 +53,16 @@ interface Subscriber {
   preferred_language?: string;
   whatsapp_subscribed: boolean;
   email_subscribed: boolean;
+  sms_subscribed: boolean;
   whatsapp_status: "opted_in" | "opted_out" | "not_asked";
   email_status: "opted_in" | "opted_out" | "not_asked";
+  sms_status: "opted_in" | "opted_out" | "not_asked";
   created_at?: string | null;
   customer_created_at?: string | null;
 }
 
 type ViewMode = "table" | "grid";
-type ChannelFilter = "all" | "whatsapp" | "email" | "both";
+type ChannelFilter = "all" | "email" | "sms" | "both";
 type BulkConsentMode = "opt_in" | "opt_out";
 
 function resolveGrowPublicBaseUrl(): string {
@@ -89,7 +90,7 @@ function ConsentBadge({
   channel,
   status,
 }: {
-  channel: "Email" | "WhatsApp";
+  channel: "Email" | "SMS";
   status: Subscriber["email_status"];
 }) {
   const label =
@@ -109,8 +110,8 @@ function ConsentBadge({
           "border-muted-foreground/20 bg-muted text-muted-foreground",
       )}
     >
-      {channel === "WhatsApp" ? (
-        <FaWhatsapp className="h-3.5 w-3.5" />
+      {channel === "SMS" ? (
+        <MessageSquareText className="h-3.5 w-3.5" />
       ) : (
         <MdEmail className="h-3.5 w-3.5" />
       )}
@@ -137,7 +138,7 @@ export function SubscribersClient() {
   const [copied, setCopied] = useState(false);
   const [qrDataUrl, setQrDataUrl] = useState("");
   const [consentCustomer, setConsentCustomer] = useState<Subscriber | null>(null);
-  const [consentDraft, setConsentDraft] = useState({ email: false, whatsapp: false });
+  const [consentDraft, setConsentDraft] = useState({ email: false, sms: false });
   const [contactDraft, setContactDraft] = useState({ phone: "", email: "" });
   const [consentConfirmed, setConsentConfirmed] = useState(false);
   const [consentSaving, setConsentSaving] = useState(false);
@@ -147,7 +148,7 @@ export function SubscribersClient() {
   const [bulkMode, setBulkMode] = useState<BulkConsentMode | null>(null);
   const [bulkChannels, setBulkChannels] = useState({
     email: false,
-    whatsapp: false,
+    sms: false,
   });
   const [bulkConfirmed, setBulkConfirmed] = useState(false);
   const [bulkSaving, setBulkSaving] = useState(false);
@@ -197,12 +198,12 @@ export function SubscribersClient() {
     let filtered = subscribers;
 
     // Apply channel filter
-    if (channelFilter === "whatsapp") {
-      filtered = filtered.filter((s) => s.whatsapp_subscribed);
-    } else if (channelFilter === "email") {
+    if (channelFilter === "email") {
       filtered = filtered.filter((s) => s.email_subscribed);
+    } else if (channelFilter === "sms") {
+      filtered = filtered.filter((s) => s.sms_subscribed);
     } else if (channelFilter === "both") {
-      filtered = filtered.filter((s) => s.whatsapp_subscribed && s.email_subscribed);
+      filtered = filtered.filter((s) => s.sms_subscribed && s.email_subscribed);
     }
 
     // Apply search filter
@@ -223,11 +224,11 @@ export function SubscribersClient() {
   const stats = {
     customers: subscribers.length,
     total: subscribers.filter(
-      (s) => s.whatsapp_subscribed || s.email_subscribed,
+      (s) => s.email_subscribed || s.sms_subscribed,
     ).length,
-    whatsapp: subscribers.filter((s) => s.whatsapp_subscribed).length,
     email: subscribers.filter((s) => s.email_subscribed).length,
-    both: subscribers.filter((s) => s.whatsapp_subscribed && s.email_subscribed).length,
+    sms: subscribers.filter((s) => s.sms_subscribed).length,
+    both: subscribers.filter((s) => s.sms_subscribed && s.email_subscribed).length,
   };
 
   // Pagination
@@ -312,7 +313,7 @@ export function SubscribersClient() {
     setConsentCustomer(customer);
     setConsentDraft({
       email: customer.email_subscribed,
-      whatsapp: customer.whatsapp_subscribed,
+      sms: customer.sms_subscribed,
     });
     setContactDraft({
       phone: customer.phone || "",
@@ -325,12 +326,11 @@ export function SubscribersClient() {
     if (!consentCustomer || !user?.restaurant_id || !consentConfirmed) return;
     const emailChanged =
       consentDraft.email !== consentCustomer.email_subscribed;
-    const whatsappChanged =
-      consentDraft.whatsapp !== consentCustomer.whatsapp_subscribed;
+    const smsChanged = consentDraft.sms !== consentCustomer.sms_subscribed;
     const phone = contactDraft.phone.trim();
     const email = contactDraft.email.trim();
-    if (consentDraft.whatsapp && !phone) {
-      toast.error("Add a phone number before opting into WhatsApp");
+    if (consentDraft.sms && !phone) {
+      toast.error("Add a phone number before opting into SMS");
       return;
     }
     if (consentDraft.email && !email) {
@@ -340,7 +340,7 @@ export function SubscribersClient() {
     const contactChanged =
       phone !== (consentCustomer.phone || "").trim() ||
       email !== (consentCustomer.email || "").trim();
-    if (!contactChanged && !emailChanged && !whatsappChanged) {
+    if (!contactChanged && !emailChanged && !smsChanged) {
       setConsentCustomer(null);
       return;
     }
@@ -353,12 +353,12 @@ export function SubscribersClient() {
           { phone: phone || null, email: email || null },
         );
       }
-      if (emailChanged || whatsappChanged) {
+      if (emailChanged || smsChanged) {
         await growthApi.updateStaffConsent({
           customerId: consentCustomer.customer_id,
           restaurantId: user.restaurant_id,
           emailOptedIn: emailChanged ? consentDraft.email : undefined,
-          whatsappOptedIn: whatsappChanged ? consentDraft.whatsapp : undefined,
+          smsOptedIn: smsChanged ? consentDraft.sms : undefined,
         });
       }
       toast.success("Marketing consent updated");
@@ -393,53 +393,51 @@ export function SubscribersClient() {
 
   const openBulkDialog = (mode: BulkConsentMode) => {
     setBulkMode(mode);
-    setBulkChannels({ email: false, whatsapp: false });
+    setBulkChannels({ email: false, sms: false });
     setBulkConfirmed(false);
   };
 
   const bulkEligibility = {
-    whatsapp: selectedCustomers.filter((customer) =>
-      bulkMode === "opt_in"
-        ? Boolean(customer.phone) && !customer.whatsapp_subscribed
-        : customer.whatsapp_subscribed,
-    ).length,
     email: selectedCustomers.filter((customer) =>
       bulkMode === "opt_in"
         ? Boolean(customer.email) && !customer.email_subscribed
         : customer.email_subscribed,
+    ).length,
+    sms: selectedCustomers.filter((customer) =>
+      bulkMode === "opt_in"
+        ? Boolean(customer.phone) && !customer.sms_subscribed
+        : customer.sms_subscribed,
     ).length,
   };
 
   const applyBulkConsent = async () => {
     if (!bulkMode || !user?.restaurant_id || !bulkConfirmed) return;
     const restaurantId = user.restaurant_id;
-    if (!bulkChannels.email && !bulkChannels.whatsapp) {
+    if (!bulkChannels.email && !bulkChannels.sms) {
       toast.error("Select at least one channel");
       return;
     }
 
     const operations = selectedCustomers.flatMap((customer) => {
-      const whatsappEligible =
-        bulkChannels.whatsapp &&
-        (bulkMode === "opt_in"
-          ? Boolean(customer.phone) && !customer.whatsapp_subscribed
-          : customer.whatsapp_subscribed);
       const emailEligible =
         bulkChannels.email &&
         (bulkMode === "opt_in"
           ? Boolean(customer.email) && !customer.email_subscribed
           : customer.email_subscribed);
-      if (!whatsappEligible && !emailEligible) return [];
+      const smsEligible =
+        bulkChannels.sms &&
+        (bulkMode === "opt_in"
+          ? Boolean(customer.phone) && !customer.sms_subscribed
+          : customer.sms_subscribed);
+      if (!emailEligible && !smsEligible) return [];
       return [
         {
           customer,
           request: growthApi.updateStaffConsent({
             customerId: customer.customer_id,
             restaurantId,
-            whatsappOptedIn: whatsappEligible
-              ? bulkMode === "opt_in"
-              : undefined,
             emailOptedIn: emailEligible ? bulkMode === "opt_in" : undefined,
+            smsOptedIn: smsEligible ? bulkMode === "opt_in" : undefined,
           }),
         },
       ];
@@ -613,7 +611,7 @@ export function SubscribersClient() {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
         <Card>
           <CardContent className="p-5">
             <div className="flex items-center gap-3">
@@ -623,6 +621,20 @@ export function SubscribersClient() {
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Total Customers</p>
                 <p className="text-2xl font-bold tabular-nums mt-0.5">{stats.customers}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="p-5">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-lg bg-violet-500/10">
+                <MessageSquareText className="h-5 w-5 text-violet-600" />
+              </div>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">SMS</p>
+                <p className="text-2xl font-bold tabular-nums mt-0.5">{stats.sms}</p>
               </div>
             </div>
           </CardContent>
@@ -656,19 +668,6 @@ export function SubscribersClient() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardContent className="p-5">
-            <div className="flex items-center gap-3">
-              <div className="p-2.5 rounded-lg bg-green-500/10">
-                <FaWhatsapp className="h-5 w-5 text-green-600" />
-              </div>
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">WhatsApp</p>
-                <p className="text-2xl font-bold tabular-nums mt-0.5">{stats.whatsapp}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
       </div>
 
       {/* Subscribers List */}
@@ -689,8 +688,8 @@ export function SubscribersClient() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Customers</SelectItem>
-                  <SelectItem value="whatsapp">WhatsApp opted in</SelectItem>
                   <SelectItem value="email">Email opted in</SelectItem>
+                  <SelectItem value="sms">SMS opted in</SelectItem>
                   <SelectItem value="both">Both opted in</SelectItem>
                 </SelectContent>
               </Select>
@@ -712,7 +711,7 @@ export function SubscribersClient() {
                   {selectedCustomerIds.size} customer{selectedCustomerIds.size === 1 ? "" : "s"} selected
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  Eligibility is checked separately for Email and WhatsApp.
+                  Eligibility is checked separately for Email and SMS.
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -836,8 +835,8 @@ export function SubscribersClient() {
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-wrap items-center gap-2">
-                          <ConsentBadge channel="WhatsApp" status={subscriber.whatsapp_status} />
                           <ConsentBadge channel="Email" status={subscriber.email_status} />
+                          <ConsentBadge channel="SMS" status={subscriber.sms_status} />
                         </div>
                       </TableCell>
                       <TableCell className="text-right text-sm text-muted-foreground">
@@ -909,8 +908,8 @@ export function SubscribersClient() {
                     </div>
                   </div>
                   <div className="flex flex-wrap items-center gap-2 pt-2 border-t">
-                    <ConsentBadge channel="WhatsApp" status={subscriber.whatsapp_status} />
                     <ConsentBadge channel="Email" status={subscriber.email_status} />
+                    <ConsentBadge channel="SMS" status={subscriber.sms_status} />
                   </div>
                   {subscriber.created_at && (
                     <p className="text-xs text-muted-foreground">
@@ -982,31 +981,22 @@ export function SubscribersClient() {
           <div className="space-y-3 py-2">
             <div className="flex items-start gap-3 rounded-lg border p-3">
               <Checkbox
-                checked={consentDraft.whatsapp}
-                disabled={!contactDraft.phone.trim() && !consentCustomer?.whatsapp_subscribed}
+                checked={consentDraft.sms}
+                disabled={!contactDraft.phone.trim() && !consentCustomer?.sms_subscribed}
                 onCheckedChange={(checked) =>
                   setConsentDraft((current) => ({
                     ...current,
-                    whatsapp: checked === true,
+                    sms: checked === true,
                   }))
                 }
               />
-              <div className="min-w-0 flex-1 space-y-2">
+              <div className="min-w-0 flex-1">
                 <span className="flex items-center gap-2 text-sm font-medium">
-                  <FaWhatsapp className="h-4 w-4 text-green-600" /> WhatsApp
+                  <MessageSquareText className="h-4 w-4 text-violet-600" /> SMS
                 </span>
-                <Input
-                  value={contactDraft.phone}
-                  onChange={(event) =>
-                    setContactDraft((current) => ({
-                      ...current,
-                      phone: event.target.value,
-                    }))
-                  }
-                  inputMode="tel"
-                  placeholder="Phone number, e.g. 98XXXXXXXX"
-                  aria-label="Customer phone number"
-                />
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Uses the phone number above.
+                </p>
               </div>
             </div>
 
@@ -1093,18 +1083,18 @@ export function SubscribersClient() {
           <div className="space-y-3 py-2">
             <label className="flex items-center justify-between gap-3 rounded-lg border p-3">
               <span className="flex items-center gap-2 text-sm font-medium">
-                <FaWhatsapp className="h-4 w-4 text-green-600" /> WhatsApp
+                <MessageSquareText className="h-4 w-4 text-violet-600" /> SMS
               </span>
               <span className="ml-auto text-xs text-muted-foreground">
-                {bulkEligibility.whatsapp} eligible
+                {bulkEligibility.sms} eligible
               </span>
               <Checkbox
-                checked={bulkChannels.whatsapp}
-                disabled={bulkEligibility.whatsapp === 0}
+                checked={bulkChannels.sms}
+                disabled={bulkEligibility.sms === 0}
                 onCheckedChange={(checked) =>
                   setBulkChannels((current) => ({
                     ...current,
-                    whatsapp: checked === true,
+                    sms: checked === true,
                   }))
                 }
               />
@@ -1155,7 +1145,7 @@ export function SubscribersClient() {
               disabled={
                 bulkSaving ||
                 !bulkConfirmed ||
-                (!bulkChannels.email && !bulkChannels.whatsapp)
+                (!bulkChannels.email && !bulkChannels.sms)
               }
               className="gap-2"
             >

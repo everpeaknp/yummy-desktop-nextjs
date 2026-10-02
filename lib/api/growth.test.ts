@@ -181,7 +181,7 @@ describe("growth API contract helpers", () => {
     await growthApi.updateStaffConsent({
       customerId: 14,
       restaurantId: 119,
-      whatsappOptedIn: true,
+      smsOptedIn: true,
     });
 
     expect(post).toHaveBeenCalledWith(
@@ -192,7 +192,7 @@ describe("growth API contract helpers", () => {
           customer_id: 14,
           restaurant_id: 119,
           email_opted_in: undefined,
-          whatsapp_opted_in: true,
+          sms_opted_in: true,
         },
       },
     );

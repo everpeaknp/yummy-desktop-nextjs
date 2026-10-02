@@ -5,6 +5,7 @@ import type {
   GrowthOffer,
   GrowthScheduleInput,
   GrowthSegmentCode,
+  GrowthSegmentPreview,
 } from "@/lib/api/growth-types";
 
 export interface GrowthCampaignPermissions {
@@ -66,7 +67,7 @@ export function campaignActions(
 }
 
 export interface CampaignApprovalCheck {
-  key: "offer" | "message" | "poster" | "template";
+  key: "audience" | "offer" | "message" | "poster" | "template";
   label: string;
   ready: boolean;
   detail: string;
@@ -75,15 +76,27 @@ export interface CampaignApprovalCheck {
 export function campaignApprovalChecks(
   campaign: GrowthCampaign,
   templates: GrowthMessageTemplate[],
+  audience: GrowthSegmentPreview | null = null,
 ): CampaignApprovalCheck[] {
   const selectedTemplate = templates.find(
     (template) => String(template.id) === String(campaign.message_template_id),
   );
   
   const isEmail = campaign.channel === "email";
+  const isSms = campaign.channel === "sms";
   
   // Base checks that apply to all channels
   const checks: CampaignApprovalCheck[] = [
+    {
+      key: "audience",
+      label: "Eligible audience",
+      ready: Boolean(audience && audience.included_count > 0),
+      detail: audience
+        ? audience.included_count > 0
+          ? `${audience.included_count.toLocaleString("en-NP")} currently eligible customer${audience.included_count === 1 ? "" : "s"}.`
+          : "No currently eligible consented customers match this campaign."
+        : "Audience eligibility could not be verified. Refresh before approving.",
+    },
     {
       key: "offer",
       label: "Offer attached",
@@ -103,7 +116,14 @@ export function campaignApprovalChecks(
   ];
   
   // Add channel-specific checks
-  if (isEmail) {
+  if (isSms) {
+    checks.push({
+      key: "template",
+      label: "SMS ready",
+      ready: true,
+      detail: "SMS uses the approved campaign copy; no provider template is required.",
+    });
+  } else if (isEmail) {
     // Email campaigns need template approval but not poster
     checks.push({
       key: "template",
@@ -114,26 +134,12 @@ export function campaignApprovalChecks(
         : "Select an approved email template.",
     });
   } else {
-    // WhatsApp campaigns need both poster and template
-    checks.push(
-      {
-        key: "poster",
-        label: "Image uploaded",
-        ready: campaign.creative_asset_id != null,
-        detail:
-          campaign.creative_asset_id != null
-            ? `Image #${campaign.creative_asset_id} is ready`
-            : "Upload an image before sending.",
-      },
-      {
-        key: "template",
-        label: "WhatsApp ready",
-        ready: Boolean(selectedTemplate && selectedTemplate.provider_status === "approved"),
-        detail: selectedTemplate
-          ? `${selectedTemplate.whatsapp_template_name || selectedTemplate.provider_template_name || 'Template'} · ${selectedTemplate.language} · ${selectedTemplate.provider_status}`
-          : "Select an approved WhatsApp template.",
-      }
-    );
+    checks.push({
+      key: "template",
+      label: "Legacy channel deactivated",
+      ready: false,
+      detail: "This campaign uses a deactivated Grow channel. Create a new Email or SMS campaign instead.",
+    });
   }
   
   return checks;

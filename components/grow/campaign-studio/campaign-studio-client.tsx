@@ -16,6 +16,7 @@ import {
   Info,
   Lightbulb,
   Loader2,
+  MessageSquareText,
   LockKeyhole,
   RefreshCw,
   Save,
@@ -60,6 +61,8 @@ import type {
   GrowthMessageTemplate,
   GrowthPlaybookCode,
   GrowthSegmentPreview,
+  GrowthSmsEstimate,
+  GrowthSmsWallet,
 } from "@/lib/api/growth-types";
 import { getApiErrorMessage } from "@/lib/api-error-message";
 import {
@@ -182,7 +185,8 @@ export function CampaignStudioClient() {
 
   const setPlaybookCode = (value: GrowthPlaybookCode) => patchDraft("playbookCode", value);
   const setChannel = (value: GrowthChannelCode) => {
-    patchDraft("channel", value);
+    const activeValue: GrowthChannelCode = value === "whatsapp" ? "email" : value;
+    patchDraft("channel", activeValue);
     patchDraft("selectedMessageTemplateId", "");
     patchDraft("reviewAccepted", false);
     patchDraft("copyCustomized", false);  // Reset copy customization when channel changes
@@ -221,9 +225,15 @@ export function CampaignStudioClient() {
   const [exportingPoster, setExportingPoster] = useState(false);
   const [pageError, setPageError] = useState<string | null>(null);
   const [posterDataUrl, setPosterDataUrl] = useState<string | null>(null);
+  const [smsEstimate, setSmsEstimate] = useState<GrowthSmsEstimate | null>(null);
+  const [smsWallet, setSmsWallet] = useState<GrowthSmsWallet | null>(null);
   const audienceRequestRef = useRef(0);
   const posterRef = useRef<HTMLDivElement>(null);
   const exportPosterRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (channel === "whatsapp") setChannel("email");
+  }, [channel]);
 
   const playbook = useMemo(
     () => getCampaignPlaybook(playbookCode),
@@ -316,6 +326,12 @@ export function CampaignStudioClient() {
 
   useEffect(() => {
     let active = true;
+    if (channel === "sms") {
+      setMessageTemplates([]);
+      setTemplatesError(null);
+      setTemplatesLoading(false);
+      return () => { active = false; };
+    }
     setTemplatesLoading(true);
     setTemplatesError(null);
     growthApi
@@ -327,7 +343,7 @@ export function CampaignStudioClient() {
         if (active) {
           setMessageTemplates([]);
           setTemplatesError(
-            `Approved ${channel === "email" ? "email" : "WhatsApp"} templates could not be loaded. Review submission is disabled.`,
+            `Approved email templates could not be loaded. Review submission is disabled.`,
           );
         }
       })
@@ -338,6 +354,28 @@ export function CampaignStudioClient() {
       active = false;
     };
   }, [channel]);
+
+  useEffect(() => {
+    if (channel !== "sms" || message.trim().length === 0) {
+      setSmsEstimate(null);
+      return;
+    }
+    let active = true;
+    const timer = window.setTimeout(() => {
+      Promise.all([
+        growthApi.estimateSms(message.trim(), audience?.included_count ?? 0),
+        growthApi.getSmsWallet(),
+      ]).then(([estimate, wallet]) => {
+        if (active) {
+          setSmsEstimate(estimate);
+          setSmsWallet(wallet);
+        }
+      }).catch(() => {
+        if (active) setSmsEstimate(null);
+      });
+    }, 250);
+    return () => { active = false; window.clearTimeout(timer); };
+  }, [audience?.included_count, channel, message]);
 
   useEffect(() => {
     const stillValid =
@@ -359,10 +397,13 @@ export function CampaignStudioClient() {
     try {
       const result = await growthApi.previewSegment(playbook.segment, channel);
       if (requestId === audienceRequestRef.current) setAudience(result);
-    } catch {
+    } catch (error) {
       if (requestId === audienceRequestRef.current) {
         setAudienceError(
-          "The live audience could not be calculated. You may continue drafting, but review submission stays blocked until Yummy can verify an eligible audience.",
+          getApiErrorMessage(
+            error,
+            "The live audience could not be calculated. You may continue drafting, but review submission stays blocked until Yummy can verify an eligible audience.",
+          ),
         );
       }
     } finally {
@@ -499,12 +540,12 @@ export function CampaignStudioClient() {
           return;
         }
       } else if (headline.trim().length < 3 || message.trim().length < 12) {
-        setPageError("Add a clear poster headline and WhatsApp message before review.");
+        setPageError("WhatsApp Grow campaigns are deactivated. Use Email or SMS instead.");
         return;
       }
-      if (!selectedMessageTemplate) {
+      if (channel !== "sms" && !selectedMessageTemplate) {
         setPageError(
-          `No provider-approved ${channel === "email" ? "email" : "image WhatsApp"} template is available for ${languageLabel(language)}. Add or approve that template before review.`,
+          `No provider-approved email template is available for ${languageLabel(language)}. Add or approve that template before review.`,
         );
         return;
       }
@@ -547,7 +588,7 @@ export function CampaignStudioClient() {
             name: campaignName.trim(),
              offer: campaignInput().offer,
              language,
-             message_body: channel === "whatsapp" ? message.trim() : undefined,
+             message_body: channel !== "email" ? message.trim() : undefined,
              email_subject: channel === "email" ? emailSubject.trim() : undefined,
              email_body_html: channel === "email" ? emailBodyHtml.trim() : undefined,
              email_template: channel === "email" ? emailPosterTemplate : undefined,
@@ -592,9 +633,9 @@ export function CampaignStudioClient() {
       setPageError("Offer or message validation is incomplete.");
       return;
     }
-    if (!selectedMessageTemplate) {
+    if (channel !== "sms" && !selectedMessageTemplate) {
       setPageError(
-        `A provider-approved ${channel === "email" ? "email" : "image WhatsApp"} template matching ${languageLabel(language)} is required. The campaign remains a draft.`,
+        `A provider-approved email template matching ${languageLabel(language)} is required. The campaign remains a draft.`,
       );
       return;
     }
@@ -603,26 +644,11 @@ export function CampaignStudioClient() {
     try {
       const draft = await persistDraft(false);
       if (!draft) return;
-      if (channel === "whatsapp") {
-        const posterBlob = await renderPosterPng();
-        const asset = await growthApi.uploadCampaignPoster(draft.id, {
-          file: posterBlob,
-          filename: `${safeFilename(campaignName)}-whatsapp-poster.png`,
-          template_key: posterTemplate,
-          template_version: 1,
-        });
-        const reviewed = await growthApi.submitCampaignForReview(draft.id);
-        setSavedCampaign(reviewed);
-        toast.success(
-          `Poster #${asset.id} attached and submitted for manual review. It has not been approved, scheduled, or sent.`,
-        );
-      } else {
-        const reviewed = await growthApi.submitCampaignForReview(draft.id);
-        setSavedCampaign(reviewed);
-        toast.success(
-          "Submitted for manual review. It has not been approved, scheduled, or sent.",
-        );
-      }
+      const reviewed = await growthApi.submitCampaignForReview(draft.id);
+      setSavedCampaign(reviewed);
+      toast.success(
+        "Submitted for manual review. It has not been approved, scheduled, or sent.",
+      );
     } catch (error) {
       setPageError(
         getApiErrorMessage(
@@ -712,7 +738,7 @@ export function CampaignStudioClient() {
       const anchor = document.createElement("a");
       const objectUrl = URL.createObjectURL(blob);
       anchor.href = objectUrl;
-      anchor.download = `${safeFilename(campaignName)}-whatsapp-poster.png`;
+      anchor.download = `${safeFilename(campaignName)}-campaign-poster.png`;
       anchor.click();
       URL.revokeObjectURL(objectUrl);
       toast.success("Poster exported locally. It was not uploaded or attached to a campaign.");
@@ -900,16 +926,16 @@ export function CampaignStudioClient() {
                   disabled={isReadOnly}
                 >
                   <Label
-                    htmlFor="channel-whatsapp"
+                    htmlFor="channel-sms"
                     className={cn(
                       "flex cursor-pointer items-center gap-3 rounded-xl border border-border p-4",
-                      channel === "whatsapp" && "border-primary bg-primary/5",
+                      channel === "sms" && "border-primary bg-primary/5",
                     )}
                   >
-                    <RadioGroupItem id="channel-whatsapp" value="whatsapp" />
+                    <RadioGroupItem id="channel-sms" value="sms" />
                     <span>
-                      <span className="block font-bold">WhatsApp</span>
-                      <span className="text-xs font-normal text-muted-foreground">Poster image + message</span>
+                      <span className="block font-bold">SMS</span>
+                      <span className="text-xs font-normal text-muted-foreground">Text message + credit estimate</span>
                     </span>
                   </Label>
                   <Label
@@ -1110,10 +1136,12 @@ export function CampaignStudioClient() {
             <CardHeader>
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <CardTitle>{channel === "email" ? "Email content" : "Message and poster"}</CardTitle>
+                  <CardTitle>{channel === "email" ? "Email content" : channel === "sms" ? "SMS message" : "Message and poster"}</CardTitle>
                   <CardDescription className="mt-1">
                     {channel === "email"
                       ? "Approved templates only. No synthetic content is generated."
+                      : channel === "sms"
+                        ? "Text-only campaign. Cost depends on message encoding, length, and recipient count."
                       : "Controlled templates use the restaurant's real logo. No synthetic food image is generated."}
                   </CardDescription>
                 </div>
@@ -1133,8 +1161,8 @@ export function CampaignStudioClient() {
                   <SelectContent><SelectItem value="en">English</SelectItem><SelectItem value="ne">Nepali</SelectItem><SelectItem value="ne_romanized">Romanized Nepali</SelectItem></SelectContent>
                 </Select>
               </div>
-              <div className="space-y-2">
-                <Label>Approved {channel === "email" ? "email" : "WhatsApp image"} template</Label>
+              {channel !== "sms" && <div className="space-y-2">
+                <Label>Approved email template</Label>
                 <Select
                   value={selectedMessageTemplateId}
                   disabled={isReadOnly || templatesLoading || approvedMessageTemplates.length === 0}
@@ -1158,18 +1186,18 @@ export function CampaignStudioClient() {
                     Provider-approved template. Variables: {selectedMessageTemplate.variable_names.length ? selectedMessageTemplate.variable_names.join(", ") : "none"}.
                   </p>
                 )}
-              </div>
-              {templatesError && (
+              </div>}
+              {channel !== "sms" && templatesError && (
                 <Alert variant="destructive">
                   <AlertCircle className="h-4 w-4" />
                   <AlertDescription>{templatesError}</AlertDescription>
                 </Alert>
               )}
-              {!templatesLoading && !templatesError && approvedMessageTemplates.length === 0 && (
+              {channel !== "sms" && !templatesLoading && !templatesError && approvedMessageTemplates.length === 0 && (
                 <Alert className="rounded-xl border border-border bg-card">
                   <TriangleAlert className="h-4 w-4" />
                   <AlertDescription>
-                    No provider-approved {channel === "email" ? "email" : "image WhatsApp"} template matches {languageLabel(language)}. You can save a draft, but Yummy will not submit this campaign for review until one is available.
+                    No provider-approved email template matches {languageLabel(language)}. You can save a draft, but Yummy will not submit this campaign for review until one is available.
                   </AlertDescription>
                 </Alert>
               )}
@@ -1190,23 +1218,29 @@ export function CampaignStudioClient() {
                     <p className="text-xs text-muted-foreground">Shown in the poster-style email preview when &quot;Use poster template&quot; is enabled below.</p>
                   </div>
                 </>
-              ) : (
+              ) : channel === "sms" ? (
                 <>
                   <div className="space-y-2">
-                    <Label htmlFor="poster-headline">Poster headline</Label>
-                    <Input id="poster-headline" value={headline} maxLength={90} disabled={isReadOnly} onChange={(event) => { setHeadline(event.target.value); setCopyCustomized(true); }} />
+                    <Label htmlFor="sms-message">SMS message</Label>
+                    <Textarea id="sms-message" value={message} maxLength={700} rows={7} disabled={isReadOnly} onChange={(event) => { setMessage(event.target.value); setCopyCustomized(true); }} />
+                    <div className="flex justify-between text-xs text-muted-foreground">
+                      <span><code>{"{{customer_name}}"}</code> is personalized for each recipient.</span>
+                      <span>{message.length}/700</span>
+                    </div>
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="whatsapp-message">WhatsApp message</Label>
-                    <Textarea id="whatsapp-message" value={message} maxLength={1024} rows={7} disabled={isReadOnly} onChange={(event) => { setMessage(event.target.value); setCopyCustomized(true); }} />
-                    <div className="flex justify-between text-xs text-muted-foreground"><span><code>{"{{customer_name}}"}</code> is personalized by the backend template.</span><span>{message.length}/1024</span></div>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="poster-terms">Visible terms</Label>
-                    <Textarea id="poster-terms" value={terms} maxLength={240} rows={3} disabled={isReadOnly} onChange={(event) => setTerms(event.target.value)} />
-                  </div>
+                  <Alert className="rounded-xl border-violet-500/30 bg-violet-500/5">
+                    <MessageSquareText className="h-4 w-4 text-violet-600" />
+                    <AlertTitle>SMS credit estimate</AlertTitle>
+                    <AlertDescription>
+                      {smsEstimate
+                        ? `${smsEstimate.encoding.toUpperCase()} · ${smsEstimate.segments_per_recipient} segment${smsEstimate.segments_per_recipient === 1 ? "" : "s"} per customer · ${smsEstimate.required_credits.toLocaleString("en-NP")} credits for ${smsEstimate.recipient_count.toLocaleString("en-NP")} eligible customers.`
+                        : "Enter a message to calculate its SMS segments and required credits."}
+                      {smsWallet && ` Available balance: ${smsWallet.available_credits.toLocaleString("en-NP")} credits.`}
+                    </AlertDescription>
+                  </Alert>
+                  <p className="text-xs leading-5 text-muted-foreground">You may draft and submit this campaign for approval. Scheduling stays blocked until an SMS provider and sufficient credits are configured.</p>
                 </>
-              )}
+              ) : null}
             </CardContent>
           </Card>
 
@@ -1231,94 +1265,17 @@ export function CampaignStudioClient() {
               onUsePosterTemplateChange={setUseEmailPoster}
               onTemplateChange={setEmailPosterTemplate}
             />
-          ) : (
+          ) : channel === "sms" ? (
             <Card>
-              <CardHeader><div className="flex items-center justify-between gap-3"><div><CardTitle>WhatsApp-square preview</CardTitle><CardDescription>Template-based 1:1 artwork.</CardDescription></div><Button variant="outline" onClick={() => void exportPoster()} disabled={exportingPoster}>{exportingPoster ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}Export PNG</Button></div></CardHeader>
-              <CardContent className="space-y-5">
-                {USE_FABRIC_EDITOR ? (
-                  <>
-                    <Alert className="rounded-xl border border-emerald-200 bg-emerald-50">
-                      <Sparkles className="h-4 w-4 text-emerald-600" />
-                      <AlertTitle className="text-emerald-900">New Fabric.js Editor (Phase 1)</AlertTitle>
-                      <AlertDescription className="text-emerald-800">
-                        The new Canva-like poster editor is active. This is a preview-only foundation. Full template migration happens in Phase 2.
-                      </AlertDescription>
-                    </Alert>
-                    <div className="w-full">
-                      <PosterEditorClient
-                        templateConfig={{
-                          restaurantName: restaurantName,
-                          logoUrl: brand?.logo_url || getImageUrl(restaurant?.profile_picture || ""),
-                          primaryColor: brand?.primary_color || "#047857",
-                          secondaryColor: "#10b981",
-                          headline: headline,
-                          offerLabel: formatCampaignOffer(offer),
-                          expiresOn: offer.valid_until || "",
-                          terms: terms,
-                        }}
-                        onExport={(blob) => {
-                          const anchor = document.createElement("a");
-                          const objectUrl = URL.createObjectURL(blob);
-                          anchor.href = objectUrl;
-                          anchor.download = `${safeFilename(campaignName)}-fabric-poster.png`;
-                          anchor.click();
-                          URL.revokeObjectURL(objectUrl);
-                          toast.success("Fabric poster exported locally.");
-                        }}
-                      />
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <div className="w-full flex justify-center">
-                      {poster}
-                    </div>
-                    <div className="flex items-center gap-4">
-                      <Label className="whitespace-nowrap font-semibold">Poster template</Label>
-                      <Select value={posterTemplate} disabled={isReadOnly} onValueChange={(value) => setPosterTemplate(value as CampaignPosterTemplate)}>
-                        <SelectTrigger className="flex-1">
-                          <SelectValue placeholder="Choose a template" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <div className="px-2 pb-2">
-                            <input
-                              type="text"
-                              placeholder="Search templates..."
-                              className="w-full px-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
-                              onChange={(e) => {
-                                const search = e.target.value.toLowerCase();
-                                const items = e.target.closest('[role="listbox"]')?.querySelectorAll('[role="option"]');
-                                items?.forEach((item) => {
-                                  const text = item.textContent?.toLowerCase() || '';
-                                  (item as HTMLElement).style.display = text.includes(search) ? '' : 'none';
-                                });
-                              }}
-                              onKeyDown={(e) => e.stopPropagation()}
-                            />
-                          </div>
-                          {(["vibrant", "fresh", "warm", "modern", "luxury", "elegant", "bold", "minimal", "ticket", "grid", "sunset", "ocean", "forest", "royal", "neon", "pastel", "midnight", "coral", "mint", "crimson", "slate", "amber", "teal", "lavender", "rose", "emerald", "sapphire", "bronze", "ruby", "platinum", "gold", "minimalist", "geometric", "artistic", "expressive", "maximalist"] as CampaignPosterTemplate[]).map((template) => (
-                            <SelectItem key={template} value={template} className="capitalize">
-                              {template}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <p className="text-xs text-muted-foreground">
-                        {templateColors[posterTemplate] ? (
-                          <span className="flex items-center gap-2">
-                            <span className="inline-block w-3 h-3 rounded-full" style={{ backgroundColor: templateColors[posterTemplate].primary }} />
-                            <span className="inline-block w-3 h-3 rounded-full" style={{ backgroundColor: templateColors[posterTemplate].secondary }} />
-                            <span className="capitalize">{posterTemplate} template</span>
-                          </span>
-                        ) : null}
-                      </p>
-                    </div>
-                    <p className="text-xs leading-5 text-muted-foreground">Copy suggestions are drafts only. On review submission, Yummy renders this preview as PNG, uploads it to the campaign-scoped media folder, and attaches it to the draft before creating the review candidate.</p>
-                  </>
-                )}
+              <CardHeader><CardTitle>SMS preview</CardTitle><CardDescription>Text shown to each eligible, opted-in customer.</CardDescription></CardHeader>
+              <CardContent>
+                <div className="mx-auto max-w-sm rounded-[2rem] border-8 border-slate-900 bg-muted p-5 shadow-sm">
+                  <div className="mb-4 text-center text-xs font-semibold text-muted-foreground">{restaurantName}</div>
+                  <div className="rounded-2xl rounded-tl-sm bg-background p-4 text-sm leading-6 shadow-sm whitespace-pre-wrap">{message || "Your SMS message will appear here."}</div>
+                </div>
               </CardContent>
             </Card>
-          )}
+          ) : null}
         </div>
       )}
 
@@ -1349,8 +1306,8 @@ export function CampaignStudioClient() {
                   </div>
                   <div className="space-y-2">
                     <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Language & Channel</p>
-                    <p className="text-lg font-bold">{languageLabel(language)} · {channel === "email" ? "Email" : "WhatsApp"}</p>
-                    <p className="text-sm text-muted-foreground">{channel === "email" ? selectedMessageTemplate?.key || "No template" : `${posterTemplate} poster`}</p>
+                    <p className="text-lg font-bold">{languageLabel(language)} · {channel === "sms" ? "SMS" : "Email"}</p>
+                    <p className="text-sm text-muted-foreground">{channel === "email" ? selectedMessageTemplate?.key || "No template" : channel === "sms" ? "Text-only message" : `${posterTemplate} poster`}</p>
                   </div>
                 </div>
 
@@ -1405,7 +1362,7 @@ export function CampaignStudioClient() {
                   )}
                   {actionPolicy.can_submit_for_review && (
                     <Button 
-                      disabled={saving || submittingReview || templatesLoading || !selectedMessageTemplate || !reviewAccepted || !audience || audience.included_count <= 0} 
+                      disabled={saving || submittingReview || (channel !== "sms" && (templatesLoading || !selectedMessageTemplate)) || !reviewAccepted || !audience || audience.included_count <= 0} 
                       onClick={() => void submitForReview()}
                     >
                       {submittingReview ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileCheck2 className="mr-2 h-4 w-4" />}
@@ -1445,6 +1402,20 @@ export function CampaignStudioClient() {
                   onUsePosterTemplateChange={setUseEmailPoster}
                   onTemplateChange={setEmailPosterTemplate}
                 />
+              </CardContent>
+            </Card>
+          ) : channel === "sms" ? (
+            <Card className="h-fit">
+              <CardHeader><CardTitle>SMS review</CardTitle><CardDescription>Message copy becomes immutable after approval.</CardDescription></CardHeader>
+              <CardContent className="space-y-4">
+                <div className="rounded-2xl border bg-muted/40 p-4 text-sm leading-6 whitespace-pre-wrap">{message}</div>
+                {smsEstimate && (
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div className="rounded-xl border p-3"><p className="text-muted-foreground">Segments each</p><p className="text-lg font-bold">{smsEstimate.segments_per_recipient}</p></div>
+                    <div className="rounded-xl border p-3"><p className="text-muted-foreground">Credits needed</p><p className="text-lg font-bold">{smsEstimate.required_credits.toLocaleString("en-NP")}</p></div>
+                  </div>
+                )}
+                <Alert className="border-amber-500/40 bg-amber-500/5"><TriangleAlert className="h-4 w-4" /><AlertDescription>Approval does not send this SMS. Scheduling remains unavailable until provider delivery and credits are configured.</AlertDescription></Alert>
               </CardContent>
             </Card>
           ) : (

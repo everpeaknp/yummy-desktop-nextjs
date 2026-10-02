@@ -34,6 +34,7 @@ export function approvedTemplatesForLanguageAndChannel(
   language: GrowthLanguage,
   channel: GrowthChannelCode,
 ): GrowthMessageTemplate[] {
+  if (channel === "sms") return [];
   if (channel === "email") {
     return templates.filter(
       (template) =>
@@ -376,7 +377,7 @@ export function buildCampaignCreateInput({
     channel,
     offer: toGrowthOfferInput(offer),
     language,
-    message_body: channel === "whatsapp" ? message.trim() : null,
+    message_body: channel !== "email" ? message.trim() : null,
     email_subject: channel === "email" ? (emailSubject || "").trim() : null,
     email_body_html: channel === "email" ? (emailBodyHtml || "").trim() : null,
     email_template: channel === "email" ? (emailTemplate || "").trim() || null : null,

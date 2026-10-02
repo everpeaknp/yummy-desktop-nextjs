@@ -11,6 +11,7 @@ import {
   Mail,
   Megaphone,
   MessageCircleMore,
+  MessageSquareText,
   RefreshCw,
   Settings,
   ShieldCheck,
@@ -18,7 +19,6 @@ import {
   TriangleAlert,
   Users,
 } from "lucide-react";
-import { FaWhatsapp } from "react-icons/fa";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -547,14 +547,16 @@ export function GrowthOverviewClient() {
                         {/* Channel Icon */}
                         <div className={cn(
                           "w-9 h-9 rounded-lg flex items-center justify-center border shrink-0 transition-transform group-hover:scale-105",
-                          campaign.channel === "whatsapp" 
-                            ? "bg-green-500/10 border-green-500/20 text-green-600"
-                            : "bg-blue-500/10 border-blue-500/20 text-blue-600"
+                          campaign.channel === "email"
+                            ? "bg-blue-500/10 border-blue-500/20 text-blue-600"
+                            : campaign.channel === "sms"
+                              ? "bg-violet-500/10 border-violet-500/20 text-violet-600"
+                              : "bg-muted border-border text-muted-foreground"
                         )}>
-                          {campaign.channel === "whatsapp" ? (
-                            <FaWhatsapp className="h-4 w-4" />
-                          ) : (
+                          {campaign.channel === "email" ? (
                             <Mail className="h-4 w-4" />
+                          ) : (
+                            <MessageSquareText className="h-4 w-4" />
                           )}
                         </div>
                         

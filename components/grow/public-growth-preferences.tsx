@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { FaWhatsapp } from "react-icons/fa";
 import { MdEmail } from "react-icons/md";
 import {
   AlertCircle,
@@ -9,6 +8,7 @@ import {
   Loader2,
   MonitorCog,
   MessageCircleOff,
+  MessageSquareText,
   RefreshCw,
   ShieldCheck,
 } from "lucide-react";
@@ -106,11 +106,13 @@ export function PublicGrowthPreferencesClient({ signedToken }: { signedToken: st
   };
 
   const getChannelIcon = (channel: string) => {
-    return channel === "email" ? MdEmail : FaWhatsapp;
+    return channel === "email" ? MdEmail : MessageSquareText;
   };
 
   const getChannelLabel = (channel: string) => {
-    return channel === "email" ? "Email" : "WhatsApp";
+    if (channel === "email") return "Email";
+    if (channel === "sms") return "SMS";
+    return "Legacy channel";
   };
 
   return (

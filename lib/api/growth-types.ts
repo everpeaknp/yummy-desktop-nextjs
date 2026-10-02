@@ -3,7 +3,8 @@ export type GrowthDataStatus = "confirmed" | "estimated" | "signal" | "unavailab
 export type GrowthSegmentCode = "new" | "regular" | "lapsed";
 export type GrowthPlaybookCode = "second_visit" | "win_back" | "slow_day";
 export type GrowthLanguage = "en" | "ne" | "ne_romanized";
-export type GrowthChannelCode = "whatsapp" | "email";
+export type GrowthChannelCode = "whatsapp" | "email" | "sms";
+export type ActiveGrowthChannelCode = "email" | "sms";
 export type GrowthCampaignStatus =
   | "draft"
   | "review"
@@ -272,6 +273,7 @@ export interface GrowthSettings {
   approved_languages: GrowthLanguage[];
   whatsapp_enabled: boolean;
   email_enabled: boolean;
+  sms_enabled: boolean;
   ai_copy_enabled: boolean;
   public_enrollment_enabled: boolean;
   public_enrollment_slug?: string | null;
@@ -280,6 +282,45 @@ export interface GrowthSettings {
   consent_text_hash?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
+}
+
+export interface GrowthSmsEstimate {
+  encoding: "gsm-7" | "ucs-2";
+  character_count: number;
+  segments_per_recipient: number;
+  recipient_count: number;
+  required_credits: number;
+  single_segment_limit: number;
+  concatenated_segment_limit: number;
+}
+
+export interface GrowthSmsWallet {
+  restaurant_id: number;
+  available_credits: number;
+  reserved_credits: number;
+  currency: "NPR";
+}
+
+export interface GrowthSmsCreditPackage {
+  code: string;
+  label: string;
+  credits: number;
+  price_npr: number;
+  unit_price_npr: number;
+}
+
+export interface GrowthSmsCreditPurchase {
+  id: number;
+  package_code: string;
+  credits: number;
+  amount_npr: number;
+  status: "pending" | "paid" | "failed" | "expired" | "review_required";
+  provider: "fonepay";
+  provider_reference: string;
+  qr_payload?: Record<string, unknown> | null;
+  paid_amount_npr?: number | null;
+  credited_at?: string | null;
+  created_at: string;
 }
 
 export type GrowthSettingsUpdate = Partial<
@@ -295,6 +336,7 @@ export type GrowthSettingsUpdate = Partial<
     | "approved_languages"
     | "whatsapp_enabled"
     | "email_enabled"
+    | "sms_enabled"
     | "ai_copy_enabled"
     | "public_enrollment_enabled"
     | "consent_policy_version"
@@ -381,8 +423,9 @@ export interface PublicGrowthJoinInput {
   phone: string;
   email?: string | null;
   preferred_language: GrowthLanguage;
-  whatsapp_marketing_opt_in: boolean;
+  whatsapp_marketing_opt_in?: boolean | null;
   email_marketing_opt_in?: boolean | null;
+  sms_marketing_opt_in?: boolean | null;
   policy_version: string;
   consent_text_hash: string;
 }
@@ -391,6 +434,7 @@ export interface PublicGrowthJoinResult {
   accepted: boolean;
   preference_token: string;
   email_preference_token?: string | null;
+  sms_preference_token?: string | null;
 }
 
 export interface PublicGrowthPreferenceItem {

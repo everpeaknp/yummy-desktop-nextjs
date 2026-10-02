@@ -62,7 +62,7 @@ function createInitialDraft(): CampaignStudioDraft {
     step: 1,
     furthestStep: 1,
     playbookCode: "second_visit",
-    channel: "whatsapp",
+    channel: "email",
     campaignName: "Second Visit offer",
     nameCustomized: false,
     offer: defaultOffer(),
@@ -132,6 +132,17 @@ export const useCampaignStudio = create<CampaignStudioState>()(
         emailBodyHtml: state.emailBodyHtml,
         reviewAccepted: state.reviewAccepted,
       }),
+      migrate: (persistedState) => {
+        if (
+          persistedState &&
+          typeof persistedState === "object" &&
+          "channel" in persistedState &&
+          (persistedState as CampaignStudioDraft).channel === "whatsapp"
+        ) {
+          return { ...(persistedState as CampaignStudioDraft), channel: "email" };
+        }
+        return persistedState as CampaignStudioDraft;
+      },
     },
   ),
 );

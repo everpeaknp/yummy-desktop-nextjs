@@ -13,7 +13,7 @@ import {
   Grid3x3,
   List,
   Mail,
-  MessageCircle,
+  MessageSquareText,
   Megaphone,
   Plus,
   RefreshCw,
@@ -40,7 +40,7 @@ import { hasPermission } from "@/lib/role-permissions";
 import { cn } from "@/lib/utils";
 
 type Filter = "all" | "needs_action" | "active" | "finished";
-type ChannelFilter = "all" | "whatsapp" | "email";
+type ChannelFilter = "all" | "email" | "sms";
 type PlaybookFilter = "all" | "second_visit" | "win_back" | "slow_day";
 type SegmentFilter = "all" | "new" | "regular" | "lapsed";
 type ViewMode = "grid" | "list";
@@ -106,10 +106,10 @@ function filterCampaigns(
   }
   
   // Apply channel filter
-  if (channelFilter === "whatsapp") {
-    filtered = filtered.filter((campaign) => campaign.channel === "whatsapp");
-  } else if (channelFilter === "email") {
+  if (channelFilter === "email") {
     filtered = filtered.filter((campaign) => campaign.channel === "email");
+  } else if (channelFilter === "sms") {
+    filtered = filtered.filter((campaign) => campaign.channel === "sms");
   }
   
   // Apply playbook filter
@@ -227,8 +227,8 @@ export function CampaignListClient() {
       approved: campaigns.filter((campaign) => campaign.status === "approved").length,
       scheduled: campaigns.filter((campaign) => ["scheduled", "sending"].includes(campaign.status)).length,
       completed: campaigns.filter((campaign) => campaign.status === "completed").length,
-      whatsapp: campaigns.filter((campaign) => campaign.channel === "whatsapp").length,
       email: campaigns.filter((campaign) => campaign.channel === "email").length,
+      sms: campaigns.filter((campaign) => campaign.channel === "sms").length,
       second_visit: campaigns.filter((campaign) => campaign.playbook_code === "second_visit").length,
       win_back: campaigns.filter((campaign) => campaign.playbook_code === "win_back").length,
       slow_day: campaigns.filter((campaign) => campaign.playbook_code === "slow_day").length,
@@ -385,8 +385,8 @@ export function CampaignListClient() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All Channels</SelectItem>
-                    <SelectItem value="whatsapp">WhatsApp ({counts.whatsapp})</SelectItem>
                     <SelectItem value="email">Email ({counts.email})</SelectItem>
+                    <SelectItem value="sms">SMS ({counts.sms})</SelectItem>
                   </SelectContent>
                 </Select>
 
@@ -496,14 +496,16 @@ export function CampaignListClient() {
                               {/* Channel Icon */}
                               <div className={cn(
                                 "w-9 h-9 rounded-lg flex items-center justify-center border shrink-0 transition-colors",
-                                campaign.channel === "whatsapp" 
-                                  ? "bg-green-500/10 border-green-500/20 text-green-600 group-hover:bg-green-500/15"
-                                  : "bg-blue-500/10 border-blue-500/20 text-blue-600 group-hover:bg-blue-500/15"
+                                campaign.channel === "email"
+                                  ? "bg-blue-500/10 border-blue-500/20 text-blue-600 group-hover:bg-blue-500/15"
+                                  : campaign.channel === "sms"
+                                    ? "bg-violet-500/10 border-violet-500/20 text-violet-600 group-hover:bg-violet-500/15"
+                                    : "bg-muted border-border text-muted-foreground"
                               )}>
-                                {campaign.channel === "whatsapp" ? (
-                                  <MessageCircle className="h-4 w-4" />
-                                ) : (
+                                {campaign.channel === "email" ? (
                                   <Mail className="h-4 w-4" />
+                                ) : (
+                                  <MessageSquareText className="h-4 w-4" />
                                 )}
                               </div>
                               <div className="min-w-0 flex-1">
@@ -568,14 +570,16 @@ export function CampaignListClient() {
                             <td className="px-3 py-2.5">
                               <div className={cn(
                                 "w-8 h-8 rounded-lg flex items-center justify-center border",
-                                campaign.channel === "whatsapp" 
-                                  ? "bg-green-500/10 border-green-500/20 text-green-600"
-                                  : "bg-blue-500/10 border-blue-500/20 text-blue-600"
+                                campaign.channel === "email"
+                                  ? "bg-blue-500/10 border-blue-500/20 text-blue-600"
+                                  : campaign.channel === "sms"
+                                    ? "bg-violet-500/10 border-violet-500/20 text-violet-600"
+                                    : "bg-muted border-border text-muted-foreground"
                               )}>
-                                {campaign.channel === "whatsapp" ? (
-                                  <MessageCircle className="h-3.5 w-3.5" />
-                                ) : (
+                                {campaign.channel === "email" ? (
                                   <Mail className="h-3.5 w-3.5" />
+                                ) : (
+                                  <MessageSquareText className="h-3.5 w-3.5" />
                                 )}
                               </div>
                             </td>

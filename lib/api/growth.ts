@@ -25,6 +25,10 @@ import type {
   GrowthSegmentPreview,
   GrowthSettings,
   GrowthSettingsUpdate,
+  GrowthSmsEstimate,
+  GrowthSmsWallet,
+  GrowthSmsCreditPackage,
+  GrowthSmsCreditPurchase,
   NormalizedGrowthOverview,
   PublicGrowthJoinInput,
   PublicGrowthJoinResult,
@@ -83,6 +87,35 @@ async function getData<T>(request: Promise<{ data: GrowthApiEnvelope<T> | T }>):
 }
 
 export const growthApi = {
+  async estimateSms(message: string, recipientCount: number): Promise<GrowthSmsEstimate> {
+    return getData(
+      apiClient.post(GrowthApis.smsEstimate, {
+        message,
+        recipient_count: recipientCount,
+      }),
+    );
+  },
+
+  async getSmsWallet(): Promise<GrowthSmsWallet> {
+    return getData(apiClient.get(GrowthApis.smsWallet));
+  },
+
+  async getSmsPackages(): Promise<GrowthSmsCreditPackage[]> {
+    return getData(apiClient.get(GrowthApis.smsPackages));
+  },
+
+  async getSmsPurchases(): Promise<GrowthSmsCreditPurchase[]> {
+    return getData(apiClient.get(GrowthApis.smsPurchases));
+  },
+
+  async createSmsPurchase(packageCode: string): Promise<GrowthSmsCreditPurchase> {
+    return getData(apiClient.post(GrowthApis.smsPurchases, { package_code: packageCode }));
+  },
+
+  async verifySmsPurchase(id: number): Promise<GrowthSmsCreditPurchase> {
+    return getData(apiClient.post(GrowthApis.smsPurchaseVerify(id)));
+  },
+
   async getOverview(): Promise<NormalizedGrowthOverview> {
     const data = await getData<GrowthOverview>(apiClient.get(GrowthApis.overview));
     return normalizeGrowthOverview(data);
@@ -105,7 +138,7 @@ export const growthApi = {
 
   async previewSegment(
     segmentCode: GrowthSegmentCode,
-    channel: GrowthChannelCode = "whatsapp",
+    channel: GrowthChannelCode = "email",
   ): Promise<GrowthSegmentPreview> {
     return getData(
       apiClient.get(GrowthApis.segmentPreview(segmentCode), { params: { channel } }),
@@ -261,7 +294,7 @@ export const growthApi = {
     customerId: number;
     restaurantId: number;
     emailOptedIn?: boolean;
-    whatsappOptedIn?: boolean;
+    smsOptedIn?: boolean;
   }): Promise<void> {
     const response = await apiClient.post(
       GrowthApis.staffConsentCapture,
@@ -271,7 +304,7 @@ export const growthApi = {
           customer_id: input.customerId,
           restaurant_id: input.restaurantId,
           email_opted_in: input.emailOptedIn,
-          whatsapp_opted_in: input.whatsappOptedIn,
+          sms_opted_in: input.smsOptedIn,
         },
       },
     );

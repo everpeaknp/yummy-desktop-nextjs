@@ -2398,6 +2398,11 @@ export const GrowthApis = {
   campaignResultsCsv: (campaignId: number | string) =>
     `/growth/campaigns/${campaignId}/results.csv`,
   settings: "/growth/settings",
+  smsEstimate: "/growth/sms/estimate",
+  smsWallet: "/growth/sms/wallet",
+  smsPackages: "/growth/sms/packages",
+  smsPurchases: "/growth/sms/purchases",
+  smsPurchaseVerify: (id: number) => `/growth/sms/purchases/${id}/verify`,
   brand: "/growth/brand",
   messageTemplates: "/growth/message-templates",
   suggestCopy: "/growth/content/suggest-copy",

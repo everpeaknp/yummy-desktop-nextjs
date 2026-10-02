@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   Loader2,
   Mail,
+  MessageSquareText,
   Package,
   Send,
   ShoppingCart,
@@ -13,7 +14,6 @@ import {
   TrendingUp,
   Users,
 } from "lucide-react";
-import { FaWhatsapp } from "react-icons/fa";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -222,13 +222,15 @@ export function CampaignAnalyticsDashboard({ campaign, results, onDownloadCSV, i
             <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-muted border border-black/[0.08] dark:border-white/15">
               {campaign.channel === "email" ? (
                 <Mail className="h-3.5 w-3.5 text-blue-500" />
+              ) : campaign.channel === "sms" ? (
+                <MessageSquareText className="h-3.5 w-3.5 text-violet-500" />
               ) : (
-                <FaWhatsapp className="h-3.5 w-3.5 text-green-500" />
+                <MessageSquareText className="h-3.5 w-3.5 text-muted-foreground" />
               )}
             </div>
             <div>
               <CardTitle className="text-sm font-semibold">
-                {campaign.channel === "email" ? "Email" : "WhatsApp"} Stats
+                {campaign.channel === "email" ? "Email" : campaign.channel === "sms" ? "SMS" : "Legacy"} Stats
               </CardTitle>
               <CardDescription className="text-[10px] text-muted-foreground mt-0.5">
                 Channel performance metrics

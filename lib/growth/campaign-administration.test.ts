@@ -61,12 +61,27 @@ describe("Growth campaign administration", () => {
       },
     ] satisfies GrowthMessageTemplate[];
 
-    expect(isCampaignApprovalReady(campaignApprovalChecks(campaign, templates))).toBe(true);
+    const audience = {
+      segment_code: "lapsed",
+      included_count: 2,
+      excluded_count: 0,
+      exclusions: {},
+      customer_details_visible: false,
+      is_frozen: false,
+    } as const;
+
+    expect(isCampaignApprovalReady(campaignApprovalChecks(campaign, templates, audience))).toBe(true);
     expect(
       isCampaignApprovalReady(
-        campaignApprovalChecks({ ...campaign, creative_asset_id: null }, templates),
+        campaignApprovalChecks({ ...campaign, creative_asset_id: null }, templates, audience),
       ),
     ).toBe(false);
+    expect(
+      isCampaignApprovalReady(
+        campaignApprovalChecks(campaign, templates, { ...audience, included_count: 0 }),
+      ),
+    ).toBe(false);
+    expect(isCampaignApprovalReady(campaignApprovalChecks(campaign, templates, null))).toBe(false);
   });
 
   it("sends an explicit Nepal offset with the restaurant IANA timezone", () => {

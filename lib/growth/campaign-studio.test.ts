@@ -109,3 +109,22 @@ describe("Campaign Studio action boundary", () => {
     expect(policy.can_send).toBe(false);
   });
 });
+
+describe("Campaign Studio SMS drafts", () => {
+  it("persists SMS copy without a WhatsApp template or poster", () => {
+    const input = buildCampaignCreateInput({
+      name: "SMS return offer",
+      playbookCode: "win_back",
+      channel: "sms",
+      offer: validFixedOffer,
+      language: "en",
+      message: "Hi {{customer_name}}, come back for Rs. 100 off.",
+    });
+
+    expect(input.channel).toBe("sms");
+    expect(input.message_body).toContain("come back");
+    expect(input.email_subject).toBeNull();
+    expect(input.creative_asset_id).toBeUndefined();
+    expect(input.message_template_id).toBeUndefined();
+  });
+});
