@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import { useRouter } from "next/navigation";
 import { UtensilsCrossed, Bed, LogOut, ChevronRight } from "lucide-react";
@@ -80,9 +81,7 @@ export default function GatewayPage() {
     <div className="min-h-screen bg-background flex flex-col">
       <header className="flex items-center justify-between px-6 py-4 border-b bg-card/50 backdrop-blur">
         <div className="flex items-center gap-3">
-          <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center">
-            <span className="text-primary font-bold text-sm">Y</span>
-          </div>
+          <Image src="/logos/yummy_logo.png" alt="Yummy" width={36} height={36} className="object-contain" unoptimized />
           <span className="font-semibold text-foreground">{restaurant.name}</span>
         </div>
         <button

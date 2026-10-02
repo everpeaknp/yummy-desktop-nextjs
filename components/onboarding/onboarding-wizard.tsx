@@ -1008,16 +1008,7 @@ export function OnboardingWizard({
           {/* Logo */}
           <div className="mb-8 flex justify-center">
             <div className="flex items-center gap-3">
-              <div className="grid h-12 w-12 place-items-center overflow-hidden rounded-xl bg-gradient-to-br from-primary to-orange-600 shadow-lg">
-                <Image
-                  src="/logos/yummy_logo.png"
-                  alt="Yummy"
-                  width={40}
-                  height={40}
-                  className="object-contain brightness-0 invert"
-                  unoptimized
-                />
-              </div>
+              <Image src="/logos/yummy_logo.png" alt="Yummy" width={36} height={36} className="object-contain" unoptimized />
               <span className="text-2xl font-bold tracking-tight text-foreground">Yummy</span>
             </div>
           </div>

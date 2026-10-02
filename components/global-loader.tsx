@@ -8,11 +8,11 @@ export function GlobalLoader() {
       <div className="relative flex flex-col items-center gap-4">
         <div className="relative h-20 w-20 overflow-hidden rounded-full bg-card p-4 shadow-xl flex items-center justify-center border border-border">
           <Image
-            src="/refresh_icon.png"
+            src="/logos/yummy_logo.png"
             alt="Loading..."
             className="object-contain animate-pulse"
-            width={48}
-            height={48}
+            width={64}
+            height={64}
             priority
           />
         </div>

@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -476,10 +477,13 @@ export default function Home() {
       <div className="flex flex-col items-center gap-4 mb-8 animate-in slide-in-from-top-10 fade-in duration-700">
         <div className="relative w-20 h-20 transition-transform hover:scale-105 duration-500">
           <div className="absolute inset-0 bg-primary/20 blur-xl rounded-full" />
-          <img
-            src="/refresh_icon.png"
-            alt="Yummy Logo"
-            className="relative w-full h-full object-contain drop-shadow-xl"
+          <Image
+            src="/logos/yummy_logo.png"
+            alt="Yummy"
+            width={80}
+            height={80}
+            className="object-contain"
+            unoptimized
           />
         </div>
         <div className="text-center space-y-2">

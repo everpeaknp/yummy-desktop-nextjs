@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -843,9 +844,7 @@ function OnboardingPageContent() {
       <div className="mx-auto max-w-6xl space-y-2">
         <header className="relative z-30 flex items-center justify-between border-0 bg-transparent py-2 shadow-none font-sans">
           <div className="flex items-center gap-3">
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10">
-              <span className="text-sm font-bold text-primary">Y</span>
-            </div>
+            <Image src="/logos/yummy_logo.png" alt="Yummy" width={36} height={36} className="object-contain" unoptimized />
             <span className="font-semibold text-foreground">Yummy</span>
           </div>
           <button
