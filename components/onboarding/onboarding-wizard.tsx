@@ -906,7 +906,6 @@ export function OnboardingWizard({
   if (!replay) {
     const isFormComplete = draft.restaurantName.trim() && 
                            draft.phone.trim() && 
-                           draft.businessType && 
                            draft.address.trim();
 
     const handleBackToOptions = () => {
@@ -920,7 +919,6 @@ export function OnboardingWizard({
       const errors: Record<string, string> = {};
       if (!draft.restaurantName.trim()) errors.restaurantName = "Business name is required";
       if (!draft.phone.trim() || !isValidPhoneNumber(draft.phone)) errors.phone = "Valid phone is required";
-      if (!draft.businessType) errors.businessType = "Business type is required";
       if (!draft.address.trim()) errors.address = "Address is required";
       
       if (Object.keys(errors).length > 0) {
@@ -936,7 +934,6 @@ export function OnboardingWizard({
           RestaurantApis.create,
           {
             ...profile,
-            business_type: draft.businessType,
             restaurant_enabled: true,
             hotel_enabled: false,
             payment_cards: [],
@@ -1089,32 +1086,6 @@ export function OnboardingWizard({
                           className="h-11 cursor-not-allowed bg-muted/50 opacity-100"
                           placeholder="Verified account email"
                         />
-                      </div>
-                      <div className="space-y-2.5">
-                        <Label htmlFor="businessType" className="text-sm font-medium">Business Type*</Label>
-                        <Select
-                          value={draft.businessType}
-                          onValueChange={(value) => patch("businessType", value as typeof draft.businessType)}
-                        >
-                          <SelectTrigger
-                            id="businessType"
-                            className={cn(
-                              "h-11 transition-all focus:ring-2 focus:ring-primary focus:ring-offset-1 hover:border-primary/50",
-                              fieldErrorClass("businessType")
-                            )}
-                            aria-invalid={Boolean(fieldErrors.businessType)}
-                          >
-                            <SelectValue placeholder="Select business type" />
-                          </SelectTrigger>
-                          <SelectContent position="popper" side="bottom" align="start" sideOffset={4} className="w-[var(--radix-select-trigger-width)]">
-                            {BUSINESS_TYPE_OPTIONS.map((option) => (
-                              <SelectItem key={option.value} value={option.value}>
-                                {option.title}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <FieldError name="businessType" />
                       </div>
                     </div>
 
