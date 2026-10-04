@@ -33,6 +33,7 @@ import {
   BadgeDollarSign,
   Sprout,
   Megaphone,
+  Tag,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import {
@@ -93,6 +94,7 @@ const RESTAURANT_ICON_MAP: Record<string, LucideIcon> = {
   "/tables": Armchair,
   "/reservations": Calendar,
   "/discounts": Percent,
+  "/promo-codes": Tag,
   "/settings": Settings,
   "/feedback": MessageSquare,
   "/premium": Zap,

@@ -581,6 +581,12 @@ export const SIDEBAR_ROLE_MAP: SidebarItemDef[] = [
     requiredPermission: "pos.order.discount.apply",
   },
   {
+    title: "Promo Codes",
+    href: "/promo-codes",
+    allowedRoles: ALL_DASHBOARD_ROLES,
+    requiredPermission: "pos.order.discount.apply",
+  },
+  {
     title: "Settings",
     href: "/settings",
     allowedRoles: ALL_DASHBOARD_ROLES,
@@ -666,6 +672,7 @@ export const ROUTE_PERMISSIONS: Record<string, PermissionKey> = {
   "/tables": "tables.view",
   "/reservations": "tables.reservation.view",
   "/discounts": "pos.order.discount.apply",
+  "/promo-codes": "pos.order.discount.apply",
   "/customers": "customers.view",
   "/grow/campaigns/new": "grow.campaigns.manage",
   "/grow/campaigns": "grow.view",
@@ -711,6 +718,7 @@ export const ROUTE_ROLES: Record<string, UserRole[]> = {
   "/rooms": ["admin", "manager", "cashier", "waiter"],
   "/reservations": ADMIN_SHELL_ROLES,
   "/discounts": ADMIN_MANAGER,
+  "/promo-codes": ADMIN_MANAGER,
   "/manage": ADMIN_MANAGER,
   "/manage/additional-settings": ADMIN_MANAGER,
   "/staff": ADMIN_MANAGER,

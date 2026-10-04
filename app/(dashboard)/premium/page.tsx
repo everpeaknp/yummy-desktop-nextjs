@@ -34,6 +34,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { UsageIndicator } from "@/components/subscription/usage-indicator";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import { useSubscriptionStore } from "@/hooks/use-subscription";
+import { getRestaurantSubscription } from "@/lib/promo-storage";
 import { getApiErrorMessage } from "@/lib/api-error-message";
 import {
   billingIntervals,
@@ -204,6 +205,15 @@ export default function PremiumPage() {
     message: "",
   });
   const [featureListPlan, setFeatureListPlan] = useState<string | null>(null);
+  const [hasPromoApplied, setHasPromoApplied] = useState(false);
+
+  // Check if promo is applied on mount
+  useEffect(() => {
+    if (restaurant?.id) {
+      const subscription = getRestaurantSubscription(restaurant.id.toString());
+      setHasPromoApplied(subscription.freeMonthsEarned > 0);
+    }
+  }, [restaurant?.id]);
 
   useEffect(() => {
     void refreshAll({ restaurantId: restaurant?.id ?? null });
@@ -506,7 +516,14 @@ export default function PremiumPage() {
                   <CardHeader className="shrink-0 space-y-2 pb-4 pt-5">
                     <CardTitle className="flex items-center justify-between gap-3 text-2xl font-semibold tracking-tight">
                       <span className="truncate">{plan.name}</span>
-                      {prices.quoteOnly ? <Badge variant="outline">Custom</Badge> : null}
+                      <div className="flex items-center gap-2">
+                        {hasPromoApplied && !isFreePlan && (
+                          <Badge className="bg-emerald-100 text-emerald-700 border-emerald-300 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-700 text-xs">
+                            1 month free
+                          </Badge>
+                        )}
+                        {prices.quoteOnly ? <Badge variant="outline">Custom</Badge> : null}
+                      </div>
                     </CardTitle>
                     {(plan.current_version?.subtitle || plan.description) ? (
                       <p className="line-clamp-2 text-sm leading-relaxed text-muted-foreground">

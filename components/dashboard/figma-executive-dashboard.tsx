@@ -214,7 +214,7 @@ export function FigmaExecutiveDashboard({
         <div className="flex flex-wrap items-center gap-2">{dateControl}{statusControl}</div>
       </header>
 
-      {connectionMessage ? <div>{connectionMessage}</div> : null}
+      {connectionMessage ? <div className="space-y-3">{connectionMessage}</div> : null}
 
       <section aria-label="Current shift" className="grid grid-cols-2 gap-3 xl:grid-cols-5">
         <Metric label="Active orders" value={metrics.activeOrders} detail="Current shift · In progress" tone="orange" />
