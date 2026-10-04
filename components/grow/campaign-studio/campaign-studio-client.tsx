@@ -128,6 +128,22 @@ function readableExclusion(value: string): string {
     .replace(/\b\w/g, (character) => character.toUpperCase());
 }
 
+function audienceBlockerGuidance(exclusions: Record<string, number>): string {
+  if (exclusions.missing_valid_email) {
+    return "Collect a valid customer email. Customers who sign in to Yummy Menu can add one to their restaurant profile.";
+  }
+  if (exclusions.marketing_consent_missing || exclusions.marketing_opted_out) {
+    return "Customers must enable Email offers in Yummy Menu before they can receive marketing.";
+  }
+  if (exclusions.frequency_capped) {
+    return "These customers recently received a promotion. Wait for the window to end or change the restaurant limit in Grow settings.";
+  }
+  if (exclusions.different_segment || exclusions.segment_rule_not_met) {
+    return "Choose a playbook that matches current customer order activity, or wait until customers qualify.";
+  }
+  return "Refresh the audience after customer contact details, consent, or order activity changes.";
+}
+
 function safeFilename(value: string): string {
   return (
     value
@@ -1007,6 +1023,15 @@ export function CampaignStudioClient() {
                 </Alert>
               ) : audience ? (
                 <div className="space-y-4">
+                  {audience.included_count === 0 && (
+                    <Alert className="border-amber-500/40 bg-amber-500/5">
+                      <TriangleAlert aria-hidden="true" className="h-4 w-4 text-amber-600" />
+                      <AlertTitle>No customers can receive this campaign yet</AlertTitle>
+                      <AlertDescription>
+                        {audienceBlockerGuidance(audience.exclusions || {})} Submission stays disabled until the live audience includes at least one eligible customer.
+                      </AlertDescription>
+                    </Alert>
+                  )}
                   <div className="grid grid-cols-2 gap-3">
                     <div className="rounded-xl border border-border bg-muted p-4">
                       <Users className="h-5 w-5" />
@@ -1025,7 +1050,7 @@ export function CampaignStudioClient() {
                   </div>
                   {Object.keys(audience.exclusions || {}).length > 0 && (
                     <div>
-                      <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Why some customers can't receive this</p>
+                      <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Why some customers can’t receive this</p>
                       <p className="mt-1 text-xs text-muted-foreground">These customers are excluded for legal or technical reasons:</p>
                       <div className="mt-2 space-y-2">
                         {Object.entries(audience.exclusions).map(([reason, count]) => (

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Image from "next/image";
 import QRCode from "qrcode";
-import { CreditCard, Download, Loader2, QrCode, RefreshCw, ShieldAlert, Sprout, TriangleAlert } from "lucide-react";
+import { Copy, CreditCard, Download, Loader2, QrCode, RefreshCw, ShieldAlert, Sprout, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -17,12 +17,7 @@ import { growthApi } from "@/lib/api/growth";
 import type { GrowthSettings, GrowthSmsCreditPackage, GrowthSmsCreditPurchase, GrowthSmsWallet } from "@/lib/api/growth-types";
 import { getApiErrorMessage } from "@/lib/api-error-message";
 import { useAuth } from "@/hooks/use-auth";
-import { useRestaurant } from "@/hooks/use-restaurant";
 import { hasPermission } from "@/lib/role-permissions";
-
-function safeFileName(value: string) {
-  return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "restaurant";
-}
 
 function findQrPayload(value: unknown): string | null {
   if (typeof value === "string" && value.trim()) return value.trim();
@@ -41,43 +36,38 @@ function findQrPayload(value: unknown): string | null {
   return null;
 }
 
-/**
- * Falls back to this browser's own origin when unset -- fine for local
- * development, but a QR code printed with that fallback baked in would
- * point at whatever happened to be open in someone's browser, not a
- * stable public address. The UI surfaces this distinction explicitly
- * rather than silently using a fallback that looks identical to a real
- * configured value.
- */
-function resolveGrowPublicBaseUrl(): { baseUrl: string; isConfigured: boolean } {
-  const configured = process.env.NEXT_PUBLIC_GROW_PUBLIC_BASE_URL?.trim();
-  if (configured) {
-    return { baseUrl: configured.replace(/\/+$/, ""), isConfigured: true };
-  }
-  return { baseUrl: window.location.origin, isConfigured: false };
-}
-
 export function GrowthSettingsClient() {
   const { user } = useAuth();
-  const { restaurant } = useRestaurant();
   const canManageSettings = hasPermission(user, "grow.settings.manage");
   const [settings, setSettings] = useState<GrowthSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [savingEnrollment, setSavingEnrollment] = useState(false);
   const [savingConsentPolicy, setSavingConsentPolicy] = useState(false);
   const [savingQuietHours, setSavingQuietHours] = useState(false);
+  const [savingFrequencyCap, setSavingFrequencyCap] = useState(false);
   const [consentPolicyVersion, setConsentPolicyVersion] = useState("");
   const [consentText, setConsentText] = useState("");
   const [quietHoursStart, setQuietHoursStart] = useState("21:00");
   const [quietHoursEnd, setQuietHoursEnd] = useState("08:00");
-  const [qrDataUrl, setQrDataUrl] = useState("");
-  const [baseUrlInfo, setBaseUrlInfo] = useState<{ baseUrl: string; isConfigured: boolean } | null>(null);
+  const [frequencyCapDays, setFrequencyCapDays] = useState(7);
   const [smsWallet, setSmsWallet] = useState<GrowthSmsWallet | null>(null);
   const [smsPackages, setSmsPackages] = useState<GrowthSmsCreditPackage[]>([]);
   const [smsPurchase, setSmsPurchase] = useState<GrowthSmsCreditPurchase | null>(null);
   const [purchaseQr, setPurchaseQr] = useState("");
   const [buyingPackage, setBuyingPackage] = useState<string | null>(null);
   const [checkingPayment, setCheckingPayment] = useState(false);
+  const [signupQr, setSignupQr] = useState("");
+
+  const restaurantId = user?.restaurant_id;
+  const configuredCustomerBase = process.env.NEXT_PUBLIC_CUSTOMER_MENU_BASE_URL
+    || process.env.NEXT_PUBLIC_MENU_QR_BASE_URL?.replace(/\/qr\/?$/, "");
+  const customerBase = configuredCustomerBase
+    || (typeof window !== "undefined" && window.location.hostname === "localhost"
+      ? "http://localhost:3002"
+      : "");
+  const signupUrl = restaurantId && customerBase
+    ? `${customerBase.replace(/\/+$/, "")}/${restaurantId}?view=rewards&join=offers`
+    : "";
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -90,6 +80,7 @@ export function GrowthSettingsClient() {
       setConsentText(data.consent_text || "");
       setQuietHoursStart(data.quiet_hours_start.slice(0, 5));
       setQuietHoursEnd(data.quiet_hours_end.slice(0, 5));
+      setFrequencyCapDays(data.promotion_frequency_cap_days);
       setSmsWallet(wallet);
       setSmsPackages(packages);
     } catch (error) {
@@ -104,30 +95,6 @@ export function GrowthSettingsClient() {
   }, [load]);
 
   useEffect(() => {
-    setBaseUrlInfo(resolveGrowPublicBaseUrl());
-  }, []);
-
-  const joinUrl =
-    settings?.public_enrollment_slug && baseUrlInfo
-      ? `${baseUrlInfo.baseUrl}/grow/join?restaurant=${encodeURIComponent(settings.public_enrollment_slug)}`
-      : "";
-
-  useEffect(() => {
-    if (!joinUrl) {
-      setQrDataUrl("");
-      return;
-    }
-    QRCode.toDataURL(joinUrl, {
-      width: 520,
-      margin: 2,
-      color: { dark: "#111827", light: "#ffffff" },
-      errorCorrectionLevel: "H",
-    })
-      .then(setQrDataUrl)
-      .catch(() => toast.error("Failed to render the sign-up QR code"));
-  }, [joinUrl]);
-
-  useEffect(() => {
     const payload = findQrPayload(smsPurchase?.qr_payload);
     if (!payload) { setPurchaseQr(""); return; }
     if (payload.startsWith("data:image") || payload.startsWith("http")) {
@@ -138,6 +105,51 @@ export function GrowthSettingsClient() {
       .then(setPurchaseQr)
       .catch(() => setPurchaseQr(""));
   }, [smsPurchase]);
+
+  useEffect(() => {
+    if (!signupUrl) { setSignupQr(""); return; }
+    QRCode.toDataURL(signupUrl, {
+      width: 420,
+      margin: 2,
+      errorCorrectionLevel: "M",
+      color: { dark: "#10131a", light: "#ffffff" },
+    }).then(setSignupQr).catch(() => setSignupQr(""));
+  }, [signupUrl]);
+
+  const copySignupUrl = async () => {
+    try {
+      await navigator.clipboard.writeText(signupUrl);
+      toast.success("Customer sign-up link copied");
+    } catch {
+      toast.error("Unable to copy the sign-up link");
+    }
+  };
+
+  const downloadSignupQr = () => {
+    if (!signupQr) return;
+    const link = document.createElement("a");
+    link.href = signupQr;
+    link.download = `yummy-customer-sign-up-${restaurantId}.png`;
+    link.click();
+  };
+
+  const toggleCustomerSignup = async (enabled: boolean) => {
+    if (!settings) return;
+    if (enabled && (!settings.consent_policy_version || !settings.consent_text_hash)) {
+      toast.error("Save the customer consent policy before enabling sign-up.");
+      return;
+    }
+    setSavingEnrollment(true);
+    try {
+      const updated = await growthApi.updateSettings({ public_enrollment_enabled: enabled });
+      setSettings(updated);
+      toast.success(enabled ? "Customer sign-up enabled" : "Customer sign-up disabled");
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "Unable to update customer sign-up"));
+    } finally {
+      setSavingEnrollment(false);
+    }
+  };
 
   const buySmsCredits = async (packageCode: string) => {
     setBuyingPackage(packageCode);
@@ -168,24 +180,6 @@ export function GrowthSettingsClient() {
       toast.error(getApiErrorMessage(error, "Unable to verify Fonepay payment"));
     } finally {
       setCheckingPayment(false);
-    }
-  };
-
-  const toggleEnrollment = async (enabled: boolean) => {
-    if (!settings) return;
-    if (enabled && (!settings.consent_policy_version || !settings.consent_text)) {
-      toast.error("Save a reviewed consent policy version and text before enabling public sign-up.");
-      return;
-    }
-    setSavingEnrollment(true);
-    try {
-      const updated = await growthApi.updateSettings({ public_enrollment_enabled: enabled });
-      setSettings(updated);
-      toast.success(enabled ? "Public sign-up enabled" : "Public sign-up disabled");
-    } catch (error) {
-      toast.error(getApiErrorMessage(error, "Unable to update public sign-up"));
-    } finally {
-      setSavingEnrollment(false);
     }
   };
 
@@ -253,6 +247,26 @@ export function GrowthSettingsClient() {
     }
   };
 
+  const saveFrequencyCap = async () => {
+    if (!Number.isInteger(frequencyCapDays) || frequencyCapDays < 1 || frequencyCapDays > 90) {
+      toast.error("Choose between 1 and 90 days between promotions.");
+      return;
+    }
+    setSavingFrequencyCap(true);
+    try {
+      const updated = await growthApi.updateSettings({
+        promotion_frequency_cap_days: frequencyCapDays,
+      });
+      setSettings(updated);
+      setFrequencyCapDays(updated.promotion_frequency_cap_days);
+      toast.success("Campaign frequency cap updated.");
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "Unable to update the frequency cap"));
+    } finally {
+      setSavingFrequencyCap(false);
+    }
+  };
+
   const toggleSms = async (enabled: boolean) => {
     if (!settings) return;
     setSavingSms(true);
@@ -281,21 +295,13 @@ export function GrowthSettingsClient() {
     }
   };
 
-  const downloadQr = () => {
-    if (!qrDataUrl) return;
-    const anchor = document.createElement("a");
-    anchor.href = qrDataUrl;
-    anchor.download = `${safeFileName(restaurant?.name || "restaurant")}-grow-signup-qr.png`;
-    anchor.click();
-  };
-
   if (!canManageSettings) {
     return (
       <Alert className="mx-auto max-w-2xl">
         <ShieldAlert className="h-4 w-4" />
         <AlertTitle>You don&apos;t have access to Growth settings</AlertTitle>
         <AlertDescription>
-          Managing the customer sign-up QR code requires the grow.settings.manage permission.
+          Managing campaign delivery and consent settings requires the grow.settings.manage permission.
         </AlertDescription>
       </Alert>
     );
@@ -318,9 +324,85 @@ export function GrowthSettingsClient() {
       </div>
       <h1 className="text-3xl font-black tracking-tight">Customer sign-up</h1>
       <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
-        Let customers join your SMS and email marketing list by scanning a QR code at your restaurant.
-        No internal restaurant details are exposed by this link.
+        Manage campaign delivery, consent wording, quiet hours, and frequency limits.
       </p>
+
+      <Card>
+        <CardHeader>
+          <div className="flex items-start gap-3">
+            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg border bg-muted/40 text-emerald-700 dark:text-emerald-300">
+              <QrCode className="h-5 w-5" aria-hidden="true" />
+            </span>
+            <div>
+              <CardTitle>Customer sign-up QR</CardTitle>
+              <CardDescription className="mt-1">
+                Guests scan this code to create their Yummy account and join this restaurant. They
+                can choose during sign-up whether to receive your email offers.
+              </CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          <div className="flex items-center justify-between gap-4 rounded-lg border p-4">
+            <div className="min-w-0">
+              <p className="text-sm font-semibold">Accept customer sign-ups</p>
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                Required before a customer can subscribe to restaurant offers.
+              </p>
+            </div>
+            <Switch
+              aria-label="Accept customer sign-ups"
+              checked={Boolean(settings?.public_enrollment_enabled)}
+              onCheckedChange={(checked) => void toggleCustomerSignup(checked)}
+              disabled={savingEnrollment || (!settings?.public_enrollment_enabled && !settings?.consent_text_hash)}
+            />
+          </div>
+          {signupQr ? (
+            <div className="grid gap-5 sm:grid-cols-[11rem_minmax(0,1fr)] sm:items-center">
+              <div className="rounded-xl border bg-white p-3">
+                <Image
+                  src={signupQr}
+                  width={420}
+                  height={420}
+                  alt="QR code for this restaurant's Yummy customer sign-up"
+                  unoptimized
+                  className="h-auto w-full"
+                />
+              </div>
+              <div className="min-w-0 space-y-4">
+                <div>
+                  <p className="text-sm font-semibold">Ready to display</p>
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                    Print it for the counter, receipts, or table displays. The restaurant is attached
+                    automatically after the customer verifies their email.
+                  </p>
+                </div>
+                <p className="truncate rounded-lg border bg-muted/30 px-3 py-2 font-mono text-xs text-muted-foreground" title={signupUrl}>
+                  {signupUrl}
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <Button type="button" variant="outline" onClick={() => void copySignupUrl()} disabled={!settings?.public_enrollment_enabled}>
+                    <Copy className="mr-2 h-4 w-4" aria-hidden="true" />
+                    Copy link
+                  </Button>
+                  <Button type="button" onClick={downloadSignupQr} disabled={!settings?.public_enrollment_enabled}>
+                    <Download className="mr-2 h-4 w-4" aria-hidden="true" />
+                    Download QR
+                  </Button>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <Alert>
+              <TriangleAlert className="h-4 w-4" />
+              <AlertTitle>Customer menu address is not configured</AlertTitle>
+              <AlertDescription>
+                Set NEXT_PUBLIC_CUSTOMER_MENU_BASE_URL to the public address of the Yummy customer menu.
+              </AlertDescription>
+            </Alert>
+          )}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
@@ -372,6 +454,52 @@ export function GrowthSettingsClient() {
               <span className="text-xs text-muted-foreground">
                 Current blocked period: {quietHoursStart}–{quietHoursEnd}
               </span>
+            </div>
+          </div>
+          <div className="rounded-lg border p-4">
+            <div>
+              <p className="text-sm font-medium">Days between promotions</p>
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                A customer cannot receive another campaign until this many full days have passed.
+                This applies across campaign channels for this restaurant.
+              </p>
+            </div>
+            <div className="mt-4 flex flex-wrap items-end gap-3">
+              <label className="space-y-2 text-sm font-medium" htmlFor="promotion-frequency-cap">
+                <span className="block">Frequency cap</span>
+                <span className="flex items-center gap-2">
+                  <Input
+                    id="promotion-frequency-cap"
+                    name="promotion_frequency_cap_days"
+                    type="number"
+                    inputMode="numeric"
+                    autoComplete="off"
+                    min={1}
+                    max={90}
+                    step={1}
+                    value={frequencyCapDays}
+                    onChange={(event) => setFrequencyCapDays(Number(event.target.value))}
+                    disabled={savingFrequencyCap}
+                    className="w-24 tabular-nums"
+                  />
+                  <span className="text-sm text-muted-foreground">days</span>
+                </span>
+              </label>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => void saveFrequencyCap()}
+                disabled={
+                  savingFrequencyCap ||
+                  frequencyCapDays === settings?.promotion_frequency_cap_days ||
+                  !Number.isInteger(frequencyCapDays) ||
+                  frequencyCapDays < 1 ||
+                  frequencyCapDays > 90
+                }
+              >
+                {savingFrequencyCap ? <Loader2 aria-hidden="true" className="mr-2 h-4 w-4 animate-spin motion-reduce:animate-none" /> : null}
+                Save frequency cap
+              </Button>
             </div>
           </div>
           <div className="flex items-center justify-between rounded-lg border p-3">
@@ -461,10 +589,9 @@ export function GrowthSettingsClient() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Public sign-up page</CardTitle>
+          <CardTitle>Customer marketing consent</CardTitle>
           <CardDescription>
-            When enabled, the QR code below opens a page where customers can opt in to SMS
-            and email marketing messages.
+            This wording records the policy customers accept from their Yummy account.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -472,8 +599,8 @@ export function GrowthSettingsClient() {
             <div>
               <p className="text-sm font-semibold">Customer consent policy</p>
               <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                This exact text is shown to customers and recorded with each opt-in. Review it for
-                your business before publishing the sign-up page.
+                This text is recorded with each customer opt-in. Review it for your business before
+                enabling marketing campaigns.
               </p>
             </div>
             <label className="block space-y-2">
@@ -520,81 +647,12 @@ export function GrowthSettingsClient() {
                 </span>
               ) : (
                 <span className="text-xs font-medium text-amber-700 dark:text-amber-300">
-                  Required before public sign-up can be enabled
+                  Required before customer marketing opt-in can be recorded
                 </span>
               )}
             </div>
           </div>
 
-          <div className="flex items-center justify-between rounded-lg border p-3">
-            <div>
-              <p className="text-sm font-medium">Public sign-up enabled</p>
-              <p className="text-xs text-muted-foreground">
-                Turning this off does not change the QR image below -- it stops the page it points to
-                from accepting new sign-ups.
-              </p>
-            </div>
-            <Switch
-              checked={Boolean(settings?.public_enrollment_enabled)}
-              onCheckedChange={(checked) => void toggleEnrollment(checked)}
-              disabled={
-                savingEnrollment ||
-                (!settings?.public_enrollment_enabled &&
-                  (!settings?.consent_policy_version || !settings?.consent_text))
-              }
-            />
-          </div>
-
-          {!settings?.public_enrollment_slug ? (
-            <Alert>
-              <ShieldAlert className="h-4 w-4" />
-              <AlertTitle>Loading sign-up link...</AlertTitle>
-              <AlertDescription>
-                The sign-up link is being initialized. Please refresh the page.
-              </AlertDescription>
-            </Alert>
-          ) : (
-            <>
-              {baseUrlInfo && !baseUrlInfo.isConfigured && (
-                <Alert className="border-amber-500/40 bg-amber-500/5">
-                  <TriangleAlert className="h-4 w-4 text-amber-600" />
-                  <AlertTitle>Using this browser&apos;s address as a placeholder</AlertTitle>
-                  <AlertDescription>
-                    <code className="rounded bg-muted px-1 py-0.5 text-xs">
-                      NEXT_PUBLIC_GROW_PUBLIC_BASE_URL
-                    </code>{" "}
-                    is not configured, so this QR code currently points at{" "}
-                    <span className="font-mono">{baseUrlInfo.baseUrl}</span>. Do not print or hand
-                    out this QR code until that is set to your real public domain.
-                  </AlertDescription>
-                </Alert>
-              )}
-
-              <div className="flex flex-col items-center gap-4 rounded-md border border-dashed bg-muted/20 p-6">
-                {qrDataUrl ? (
-                  <Image
-                    src={qrDataUrl}
-                    width={280}
-                    height={280}
-                    alt="Growth sign-up QR code"
-                    unoptimized
-                    className="h-[min(280px,70vw)] w-[min(280px,70vw)] rounded bg-white p-2"
-                  />
-                ) : (
-                  <div className="flex h-[280px] w-[280px] items-center justify-center text-muted-foreground">
-                    <QrCode className="h-12 w-12" />
-                  </div>
-                )}
-                <p className="max-w-md break-all text-center font-mono text-xs text-muted-foreground">
-                  {joinUrl}
-                </p>
-                <Button onClick={downloadQr} disabled={!qrDataUrl}>
-                  <Download className="mr-2 h-4 w-4" />
-                  Download QR code
-                </Button>
-              </div>
-            </>
-          )}
         </CardContent>
       </Card>
     </div>
