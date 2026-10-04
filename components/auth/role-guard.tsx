@@ -147,7 +147,7 @@ export function RoleGuard({ children }: { children: React.ReactNode }) {
           <p className="text-sm text-muted-foreground mt-1">
             You don&apos;t have permission to view this page.
             <br />
-            Redirecting you to your dashboard...
+            Redirecting you to an available screen...
           </p>
         </div>
       </div>

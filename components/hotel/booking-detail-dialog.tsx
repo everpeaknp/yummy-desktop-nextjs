@@ -101,7 +101,7 @@ export function BookingDetailDialog({ bookingId, open, onOpenChange, permissions
             toast.error(getApiErrorMessage(error, "Could not refresh room service"));
             return [];
           }),
-          activeFolio && nextStay.status !== "checked_out" && activeFolio.status !== "closed"
+          permissions.folioEdit && activeFolio && nextStay.status !== "checked_out" && activeFolio.status !== "closed"
             ? hotelPmsApi.getFolioPaymentQuote(activeFolio.id).catch((error) => {
                 toast.error(getApiErrorMessage(error, "Could not refresh the guest bill"));
                 return null;
@@ -137,7 +137,7 @@ export function BookingDetailDialog({ bookingId, open, onOpenChange, permissions
     } finally {
       setLoading(false);
     }
-  }, [bookingId]);
+  }, [bookingId, permissions.folioEdit]);
 
   useEffect(() => {
     if (open) void load();
@@ -488,7 +488,7 @@ export function BookingDetailDialog({ bookingId, open, onOpenChange, permissions
             ) : null}
           </div>
         )}
-        {stay && folio ? (
+        {permissions.folioEdit && stay && folio ? (
           <FolioPaymentDialog
             open={paymentOpen}
             onOpenChange={(nextOpen) => {
@@ -538,7 +538,7 @@ export function BookingDetailDialog({ bookingId, open, onOpenChange, permissions
             onPrepared={continueAfterEarlyDeparture}
           />
         ) : null}
-        {stay && folio ? (
+        {permissions.folioEdit && stay && folio ? (
           <FolioRefundDialog
             open={refundOpen}
             onOpenChange={setRefundOpen}

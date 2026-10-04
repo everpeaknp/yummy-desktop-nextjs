@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/use-auth";
+import { hasPermission } from "@/lib/role-permissions";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import apiClient from "@/lib/api-client";
 import { OrderApis, TableApis, KotApis } from "@/lib/api/endpoints";
@@ -1277,6 +1278,7 @@ export default function OrdersPage() {
       className="pb-[calc(9rem+env(safe-area-inset-bottom))] lg:pb-10"
     >
       <PageHeader
+        className="md:flex-col 2xl:flex-row"
         title="Orders"
         description={
           activeTab === "history"
@@ -1570,7 +1572,7 @@ export default function OrdersPage() {
                   <span className="h-2 w-2 rounded-full bg-emerald-500" />
                   Now serving
                 </div>
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-3 2xl:grid-cols-4 lg:gap-5">
+                <div className="grid grid-cols-1 gap-3 sm:gap-4 2xl:grid-cols-2 min-[1900px]:grid-cols-3 min-[2300px]:grid-cols-4 lg:gap-5">
                   {filteredActive.map((order) => (
                     <Link
                       key={order.id}
@@ -1593,7 +1595,7 @@ export default function OrdersPage() {
                 icon={<ChefHat className="h-5 w-5" />}
               />
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4 lg:gap-5">
+              <div className="grid grid-cols-1 2xl:grid-cols-2 min-[1900px]:grid-cols-3 min-[2300px]:grid-cols-4 gap-4 lg:gap-5">
                 {filteredKots.map((kot) => (
                   <KotOrderCard
                     key={kot.id}
@@ -1620,7 +1622,7 @@ export default function OrdersPage() {
                     {label}
                     <span className="h-[1px] flex-1 bg-border/40" />
                   </h2>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4 lg:gap-5">
+                  <div className="grid grid-cols-1 2xl:grid-cols-2 min-[1900px]:grid-cols-3 min-[2300px]:grid-cols-4 gap-4 lg:gap-5">
                     {orders.map((order) => (
                       <Link
                         key={order.id}
@@ -1686,7 +1688,7 @@ export default function OrdersPage() {
         open={detailsOpen}
         onOpenChange={setDetailsOpen}
       />
-      <OrdersNewOrderSheet />
+      {hasPermission(user, "pos.order.create") ? <OrdersNewOrderSheet /> : null}
 
       <Dialog
         open={kotDetailsOpen}
@@ -1926,7 +1928,7 @@ function KotOrderCard({
 
 function LoadingGrid() {
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+    <div className="grid grid-cols-1 2xl:grid-cols-2 min-[1900px]:grid-cols-3 min-[2300px]:grid-cols-4 gap-6">
       {Array.from({ length: 8 }).map((_, i) => (
         <div
           key={i}

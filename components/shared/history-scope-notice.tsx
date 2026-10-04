@@ -63,7 +63,7 @@ export function HistoryScopeNotice({
       <CardContent className="p-5 flex flex-col sm:flex-row items-start sm:items-center gap-4">
         <Icon className="h-5 w-5 text-amber-600 shrink-0 mt-0.5 sm:mt-0" />
         <div className="flex-1 min-w-0 space-y-1">
-          <p className="font-semibold text-foreground">Date range restricted</p>
+          <p className="font-semibold text-foreground">{error.kind === "permission_denied" ? "Access restricted" : "Date range restricted"}</p>
           <p className="text-sm text-muted-foreground">{error.message}</p>
         </div>
         {onUseSuggestedRange ? (

@@ -7,12 +7,15 @@ import { LayoutGrid, UserRound } from "lucide-react";
 import { useSidebarItems, type SidebarItem } from "@/hooks/use-sidebar-items";
 import { cn } from "@/lib/utils";
 import { shouldMobileBottomNavBeVisible } from "@/lib/mobile-module-navigation";
+import { useAuth } from "@/hooks/use-auth";
+import { isPathAccessible } from "@/lib/role-permissions";
 
 const isActive = (pathname: string, href: string) =>
   pathname === href || pathname.startsWith(`${href}/`);
 
 export function MobileBottomNav() {
   const pathname = usePathname() || "/dashboard";
+  const user = useAuth((state) => state.user);
   const items = useSidebarItems();
   const home =
     items.find(
@@ -30,12 +33,14 @@ export function MobileBottomNav() {
       href: "/manage/profile",
       icon: UserRound,
     },
-    {
+    ...(isPathAccessible("/manage", user) ? [{
       title: "Manage",
       href: "/manage",
       icon: LayoutGrid,
-    },
-  ];
+    }] : []),
+  ].filter((item, index, all) =>
+    isPathAccessible(item.href, user) && all.findIndex((candidate) => candidate.href === item.href) === index,
+  );
   if (!shouldMobileBottomNavBeVisible(pathname)) return null;
 
   return (

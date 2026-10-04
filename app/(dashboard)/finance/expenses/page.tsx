@@ -316,6 +316,7 @@ export default function ExpensesPage() {
   const router = useRouter();
   const restaurant = useRestaurant((s) => s.restaurant);
   const canManageCoa = hasPermission(user, "finance.coa.manage");
+  const canManageExpenses = hasPermission(user, "finance.expenses.manage");
 
   const dualBusinessLines =
     !!restaurant?.hotel_enabled && !!restaurant?.restaurant_enabled;
@@ -1250,14 +1251,14 @@ export default function ExpensesPage() {
       <PageHeader
         title="Expenses"
         description="Record and review operating costs for the selected period."
-        actions={
+        actions={canManageExpenses ? (
           <Button
             className="h-11 w-full rounded-xl sm:w-auto"
             onClick={openExpenseDialog}
           >
             <Plus className="mr-2 h-4 w-4" /> Record expense
           </Button>
-        }
+        ) : null}
       />
 
       <ReportFilters
@@ -1291,7 +1292,7 @@ export default function ExpensesPage() {
         </div>
       </div>
 
-      <Dialog
+      {canManageExpenses ? <Dialog
         open={isAddDialogOpen}
         onOpenChange={(open) => {
           setIsAddDialogOpen(open);
@@ -1611,7 +1612,7 @@ export default function ExpensesPage() {
             </Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog>
+      </Dialog> : null}
 
       <section className="overflow-hidden rounded-2xl border border-border bg-card">
         <div className="flex min-h-14 items-center justify-between gap-3 border-b border-border px-4 py-3">
@@ -1644,6 +1645,7 @@ export default function ExpensesPage() {
           <>
             <ExpenseMobileList
               expenses={filteredExpenses}
+              canManageExpenses={canManageExpenses}
               onSelect={setSelectedExpense}
               onEdit={handleEditExpense}
               onDelete={handleDeleteExpense}
@@ -1758,7 +1760,7 @@ export default function ExpensesPage() {
                                     </Badge>
                                   )}
                                 </div>
-                              ) : (
+                              ) : canManageExpenses ? (
                                 <div className="flex justify-end gap-2">
                                   <Button
                                     type="button"
@@ -1781,7 +1783,7 @@ export default function ExpensesPage() {
                                     <Trash2 className="h-4 w-4" />
                                   </Button>
                                 </div>
-                              )}
+                              ) : null}
                             </td>
                           </tr>
                         );
@@ -1824,11 +1826,13 @@ export default function ExpensesPage() {
 
 function ExpenseMobileList({
   expenses,
+  canManageExpenses,
   onSelect,
   onEdit,
   onDelete,
 }: {
   expenses: any[];
+  canManageExpenses: boolean;
   onSelect: (expense: any) => void;
   onEdit: (expense: any) => void;
   onDelete: (expense: any) => void;
@@ -1914,7 +1918,7 @@ function ExpenseMobileList({
                       Inventory
                     </Link>
                   </Button>
-                ) : (
+                ) : canManageExpenses ? (
                   <div className="flex items-center gap-1">
                     <Button
                       type="button"
@@ -1937,7 +1941,7 @@ function ExpenseMobileList({
                       <Trash2 className="h-4 w-4" />
                     </Button>
                   </div>
-                )}
+                ) : null}
               </div>
             ) : null}
           </div>

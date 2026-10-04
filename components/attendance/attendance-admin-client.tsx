@@ -25,6 +25,9 @@ import { toast } from "sonner";
 import apiClient from "@/lib/api-client";
 import { StaffApis, StaffProfileApis } from "@/lib/api/endpoints";
 import { attendanceApi } from "@/lib/attendance/api";
+import { payrollRowsToCsv } from "@/lib/attendance/payroll-export";
+import { useAuth } from "@/hooks/use-auth";
+import { getAttendanceUiAccess, hasPermission } from "@/lib/role-permissions";
 import type {
   AttendanceDevice,
   AttendanceEntry,
@@ -278,9 +281,41 @@ function isBiometricAddonError(error: unknown) {
 }
 
 export function AttendanceAdminClient() {
+  const user = useAuth((state) => state.user);
+  const attendanceAccess = getAttendanceUiAccess(user);
+  const {
+    canView: canViewAttendance,
+    canManage: canManageAttendance,
+    canManageDevices,
+    canExport: canExportAttendance,
+    canPayrollExport,
+    initialTab,
+  } = attendanceAccess;
+  const canManageStaff = hasPermission(user, "admin.staff.view");
   const searchParams = useSearchParams();
-  const [activeTab, setActiveTab] = useState("overview");
+  const [activeTab, setActiveTab] = useState<string>(initialTab);
+  useEffect(() => {
+    setActiveTab((current) => {
+      if (current === "overview" || current === "timesheets") {
+        return canViewAttendance ? current : initialTab;
+      }
+      if (current === "payroll-export") {
+        return canPayrollExport ? current : initialTab;
+      }
+      if (["schedules", "qr", "settings"].includes(current)) {
+        return canManageAttendance ? current : initialTab;
+      }
+      if (current === "leave") {
+        return canManageAttendance && canViewAttendance ? current : initialTab;
+      }
+      if (current === "devices") {
+        return canManageDevices ? current : initialTab;
+      }
+      return initialTab;
+    });
+  }, [canManageAttendance, canManageDevices, canPayrollExport, canViewAttendance, initialTab]);
   const [loading, setLoading] = useState(true);
+  const [payrollExporting, setPayrollExporting] = useState(false);
   const [dateFrom, setDateFrom] = useState(todayIso());
   const [dateTo, setDateTo] = useState(todayIso());
   const [overview, setOverview] = useState<AttendanceOverview | null>(null);
@@ -422,58 +457,119 @@ export function AttendanceAdminClient() {
   const loadAll = useCallback(async () => {
     setLoading(true);
     try {
-      const biometricData = Promise.all([
-        attendanceApi.listDevices(),
-        attendanceApi.listDeviceMappings(),
-      ])
-        .then(([deviceData, mappingData]) => ({
-          deviceData,
-          mappingData,
-          unavailable: false,
-        }))
-        .catch((error) => {
-          if (isBiometricAddonError(error)) {
-            return {
-              deviceData: [] as AttendanceDevice[],
-              mappingData: [] as StaffDeviceMapping[],
-              unavailable: true,
-            };
-          }
-          throw error;
-        });
+      const reportLoadFailure = (error: unknown) => {
+        console.error("Failed to load attendance workspace data", error);
+        toast.error(errorMessage(error, "Some attendance data could not be loaded"));
+      };
+      const viewDataPromise = canViewAttendance
+        ? Promise.all([
+            attendanceApi.overview(dateFrom, dateTo),
+            attendanceApi.listEntries({ dateFrom, dateTo, limit: 300 }),
+            attendanceApi.listEntries({ limit: 300 }),
+            attendanceApi.listLeaves(),
+            attendanceApi.listHolidays(),
+          ]).catch((error) => {
+            reportLoadFailure(error);
+            return [null, [], [], [], []] as [
+              null,
+              AttendanceEntry[],
+              AttendanceEntry[],
+              AttendanceLeave[],
+              AttendanceHoliday[],
+            ];
+          })
+        : Promise.resolve([
+            null,
+            [],
+            [],
+            [],
+            [],
+          ] as [
+            null,
+            AttendanceEntry[],
+            AttendanceEntry[],
+            AttendanceLeave[],
+            AttendanceHoliday[],
+          ]);
+      const managementDataPromise = canManageAttendance
+        ? Promise.all([
+            attendanceApi.getSettings(),
+            attendanceApi.listShiftTemplates(),
+            attendanceApi.listSchedules(),
+            attendanceApi.listMobileDevices(),
+          ]).catch((error) => {
+            reportLoadFailure(error);
+            return [null, [], [], []] as [
+              null,
+              AttendanceShiftTemplate[],
+              AttendanceSchedule[],
+              AttendanceMobileDevice[],
+            ];
+          })
+        : Promise.resolve([
+            null,
+            [],
+            [],
+            [],
+          ] as [
+            null,
+            AttendanceShiftTemplate[],
+            AttendanceSchedule[],
+            AttendanceMobileDevice[],
+          ]);
+      const biometricDataPromise = canManageDevices
+        ? Promise.all([
+            attendanceApi.listDevices(),
+            attendanceApi.listDeviceMappings(),
+          ])
+            .then(([deviceData, mappingData]) => ({
+              deviceData,
+              mappingData,
+              unavailable: false,
+            }))
+            .catch((error) => {
+              if (isBiometricAddonError(error)) {
+                return {
+                  deviceData: [] as AttendanceDevice[],
+                  mappingData: [] as StaffDeviceMapping[],
+                  unavailable: true,
+                };
+              }
+              reportLoadFailure(error);
+              return {
+                deviceData: [] as AttendanceDevice[],
+                mappingData: [] as StaffDeviceMapping[],
+                unavailable: false,
+              };
+            })
+        : Promise.resolve({
+            deviceData: [] as AttendanceDevice[],
+            mappingData: [] as StaffDeviceMapping[],
+            unavailable: false,
+          });
+      const staffDataPromise = canManageStaff &&
+        (canManageAttendance || canManageDevices)
+        ? Promise.all([
+            apiClient.get(StaffProfileApis.list({ limit: 500 })),
+            apiClient.get(StaffApis.list()),
+          ]).catch((error) => {
+            reportLoadFailure(error);
+            return [{ data: { data: [] } }, { data: { data: [] } }] as const;
+          })
+        : Promise.resolve([{ data: { data: [] } }, { data: { data: [] } }] as const);
 
-      const [
-        settingsData,
-        overviewData,
-        selectedEntryData,
-        recentEntryData,
-        templateData,
-        scheduleData,
-        leaveData,
-        holidayData,
-        biometric,
-        mobileData,
-        profilesRes,
-        usersRes,
-      ] = await Promise.all([
-        attendanceApi.getSettings(),
-        attendanceApi.overview(dateFrom, dateTo),
-        attendanceApi.listEntries({ dateFrom, dateTo, limit: 300 }),
-        attendanceApi.listEntries({ limit: 300 }),
-        attendanceApi.listShiftTemplates(),
-        attendanceApi.listSchedules(),
-        attendanceApi.listLeaves(),
-        attendanceApi.listHolidays(),
-        biometricData,
-        attendanceApi.listMobileDevices(),
-        apiClient.get(StaffProfileApis.list({ limit: 500 })),
-        apiClient.get(StaffApis.list()),
+      const [viewData, managementData, biometric, staffData] = await Promise.all([
+        viewDataPromise,
+        managementDataPromise,
+        biometricDataPromise,
+        staffDataPromise,
       ]);
-      setSettingsForm(settingsToForm(settingsData));
+      const [overviewData, selectedEntryData, recentEntryData, leaveData, holidayData] = viewData;
+      const [settingsData, templateData, scheduleData, mobileData] = managementData;
+      const [profilesRes, usersRes] = staffData;
+      if (settingsData) setSettingsForm(settingsToForm(settingsData));
       setOverview(overviewData);
-      setEntries(
-        mergeEntriesWithOpenCarryover(selectedEntryData, recentEntryData),
-      );
+      setEntries(mergeEntriesWithOpenCarryover(selectedEntryData, recentEntryData));
       setTemplates(templateData);
       setSchedules(scheduleData);
       setLeaves(leaveData);
@@ -489,7 +585,7 @@ export function AttendanceAdminClient() {
     } finally {
       setLoading(false);
     }
-  }, [dateFrom, dateTo]);
+  }, [canManageAttendance, canManageDevices, canManageStaff, canViewAttendance, dateFrom, dateTo]);
 
   useEffect(() => {
     void loadAll();
@@ -591,6 +687,7 @@ export function AttendanceAdminClient() {
   }, [qrPayload]);
 
   async function createQrSession() {
+    if (!canManageAttendance) return;
     setBusy(true);
     try {
       const ttl = Math.min(
@@ -611,6 +708,7 @@ export function AttendanceAdminClient() {
   }
 
   async function saveSettings() {
+    if (!canManageAttendance) return;
     const fullDay = Number(settingsForm.full_day_minimum_percent);
     const halfDay = Number(settingsForm.half_day_minimum_percent);
     if (
@@ -696,6 +794,7 @@ export function AttendanceAdminClient() {
   }
 
   async function submitEntry(entry: AttendanceEntry) {
+    if (!canManageAttendance) return;
     setBusy(true);
     try {
       await attendanceApi.submitEntry(entry.id, "Submitted from web");
@@ -709,6 +808,7 @@ export function AttendanceAdminClient() {
   }
 
   async function approveEntry(entry: AttendanceEntry) {
+    if (!canManageAttendance) return;
     const approved = Number.parseInt(
       window.prompt(
         "Approved overtime minutes",
@@ -740,6 +840,7 @@ export function AttendanceAdminClient() {
   }
 
   async function rejectEntry(entry: AttendanceEntry) {
+    if (!canManageAttendance) return;
     const reason = window.prompt("Rejection reason");
     if (!reason) return;
     setBusy(true);
@@ -764,6 +865,7 @@ export function AttendanceAdminClient() {
   }
 
   async function saveCorrection() {
+    if (!canManageAttendance) return;
     if (!correctionEntry) return;
     const clockIn = new Date(correctionForm.clockIn);
     const clockOut = new Date(correctionForm.clockOut);
@@ -802,6 +904,7 @@ export function AttendanceAdminClient() {
   }
 
   async function exportTimesheets() {
+    if (!canExportAttendance) return;
     setBusy(true);
     try {
       const { blob, filename } = await attendanceApi.downloadExportCsv(
@@ -824,7 +927,36 @@ export function AttendanceAdminClient() {
     }
   }
 
+  async function exportApprovedPayroll() {
+    if (!canPayrollExport) return;
+    setPayrollExporting(true);
+    try {
+      const rows = await attendanceApi.exportApprovedPayroll(dateFrom, dateTo);
+      if (rows.length === 0) {
+        toast.info("No approved attendance entries in this date range");
+        return;
+      }
+      const blob = new Blob([payrollRowsToCsv(rows)], {
+        type: "text/csv;charset=utf-8",
+      });
+      const objectUrl = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = `attendance-payroll-${dateFrom}-to-${dateTo}.csv`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(objectUrl);
+      toast.success("Approved payroll CSV exported");
+    } catch (error) {
+      toast.error(errorMessage(error, "Failed to export payroll CSV"));
+    } finally {
+      setPayrollExporting(false);
+    }
+  }
+
   async function createTemplate() {
+    if (!canManageAttendance) return;
     if (!templateForm.name.trim()) return toast.error("Shift name is required");
     setBusy(true);
     try {
@@ -847,6 +979,7 @@ export function AttendanceAdminClient() {
   }
 
   async function createSchedule() {
+    if (!canManageAttendance) return;
     if (!scheduleForm.shift_template_id)
       return toast.error("Select a shift template");
     setBusy(true);
@@ -871,6 +1004,7 @@ export function AttendanceAdminClient() {
   }
 
   async function createLeave() {
+    if (!canManageAttendance) return;
     const staffId = Number(leaveForm.staff_id);
     if (!staffId || leaveForm.reason.trim().length < 3) {
       return toast.error("Select staff and enter a leave reason");
@@ -899,6 +1033,7 @@ export function AttendanceAdminClient() {
     id: number,
     action: "approve" | "reject" | "cancel",
   ) {
+    if (!canManageAttendance) return;
     setBusy(true);
     try {
       await attendanceApi.decideLeave(id, action);
@@ -912,6 +1047,7 @@ export function AttendanceAdminClient() {
   }
 
   async function createHoliday() {
+    if (!canManageAttendance) return;
     const multiplier = Number(holidayForm.worked_rate_multiplier);
     if (
       !holidayForm.name.trim() ||
@@ -942,6 +1078,7 @@ export function AttendanceAdminClient() {
   }
 
   async function deleteHoliday(id: number) {
+    if (!canManageAttendance) return;
     setBusy(true);
     try {
       await attendanceApi.deleteHoliday(id);
@@ -955,6 +1092,7 @@ export function AttendanceAdminClient() {
   }
 
   async function createDevice() {
+    if (!canManageDevices) return;
     if (!deviceForm.name.trim() || !deviceForm.serial_number.trim())
       return toast.error("Device name and serial are required");
     setBusy(true);
@@ -979,6 +1117,7 @@ export function AttendanceAdminClient() {
   }
 
   async function toggleDevice(device: AttendanceDevice, checked: boolean) {
+    if (!canManageDevices) return;
     setDevices((current) =>
       current.map((item) =>
         item.id === device.id ? { ...item, is_active: checked } : item,
@@ -1000,6 +1139,7 @@ export function AttendanceAdminClient() {
   }
 
   async function saveMapping() {
+    if (!canManageDevices || !canManageStaff) return;
     const deviceId = Number(mappingForm.device_id);
     const staffId = Number(mappingForm.staff_id);
     if (!deviceId || !staffId || !mappingForm.device_user_id.trim())
@@ -1027,6 +1167,7 @@ export function AttendanceAdminClient() {
   }
 
   async function createPairingCode(deviceId: number) {
+    if (!canManageDevices) return;
     setBusy(true);
     try {
       const result = await attendanceApi.createConnectorPairingCode({
@@ -1046,6 +1187,7 @@ export function AttendanceAdminClient() {
     device: AttendanceMobileDevice,
     action: "approve" | "reject" | "revoke",
   ) {
+    if (!canManageAttendance) return;
     const reason =
       action === "approve" ? undefined : window.prompt("Reason") || undefined;
     if (action !== "approve" && !reason) return;
@@ -1078,12 +1220,12 @@ export function AttendanceAdminClient() {
     ),
   );
   const showDateFilters =
-    activeTab === "overview" || activeTab === "timesheets";
+    activeTab === "overview" || activeTab === "timesheets" || activeTab === "payroll-export";
 
   return (
     <AppPage width="wide" className="pb-24">
       <PageHeader
-        className="hidden lg:flex"
+        className="hidden 2xl:flex"
         title="Attendance"
         description="Staff presence, payable time, schedules, kiosk, and attendance devices."
         actions={
@@ -1105,20 +1247,20 @@ export function AttendanceAdminClient() {
           ) : null
         }
       />
-      <div className="grid grid-cols-2 gap-2 lg:hidden">
+      <div className="grid w-full min-w-0 max-w-full grid-cols-1 gap-2 2xl:hidden">
         {showDateFilters ? (
           <>
             <Input
               type="date"
               value={dateFrom}
               onChange={(event) => setDateFrom(event.target.value)}
-              className="h-11 rounded-xl text-sm"
+              className="h-11 w-full min-w-0 rounded-xl text-sm"
             />
             <Input
               type="date"
               value={dateTo}
               onChange={(event) => setDateTo(event.target.value)}
-              className="h-11 rounded-xl text-sm"
+              className="h-11 w-full min-w-0 rounded-xl text-sm"
             />
           </>
         ) : null}
@@ -1129,54 +1271,59 @@ export function AttendanceAdminClient() {
         onValueChange={setActiveTab}
         className="space-y-5"
       >
-        <div className="lg:hidden">
+        <div className="2xl:hidden">
           <Select value={activeTab} onValueChange={setActiveTab}>
             <SelectTrigger className="h-11 w-full rounded-xl">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="overview">Overview</SelectItem>
-              <SelectItem value="timesheets">Timesheets</SelectItem>
-              <SelectItem value="schedules">Schedule</SelectItem>
-              <SelectItem value="leave">Leave & holidays</SelectItem>
-              <SelectItem value="qr">QR kiosk</SelectItem>
-              <SelectItem value="devices">Devices</SelectItem>
-              <SelectItem value="settings">Settings</SelectItem>
+              {canViewAttendance ? <SelectItem value="overview">Overview</SelectItem> : null}
+              {canViewAttendance ? <SelectItem value="timesheets">Timesheets</SelectItem> : null}
+              {canPayrollExport ? <SelectItem value="payroll-export">Payroll export</SelectItem> : null}
+              {canManageAttendance ? <SelectItem value="schedules">Schedule</SelectItem> : null}
+              {canManageAttendance && canViewAttendance ? <SelectItem value="leave">Leave & holidays</SelectItem> : null}
+              {canManageAttendance ? <SelectItem value="qr">QR kiosk</SelectItem> : null}
+              {canManageDevices ? <SelectItem value="devices">Devices</SelectItem> : null}
+              {canManageAttendance ? <SelectItem value="settings">Settings</SelectItem> : null}
             </SelectContent>
           </Select>
         </div>
-        <TabsList className="hidden h-auto w-full justify-start gap-1 overflow-x-auto rounded-none border-b bg-transparent p-0 lg:flex">
-          <TabsTrigger value="overview" className="min-w-max gap-2">
+        <TabsList className="hidden h-auto w-full justify-start gap-1 overflow-x-auto rounded-none border-b bg-transparent p-0 2xl:flex">
+          {canViewAttendance ? <TabsTrigger value="overview" className="min-w-max gap-2">
             <CalendarDays className="h-4 w-4" />
             Overview
-          </TabsTrigger>
-          <TabsTrigger value="timesheets" className="min-w-max gap-2">
+          </TabsTrigger> : null}
+          {canViewAttendance ? <TabsTrigger value="timesheets" className="min-w-max gap-2">
             <Check className="h-4 w-4" />
             Timesheets
-          </TabsTrigger>
-          <TabsTrigger value="schedules" className="min-w-max gap-2">
+          </TabsTrigger> : null}
+          {canPayrollExport ? <TabsTrigger value="payroll-export" className="min-w-max gap-2">
+            <Download className="h-4 w-4" />
+            Payroll export
+          </TabsTrigger> : null}
+          {canManageAttendance ? <TabsTrigger value="schedules" className="min-w-max gap-2">
             <CalendarDays className="h-4 w-4" />
             Schedule
-          </TabsTrigger>
-          <TabsTrigger value="leave" className="min-w-max gap-2">
+          </TabsTrigger> : null}
+          {canManageAttendance && canViewAttendance ? <TabsTrigger value="leave" className="min-w-max gap-2">
             <CalendarDays className="h-4 w-4" />
             Leave & holidays
-          </TabsTrigger>
-          <TabsTrigger value="qr" className="min-w-max gap-2">
+          </TabsTrigger> : null}
+          {canManageAttendance ? <TabsTrigger value="qr" className="min-w-max gap-2">
             <QrCode className="h-4 w-4" />
             QR Kiosk
-          </TabsTrigger>
-          <TabsTrigger value="devices" className="min-w-max gap-2">
+          </TabsTrigger> : null}
+          {canManageDevices ? <TabsTrigger value="devices" className="min-w-max gap-2">
             <Fingerprint className="h-4 w-4" />
             Devices
-          </TabsTrigger>
-          <TabsTrigger value="settings" className="min-w-max gap-2">
+          </TabsTrigger> : null}
+          {canManageAttendance ? <TabsTrigger value="settings" className="min-w-max gap-2">
             <MapPin className="h-4 w-4" />
             Settings
-          </TabsTrigger>
+          </TabsTrigger> : null}
         </TabsList>
 
-        <TabsContent value="overview" className="space-y-7">
+        {canViewAttendance ? <TabsContent value="overview" className="space-y-7">
           <WorkforceSection
             title="Attendance summary"
             description="Payable time and review position for the selected period."
@@ -1202,6 +1349,7 @@ export function AttendanceAdminClient() {
                 onApprove={approveEntry}
                 onReject={rejectEntry}
                 onCorrect={openCorrection}
+                canManage={canManageAttendance}
               />
             </div>
           </WorkforceSection>
@@ -1224,25 +1372,24 @@ export function AttendanceAdminClient() {
                 onApprove={approveEntry}
                 onReject={rejectEntry}
                 onCorrect={openCorrection}
+                canManage={canManageAttendance}
               />
             </div>
           </WorkforceSection>
-        </TabsContent>
+        </TabsContent> : null}
 
-        <TabsContent value="timesheets">
+        {canViewAttendance ? <TabsContent value="timesheets">
           <WorkforceSection
             title="Timesheets"
             description="Approve payable hours before payroll snapshot. Open entries stay visible even when they started earlier."
-            actions={
-              <Button
+            actions={canExportAttendance ? <Button
                 variant="outline"
                 disabled={busy}
                 onClick={() => void exportTimesheets()}
               >
                 <Download className="mr-2 h-4 w-4" />
                 Export CSV
-              </Button>
-            }
+              </Button> : null}
             contentClassName="overflow-hidden rounded-xl border"
           >
             <div className="p-0">
@@ -1254,10 +1401,26 @@ export function AttendanceAdminClient() {
                 onApprove={approveEntry}
                 onReject={rejectEntry}
                 onCorrect={openCorrection}
+                canManage={canManageAttendance}
               />
             </div>
           </WorkforceSection>
-        </TabsContent>
+        </TabsContent> : null}
+
+        {canPayrollExport ? <TabsContent value="payroll-export">
+          <WorkforceSection
+            title="Approved payroll export"
+            description="Download approved attendance totals for the selected date range. This export does not expose attendance details or unapproved entries."
+            actions={<Button onClick={() => void exportApprovedPayroll()} disabled={payrollExporting}>
+              {payrollExporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
+              Export payroll CSV
+            </Button>}
+          >
+            <p className="rounded-xl border bg-muted/20 p-4 text-sm text-muted-foreground">
+              The export includes approved totals per staff member for {dateFrom} through {dateTo}.
+            </p>
+          </WorkforceSection>
+        </TabsContent> : null}
 
         <TabsContent
           value="settings"
@@ -1739,7 +1902,7 @@ export function AttendanceAdminClient() {
           />
         </TabsContent>
 
-        <TabsContent value="leave" className="space-y-5">
+        {canManageAttendance && canViewAttendance ? <TabsContent value="leave" className="space-y-5">
           <div>
             <h2 className="text-xl font-semibold tracking-tight">
               Leave and holiday policy
@@ -1984,7 +2147,7 @@ export function AttendanceAdminClient() {
             onDecideLeave={decideLeave}
             onDeleteHoliday={deleteHoliday}
           />
-        </TabsContent>
+        </TabsContent> : null}
 
         <TabsContent
           value="qr"
@@ -2089,12 +2252,12 @@ export function AttendanceAdminClient() {
         </TabsContent>
 
         <TabsContent value="devices" className="space-y-5">
-          <MobileDeviceTable
+          {canManageAttendance ? <MobileDeviceTable
             devices={mobileDevices}
             staffProfiles={staffProfiles}
             usersById={usersById}
             onDecide={decideMobile}
-          />
+          /> : null}
           <div className="grid gap-5 xl:grid-cols-[420px_minmax(0,1fr)]">
             <div className="space-y-5">
               <Card>
@@ -2172,7 +2335,7 @@ export function AttendanceAdminClient() {
                   </Button>
                 </CardContent>
               </Card>
-              <Card>
+              {canManageStaff ? <Card>
                 <CardHeader>
                   <CardTitle>Map Staff User</CardTitle>
                   <CardDescription>
@@ -2248,7 +2411,7 @@ export function AttendanceAdminClient() {
                     Save mapping
                   </Button>
                 </CardContent>
-              </Card>
+              </Card> : null}
               {pairingCode ? (
                 <Card>
                   <CardHeader>
@@ -2606,6 +2769,7 @@ function TimesheetTable({
   onApprove,
   onReject,
   onCorrect,
+  canManage,
 }: {
   entries: AttendanceEntry[];
   staffProfiles: StaffProfile[];
@@ -2614,6 +2778,7 @@ function TimesheetTable({
   onApprove: (entry: AttendanceEntry) => void;
   onReject: (entry: AttendanceEntry) => void;
   onCorrect: (entry: AttendanceEntry) => void;
+  canManage: boolean;
 }) {
   return (
     <>
@@ -2671,7 +2836,7 @@ function TimesheetTable({
                     {attendanceExceptionLabel(entry.exception_code)}
                   </p>
                 ) : null}
-                <div className="mt-3 flex flex-wrap gap-2">
+                {canManage ? <div className="mt-3 flex flex-wrap gap-2">
                   {entry.approval_status !== "payroll_exported" ? (
                     <Button
                       size="sm"
@@ -2707,7 +2872,7 @@ function TimesheetTable({
                       Reject
                     </Button>
                   ) : null}
-                </div>
+                </div> : null}
               </div>
             );
           })
@@ -2778,7 +2943,7 @@ function TimesheetTable({
                       ) : null}
                     </TableCell>
                     <TableCell className="min-w-[260px] text-right">
-                      <div className="flex justify-end gap-2">
+                      {canManage ? <div className="flex justify-end gap-2">
                         {entry.approval_status !== "payroll_exported" ? (
                           <Button
                             size="sm"
@@ -2814,7 +2979,7 @@ function TimesheetTable({
                             Reject
                           </Button>
                         ) : null}
-                      </div>
+                      </div> : null}
                     </TableCell>
                   </TableRow>
                 );

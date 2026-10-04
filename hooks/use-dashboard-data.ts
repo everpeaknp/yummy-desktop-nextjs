@@ -5,7 +5,7 @@ import { DateRange } from "react-day-picker"
 import { DateRangePreset, DateRangePresetOption } from "@/components/ui/date-range-dropdown"
 import apiClient from "@/lib/api-client"
 import { DashboardApis, AnalyticsApis, MenuApis, StaffApis, TableApis, TransactionsApis } from "@/lib/api/endpoints"
-import { hasAnalyticsViewPermission } from "@/lib/role-permissions"
+import { hasAnalyticsViewPermission, hasPermission } from "@/lib/role-permissions"
 import {
   mapAnalyticsTrends,
   mapBreakdownToPie,
@@ -49,6 +49,11 @@ export function useDashboardData(
   const analyticsRequestRef = useRef(0)
 
   const canViewAnalytics = hasAnalyticsViewPermission(user)
+  const canViewStaff = hasPermission(user, "admin.staff.view")
+    || hasPermission(user, "platform.staff.view")
+    || hasPermission(user, "platform.staff.manage")
+  const canViewTables = hasPermission(user, "tables.view")
+  const canViewMenu = hasPermission(user, "menu.view") || hasPermission(user, "pos.view")
   const restaurant = useRestaurant((state) => state.restaurant)
   const dashboardBusinessLine =
     restaurant?.hotel_enabled && restaurant?.restaurant_enabled
@@ -62,6 +67,9 @@ export function useDashboardData(
 
     const requestId = ++liveRequestRef.current
     const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone
+    if (!canViewStaff) setStaff([])
+    if (!canViewTables) setOccupancy([])
+    if (!canViewMenu) setMenuItems([])
 
     try {
       const [v2Res, occupancyRes, staffRes, menuRes] = await Promise.all([
@@ -77,20 +85,20 @@ export function useDashboardData(
             console.error("V2 failed:", err)
             return null
           }),
-        apiClient
+        canViewTables ? apiClient
           .get(TableApis.tableSummary(user.restaurant_id))
           .catch((err) => {
             console.error("Occupancy failed:", err)
             return null
-          }),
-        apiClient.get(StaffApis.list()).catch((err) => {
+          }) : Promise.resolve(null),
+        canViewStaff ? apiClient.get(StaffApis.list()).catch((err) => {
           console.error("Staff failed:", err)
           return null
-        }),
-        apiClient.get(MenuApis.getMenusGroupedByRestaurant(user.restaurant_id)).catch((err) => {
+        }) : Promise.resolve(null),
+        canViewMenu ? apiClient.get(MenuApis.getMenusGroupedByRestaurant(user.restaurant_id)).catch((err) => {
           console.error("Menu catalog failed:", err)
           return null
-        }),
+        }) : Promise.resolve(null),
       ])
 
       if (requestId !== liveRequestRef.current) return
@@ -122,7 +130,7 @@ export function useDashboardData(
         setError("Failed to synchronize live dashboard data.")
       }
     }
-  }, [dashboardBusinessLine, user?.restaurant_id])
+  }, [dashboardBusinessLine, user?.restaurant_id, canViewStaff, canViewTables, canViewMenu])
 
   const fetchAnalyticsBundle = useCallback(async () => {
     if (!user?.restaurant_id) return

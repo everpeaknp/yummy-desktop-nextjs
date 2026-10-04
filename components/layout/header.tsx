@@ -46,8 +46,8 @@ import {
 } from "@/hooks/use-notifications";
 import { NotificationPanel } from "@/components/notifications/notification-panel";
 import apiClient from "@/lib/api-client";
-import { DashboardApis } from "@/lib/api/endpoints";
-import { hasPermission } from "@/lib/role-permissions";
+import { LiveStats } from "@/components/layout/live-stats";
+import { getHomeRouteForUser, isPathAccessible, hasPermission } from "@/lib/role-permissions";
 
 import { memo } from "react";
 import {
@@ -119,118 +119,6 @@ function hasMobileAppBarBack(pathname: string) {
   return !shouldMobileBottomNavBeVisible(pathname);
 }
 
-const LiveStats = memo(function LiveStats() {
-  const user = useAuth((state) => state.user);
-  const restaurant = useRestaurant((state) => state.restaurant);
-  const [stats, setStats] = useState<{
-    activeOrders: number;
-    kotPending: number;
-    todaySales: number;
-  } | null>(null);
-
-  const canViewAnalytics = hasPermission(user, "reports.analytics.view");
-
-  const fetchStats = useCallback(async () => {
-    if (!user?.restaurant_id) return;
-    try {
-      const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-      const res = await apiClient.get(
-        DashboardApis.dashboardDataV2({
-          restaurantId: user.restaurant_id,
-          businessLine:
-            restaurant?.hotel_enabled && restaurant?.restaurant_enabled
-              ? "all"
-              : restaurant?.hotel_enabled
-                ? "hotel"
-                : "restaurant",
-          timezone,
-        }),
-      );
-      if (res.data?.status === "success") {
-        const d = res.data.data;
-        const shiftPulse = d?.home?.shift_pulse;
-        const cashWatch = d?.home?.cash_watch;
-        setStats({
-          activeOrders:
-            shiftPulse?.active_orders ?? d?.health?.active_orders ?? 0,
-          kotPending: shiftPulse?.kot_pending ?? d?.health?.kot_pending ?? 0,
-          todaySales:
-            d?.kpis?.gross_sales ??
-            (cashWatch?.cash_collected ?? 0) +
-              (cashWatch?.digital_collected ?? 0) +
-              (cashWatch?.credit_sales ?? 0),
-        });
-      }
-    } catch {
-      // silently fail — stats are non-critical
-    }
-  }, [
-    restaurant?.hotel_enabled,
-    restaurant?.restaurant_enabled,
-    user?.restaurant_id,
-  ]);
-
-  useEffect(() => {
-    fetchStats();
-    const interval = setInterval(fetchStats, 30000);
-    return () => clearInterval(interval);
-  }, [fetchStats]);
-
-  if (!stats) return null;
-
-  const currency = restaurant?.currency || user?.currency || "NPR";
-  const formatSales = (n: number) => {
-    if (n >= 100000) return `${(n / 1000).toFixed(0)}k`;
-    if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
-    return n.toLocaleString();
-  };
-
-  return (
-    <div className="hidden items-center gap-2 lg:flex">
-      <Link
-        href="/orders"
-        data-tour="navbar-stat-orders"
-        className="flex items-center gap-2 px-3 py-1 rounded-md bg-muted/30 border border-border/50 hover:bg-muted/50 transition-colors"
-      >
-        <ClipboardList className="h-3.5 w-3.5 text-blue-500" />
-        <span className="text-xs font-bold text-foreground">
-          {stats.activeOrders}
-        </span>
-        <span className="text-[10px] text-muted-foreground uppercase font-black">
-          orders
-        </span>
-      </Link>
-      <Link
-        href="/orders?tab=kot"
-        data-tour="navbar-stat-kot"
-        className="flex items-center gap-2 px-3 py-1 rounded-md bg-muted/30 border border-border/50 hover:bg-muted/50 transition-colors"
-      >
-        <ChefHat className="h-3.5 w-3.5 text-orange-500" />
-        <span className="text-xs font-bold text-foreground">
-          {stats.kotPending}
-        </span>
-        <span className="text-[10px] text-muted-foreground uppercase font-black">
-          KOT
-        </span>
-      </Link>
-      {canViewAnalytics && (
-        <Link
-          href="/analytics"
-          data-tour="navbar-stat-sales"
-          className="flex items-center gap-2 px-3 py-1 rounded-md bg-muted/30 border border-border/50 hover:bg-muted/50 transition-colors"
-        >
-          <DollarSign className="h-3.5 w-3.5 text-emerald-500" />
-          <span className="text-xs font-bold text-foreground">
-            {currency} {formatSales(stats.todaySales)}
-          </span>
-          <span className="text-[10px] text-muted-foreground uppercase font-black">
-            today
-          </span>
-        </Link>
-      )}
-    </div>
-  );
-});
 
 const NotificationBell = memo(function NotificationBell() {
   const unreadCount = useNotificationStore((state) => state.unreadCount);
@@ -352,7 +240,7 @@ export const Header = memo(function Header() {
     >
       {isDashboard ? (
         <Link
-          href="/dashboard"
+          href={getHomeRouteForUser(user)}
           className="flex min-w-0 items-center gap-2 text-sm font-semibold tracking-tight text-foreground lg:hidden"
         >
           <span className="relative flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full border border-border bg-primary/10 text-primary">
@@ -378,12 +266,12 @@ export const Header = memo(function Header() {
             showMobileBack
               ? () => {
                   if (pathname === "/settings") {
-                    router.push("/manage");
+                    router.push(isPathAccessible("/manage", user) ? "/manage" : getHomeRouteForUser(user));
                     return;
                   }
                   const settingsOwner = getSettingsRouteOwnership(pathname);
                   if (settingsOwner) {
-                    router.push(settingsOwner.mobileBackTarget);
+                    router.push(isPathAccessible(settingsOwner.mobileBackTarget, user) ? settingsOwner.mobileBackTarget : getHomeRouteForUser(user));
                     return;
                   }
                   if (isMobileSecondaryModuleRoute(pathname || "")) {
@@ -391,7 +279,7 @@ export const Header = memo(function Header() {
                     return;
                   }
                   const href = mobileAppBarBackHref(pathname);
-                  if (href) router.push(href);
+                  if (href) router.push(isPathAccessible(href, user) ? href : getHomeRouteForUser(user));
                   else router.back();
                 }
               : undefined
@@ -426,7 +314,7 @@ export const Header = memo(function Header() {
                   ))}
                 </DropdownMenuContent>
               </DropdownMenu>
-            ) : pathname === "/cash-drawers" ? (
+            ) : pathname === "/cash-drawers" && isPathAccessible("/finance/operations", user) ? (
               <Button
                 asChild
                 variant="ghost"
@@ -447,7 +335,7 @@ export const Header = memo(function Header() {
 
       {/* Live stats — active orders, KOT pending, today's sales */}
       <div className="flex items-center gap-4">
-        {isFromManage && (
+        {isFromManage && isPathAccessible("/manage", user) && (
           <Button
             variant="outline"
             size="sm"
@@ -478,7 +366,7 @@ export const Header = memo(function Header() {
             <SheetContent side="right" className="flex flex-col p-0 w-[280px]">
               <div className="flex h-16 items-center border-b px-6">
                 <Link
-                  href="/dashboard"
+                  href={getHomeRouteForUser(user)}
                   className="flex items-center gap-2 font-bold text-lg"
                   onClick={() => {
                     setOpen(false);
@@ -625,7 +513,10 @@ export const Header = memo(function Header() {
               asChild
               className="hidden text-muted-foreground md:inline-flex"
             >
-              <Link href="/leave-restaurant">Leave restaurant</Link>
+              <Link href="/leave-restaurant" aria-label="Leave restaurant" title="Leave restaurant">
+                <Store className="h-4 w-4 shrink-0 min-[2300px]:hidden" aria-hidden="true" />
+                <span className="sr-only min-[2300px]:not-sr-only">Leave restaurant</span>
+              </Link>
             </Button>
           )}
           <div className="relative h-8 w-8 min-w-8 rounded-full bg-primary/10 flex items-center justify-center text-primary overflow-hidden border border-border/50">

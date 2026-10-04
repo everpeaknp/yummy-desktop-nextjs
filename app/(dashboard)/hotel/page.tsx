@@ -16,7 +16,7 @@ import { RatesPanel } from "@/components/hotel/rates-panel";
 import { RoomOrderAnalyticsPanel } from "@/components/hotel/room-order-analytics-panel";
 import { useAuth } from "@/hooks/use-auth";
 import { useRestaurant } from "@/hooks/use-restaurant";
-import { hasPermission, type PermissionKey } from "@/lib/role-permissions";
+import { getHotelWorkspaceTabs, hasPermission, type PermissionKey } from "@/lib/role-permissions";
 import { AppPage } from "@/components/patterns/page/app-page";
 
 export default function HotelPmsPage() {
@@ -47,24 +47,27 @@ export default function HotelPmsPage() {
     setDetailOpen(true);
   };
 
-  const navigation = useMemo(() => [
-    { value: "front-desk", label: "Front desk", icon: CalendarDays, visible: true },
-    { value: "bookings", label: "Bookings", icon: BookOpenCheck, visible: true },
-    { value: "inventory", label: "Rooms", icon: BedDouble, visible: true },
-    { value: "rates", label: "Rates", icon: SlidersHorizontal, visible: true },
-    { value: "housekeeping", label: "Housekeeping", icon: Brush, visible: hasPermission(user, "hotel.housekeeping.view") },
-    { value: "room-orders", label: "Room service", icon: BarChart3, visible: hasPermission(user, "reports.analytics.view") },
-    { value: "finance", label: "Finance", icon: WalletCards, visible: hasPermission(user, "finance.income.view") },
-    { value: "daybook", label: "Daybook", icon: BookOpenCheck, visible: hasPermission(user, "hotel.view") && hasPermission(user, "reports.dayclose.view") },
-    { value: "night-audit", label: "Night audit", icon: MoonStar, visible: hasPermission(user, "hotel.night_audit.run") },
-  ].filter((item) => item.visible), [user]);
+  const navigation = useMemo(() => {
+    const allowedTabs = new Set(getHotelWorkspaceTabs(user));
+    return [
+      { value: "front-desk", label: "Front desk", icon: CalendarDays },
+      { value: "bookings", label: "Bookings", icon: BookOpenCheck },
+      { value: "inventory", label: "Rooms", icon: BedDouble },
+      { value: "rates", label: "Rates", icon: SlidersHorizontal },
+      { value: "housekeeping", label: "Housekeeping", icon: Brush },
+      { value: "room-orders", label: "Room service", icon: BarChart3 },
+      { value: "finance", label: "Finance", icon: WalletCards },
+      { value: "daybook", label: "Daybook", icon: BookOpenCheck },
+      { value: "night-audit", label: "Night audit", icon: MoonStar },
+    ].filter((item) => allowedTabs.has(item.value));
+  }, [user]);
 
   useEffect(() => {
     const requested = searchParams.get("section");
     setTab(
       requested && navigation.some((item) => item.value === requested)
         ? requested
-        : "front-desk",
+        : navigation[0]?.value ?? "",
     );
   }, [navigation, searchParams]);
 
@@ -88,6 +91,19 @@ export default function HotelPmsPage() {
 
   if (!restaurantId) {
     return <div className="flex min-h-72 items-center justify-center text-sm text-muted-foreground">Hotel details are unavailable.</div>;
+  }
+
+  if (!navigation.length) {
+    return (
+      <div className="flex min-h-72 items-center justify-center px-4">
+        <section className="max-w-lg rounded-2xl border bg-card p-6 text-center shadow-sm">
+          <h1 className="text-lg font-semibold">Hotel access is limited</h1>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Your assigned hotel actions need hotel viewing access to load the booking or stay they apply to. Ask an administrator to add Hotel view alongside your specific hotel permissions.
+          </p>
+        </section>
+      </div>
+    );
   }
 
   return (
@@ -122,8 +138,8 @@ export default function HotelPmsPage() {
         <TabsContent value="inventory" className="mt-5"><InventoryPanel restaurantId={restaurantId} canManage={can("hotel.inventory.manage")} refreshKey={refreshKey} onChanged={changed} /></TabsContent>
         <TabsContent value="rates" className="mt-5"><RatesPanel restaurantId={restaurantId} canManageRates={can("hotel.rates.manage")} canManageSettings={can("hotel.manage")} refreshKey={refreshKey} onChanged={changed} /></TabsContent>
         {can("hotel.housekeeping.view") ? <TabsContent value="housekeeping" className="mt-5"><HousekeepingPanel restaurantId={restaurantId} canManage={can("hotel.housekeeping.manage")} refreshKey={refreshKey} onChanged={changed} /></TabsContent> : null}
-        {can("reports.analytics.view") ? <TabsContent value="room-orders" className="mt-5"><RoomOrderAnalyticsPanel restaurantId={restaurantId} refreshKey={refreshKey} /></TabsContent> : null}
-        {can("finance.income.view") ? <TabsContent value="finance" className="mt-5"><FinancePanel restaurantId={restaurantId} refreshKey={refreshKey} /></TabsContent> : null}
+        {can("hotel.view") && can("reports.analytics.view") ? <TabsContent value="room-orders" className="mt-5"><RoomOrderAnalyticsPanel restaurantId={restaurantId} refreshKey={refreshKey} /></TabsContent> : null}
+        {can("hotel.view") && can("finance.income.view") ? <TabsContent value="finance" className="mt-5"><FinancePanel restaurantId={restaurantId} refreshKey={refreshKey} /></TabsContent> : null}
         {can("hotel.view") && can("reports.dayclose.view") ? (
           <TabsContent value="daybook" className="mt-5">
             <section className="mx-auto max-w-4xl rounded-3xl border bg-card p-6 shadow-sm sm:p-8">
@@ -139,7 +155,7 @@ export default function HotelPmsPage() {
             </section>
           </TabsContent>
         ) : null}
-        {can("hotel.night_audit.run") ? <TabsContent value="night-audit" className="mt-5"><NightAuditPanel restaurantId={restaurantId} canRun refreshKey={refreshKey} onChanged={changed} /></TabsContent> : null}
+        {can("hotel.view") && can("hotel.night_audit.run") ? <TabsContent value="night-audit" className="mt-5"><NightAuditPanel restaurantId={restaurantId} canRun refreshKey={refreshKey} onChanged={changed} /></TabsContent> : null}
       </Tabs>
       <BookingDetailDialog bookingId={selectedBookingId} open={detailOpen} onOpenChange={setDetailOpen} permissions={permissions} onChanged={changed} />
       </AppPage>

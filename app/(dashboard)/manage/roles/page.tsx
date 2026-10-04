@@ -359,18 +359,18 @@ export default function RolesPage() {
 
   return (
     <AppPage width="workspace" className="pb-24 lg:pb-8">
-      <div className="lg:flex lg:items-start lg:gap-8">
+      <div className="2xl:flex 2xl:items-start 2xl:gap-8">
         <SettingsDesktopRail activeItemId="roles" />
         <main className="min-w-0 flex-1">
           <PageHeader
             title="Roles & permissions"
             description="Define reusable access roles. Individual staff assignments remain in Staff Detail."
-            actions={
-              <Button onClick={() => handleOpenDialog()}>
-                <Plus className="mr-2 h-4 w-4" /> Create role
-              </Button>
-            }
           />
+          <div className="mt-3 flex justify-start">
+            <Button onClick={() => handleOpenDialog()}>
+              <Plus className="mr-2 h-4 w-4" /> Create role
+            </Button>
+          </div>
           <SearchField
             placeholder="Search roles"
             value={searchQuery}
@@ -402,22 +402,21 @@ export default function RolesPage() {
                       {Object.keys(builtInPresets).map((presetName) => (
                         <ListRow
                           key={presetName}
-                          leading={<Shield className="h-4 w-4" />}
-                          title={readableRoleName(presetName)}
-                          description={
-                            ROLE_PRESET_DESCRIPTIONS[presetName] ||
-                            "Ready-to-use access template."
-                          }
-                          meta={`${builtInPresets[presetName].length} permissions`}
-                          action={
+                          leading={
                             <Button
                               type="button"
-                              variant="ghost"
+                              variant="outline"
                               size="sm"
+                              aria-label={`Use ${readableRoleName(presetName)} template`}
+                              className="h-7 w-8 p-0 text-[10px]"
                               onClick={() => createFromPreset(presetName)}
                             >
-                              Use template
+                              Use
                             </Button>
+                          }
+                          title={readableRoleName(presetName)}
+                          description={
+                            `${builtInPresets[presetName].length} permissions · ${ROLE_PRESET_DESCRIPTIONS[presetName] || "Ready-to-use access template."}`
                           }
                         />
                       ))}

@@ -13,6 +13,7 @@ import {
 import apiClient from "@/lib/api-client";
 import { ModifierApis } from "@/lib/api/endpoints";
 import { useAuth } from "@/hooks/use-auth";
+import { hasPermission } from "@/lib/role-permissions";
 import { useToast } from "@/components/ui/use-toast";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -60,7 +61,9 @@ function selectionLimits(group: ModifierGroup) {
 }
 
 export default function ModifiersPage() {
-  const restaurantId = useAuth((state) => state.user?.restaurant_id);
+  const user = useAuth((state) => state.user);
+  const restaurantId = user?.restaurant_id;
+  const canManageModifiers = hasPermission(user, "menu.items.manage");
   const [groups, setGroups] = useState<ModifierGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
@@ -177,11 +180,11 @@ export default function ModifiersPage() {
         className="hidden lg:flex"
         title="Options & add-ons"
         description="Configure customer choices, selection rules, and price adjustments."
-        actions={
+        actions={canManageModifiers ? (
           <Button onClick={openCreateDialog} className="h-11 rounded-xl">
             <Plus className="mr-1.5 h-4 w-4" /> Add option group
           </Button>
-        }
+        ) : null}
       />
 
       <MobileRegisterToolbar
@@ -230,8 +233,8 @@ export default function ModifiersPage() {
               ? "Try another group name."
               : "Create choices such as sizes, toppings, or preparation preferences."
           }
-          actionLabel={searchQuery ? undefined : "Add option group"}
-          onAction={searchQuery ? undefined : openCreateDialog}
+          actionLabel={!searchQuery && canManageModifiers ? "Add option group" : undefined}
+          onAction={!searchQuery && canManageModifiers ? openCreateDialog : undefined}
         />
       ) : (
         <DataList>
@@ -254,7 +257,7 @@ export default function ModifiersPage() {
                   {selectionLimits(group)}
                 </p>
               </div>
-              <Button
+              {canManageModifiers ? <Button
                 variant="outline"
                 size="icon"
                 className="h-11 w-11 shrink-0 rounded-xl"
@@ -266,8 +269,8 @@ export default function ModifiersPage() {
                 title="Manage options"
               >
                 <Settings2 className="h-4 w-4" />
-              </Button>
-              <DropdownMenu>
+              </Button> : null}
+              {canManageModifiers ? <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button
                     variant="ghost"
@@ -298,31 +301,31 @@ export default function ModifiersPage() {
                     <Trash2 className="mr-2 h-4 w-4" /> Delete group
                   </DropdownMenuItem>
                 </DropdownMenuContent>
-              </DropdownMenu>
+              </DropdownMenu> : null}
             </div>
           ))}
         </DataList>
       )}
 
-      <MobileCreateFab label="Add option group" onClick={openCreateDialog} />
+      {canManageModifiers ? <MobileCreateFab label="Add option group" onClick={openCreateDialog} /> : null}
 
-      <ModifierGroupDialog
+      {canManageModifiers ? <ModifierGroupDialog
         open={groupDialogOpen}
         onOpenChange={setGroupDialogOpen}
         onSubmit={editingGroup ? handleUpdateGroup : handleCreateGroup}
         initialData={editingGroup}
-      />
+      /> : null}
 
-      <ModifierOptionsSheet
+      {canManageModifiers ? <ModifierOptionsSheet
         open={optionsSheetOpen}
         onOpenChange={(open) => {
           setOptionsSheetOpen(open);
           if (!open) setSelectedGroup(null);
         }}
         group={selectedGroup}
-      />
+      /> : null}
 
-      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+      {canManageModifiers ? <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete option group?</AlertDialogTitle>
@@ -344,7 +347,7 @@ export default function ModifiersPage() {
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
-      </AlertDialog>
+      </AlertDialog> : null}
     </AppPage>
   );
 }

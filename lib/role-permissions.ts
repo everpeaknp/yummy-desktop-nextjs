@@ -113,6 +113,7 @@ export type PermissionKey =
   | "pos.order.transfer"
   | "pos.order.discount.apply"
   | "pos.order.discount.override"
+  | "pos.order.discount.override_limit"
   | "pos.order.serve_override"
   | "pos.order.nc.mark"
   | "pos.quick_bill"
@@ -120,6 +121,7 @@ export type PermissionKey =
   | "pos.pickup"
   // Billing Module
   | "billing.view"
+  | "billing.bill.split"
   | "billing.payment.process"
   | "billing.payment.edit"
   | "billing.payment.delete"
@@ -159,6 +161,15 @@ export type PermissionKey =
   | "inventory.view"
   | "inventory.stock.manage"
   | "inventory.manage"
+  | "inventory.items.manage"
+  | "inventory.stock.add"
+  | "inventory.stock.reduce"
+  | "inventory.purchases.post"
+  | "inventory.purchases.void"
+  | "inventory.purchase_returns.create"
+  | "inventory.purchase_returns.override_limit"
+  | "inventory.stations.view"
+  | "inventory.stations.manage"
   | "inventory.suppliers.manage"
   | "inventory.recipes.manage"
   | "inventory.consume"
@@ -182,6 +193,7 @@ export type PermissionKey =
   | "reports.dayclose.audit.view"
   | "reports.dayclose.export"
   | "reports.analytics.view"
+  | "reports.analytics.drilldown"
   | "day_close.drawer.open"
   | "day_close.drawer.count"
   | "day_close.drawer.approve"
@@ -243,10 +255,15 @@ export type PermissionKey =
   | "finance.expenses.approve"
   | "finance.payroll.view"
   | "finance.payroll.manage"
+  | "finance.reports.sales.view"
+  | "finance.reports.invoices.view"
+  | "finance.reports.payments.view"
+  | "finance.reports.tax.view"
   // Admin & Settings (staff financial ledger)
   | "admin.staff.credit.manage"
   // Attendance
   | "attendance.view"
+  | "attendance.clock"
   | "attendance.manage"
   | "attendance.device.manage"
   | "attendance.payroll.export"
@@ -262,7 +279,143 @@ export type PermissionKey =
   // Stations
   | "station.kitchen.view"
   | "station.bar.view"
-  | "station.cafe.view";
+  | "station.cafe.view"
+  // Canonical backend permissions not previously represented in frontend types
+  | "inventory.items.manage"
+  | "inventory.stock.add"
+  | "inventory.stock.reduce"
+  | "inventory.purchases.post"
+  | "inventory.purchases.void"
+  | "inventory.purchase_returns.create"
+  | "inventory.purchase_returns.override_limit"
+  | "inventory.stations.view"
+  | "inventory.stations.manage"
+  | "billing.bill.split"
+  | "attendance.clock"
+  | "reports.analytics.drilldown"
+  | "pos.order.discount.override_limit"
+  // Platform permissions are typed for parity but do not grant tenant access.
+  | "platform.restaurants.view"
+  | "platform.restaurants.manage"
+  | "platform.leads.view"
+  | "platform.leads.manage"
+  | "platform.staff.view"
+  | "platform.staff.manage"
+  | "platform.roles.manage"
+  | "platform.billing.manage"
+  | "platform.billing.view"
+  | "platform.billing.catalog.manage"
+  | "platform.billing.publish"
+  | "platform.billing.subscriptions.manage"
+  | "platform.billing.overrides.manage"
+  | "platform.billing.payments.manage"
+  | "platform.billing.audit.view";
+
+// The API returns assigned permission keys. Match the backend's implication
+// graph locally so manage grants expose the same dependent screens/actions.
+const PERMISSION_IMPLICATIONS: Partial<Record<PermissionKey, PermissionKey[]>> = {
+  "platform.billing.manage": [
+    "platform.billing.view",
+    "platform.billing.catalog.manage",
+    "platform.billing.publish",
+    "platform.billing.subscriptions.manage",
+    "platform.billing.overrides.manage",
+    "platform.billing.payments.manage",
+    "platform.billing.audit.view",
+  ],
+  "hotel.manage": [
+    "hotel.view", "hotel.checkin", "hotel.checkout", "hotel.early_departure.override",
+    "hotel.folio.view", "hotel.folio.edit", "hotel.folio.override", "hotel.bookings.manage",
+    "hotel.inventory.manage", "hotel.housekeeping.view", "hotel.housekeeping.manage",
+    "hotel.rates.manage", "hotel.night_audit.run",
+  ],
+  "hotel.housekeeping.manage": ["hotel.housekeeping.view"],
+  "tables.reservation.manage": ["tables.reservation.view"],
+  "qr.manage": ["qr.print"],
+  "tables.manage": ["qr.manage", "qr.print"],
+  "inventory.stock.manage": [
+    "inventory.suppliers.manage", "inventory.items.manage", "inventory.stock.add",
+    "inventory.stock.reduce", "inventory.purchases.post", "inventory.purchases.void",
+    "inventory.purchase_returns.create", "inventory.purchase_returns.override_limit",
+    "inventory.stations.manage",
+  ],
+  "inventory.stations.manage": ["inventory.stations.view"],
+  "inventory.consume": ["inventory.stock.reduce"],
+  "finance.drawer.open.any": ["finance.drawer.open.own"],
+  "finance.drawer.close.any": ["finance.drawer.close.own"],
+  "day_close.drawer.open": ["finance.drawer.open.own"],
+  "day_close.drawer.count": ["finance.drawer.close.own"],
+  "day_close.drawer.approve": [
+    "finance.drawer.open.any", "finance.drawer.close.any", "finance.drawer.transfer.to_safe",
+  ],
+  "finance.coa.manage": ["finance.coa.view"],
+  "finance.coa.group.manage": ["finance.coa.manage", "finance.coa.view"],
+  "finance.coa.opening_balances.manage": ["finance.coa.manage", "finance.coa.view"],
+  "finance.sales.create": ["finance.sales.view"],
+  "finance.sales.return": ["finance.sales.view"],
+  "finance.journal.manage": ["finance.journal.view"],
+  "finance.journal.reverse": ["finance.journal.manage", "finance.journal.view"],
+  "finance.accounting.setup": [
+    "finance.coa.manage", "finance.coa.view", "finance.coa.group.manage",
+    "finance.coa.opening_balances.manage", "finance.mapping.manage",
+  ],
+  "finance.accounting.settlements.manage": [
+    "finance.payment_instruments.manage", "finance.payment_settlements.manage",
+    "finance.cash.transfer.to_bank", "finance.bank_deposit.confirm",
+  ],
+};
+
+const KNOWN_PERMISSION_KEYS = new Set<PermissionKey>([
+  "dashboard.view", "pos.view", "pos.order.create", "pos.order.edit", "pos.order.void",
+  "pos.order.void_item", "pos.order.transfer", "pos.order.discount.apply",
+  "pos.order.discount.override", "pos.order.discount.override_limit", "pos.order.serve_override",
+  "pos.order.nc.mark", "pos.quick_bill", "pos.delivery", "pos.pickup", "billing.view",
+  "billing.bill.split", "billing.payment.process", "billing.payment.edit", "billing.payment.delete",
+  "billing.payment.split", "billing.refund.process", "billing.refund.approve", "billing.receipt.view",
+  "billing.receipt.print", "menu.view", "menu.items.manage", "menu.categories.manage",
+  "menu.pricing.manage", "tables.view", "tables.manage", "tables.reservation.view",
+  "tables.reservation.manage", "hotel.view", "hotel.manage", "hotel.checkin", "hotel.checkout",
+  "hotel.early_departure.override", "hotel.folio.view", "hotel.folio.edit", "hotel.folio.override",
+  "hotel.bookings.manage", "hotel.inventory.manage", "hotel.housekeeping.view",
+  "hotel.housekeeping.manage", "hotel.rates.manage", "hotel.night_audit.run", "inventory.view",
+  "inventory.stock.manage", "inventory.manage", "inventory.items.manage", "inventory.stock.add",
+  "inventory.stock.reduce", "inventory.purchases.post", "inventory.purchases.void",
+  "inventory.purchase_returns.create", "inventory.purchase_returns.override_limit",
+  "inventory.stations.view", "inventory.stations.manage", "inventory.suppliers.manage",
+  "inventory.recipes.manage", "inventory.consume", "inventory.negative_stock.override",
+  "inventory.accounting.view", "inventory.accounting.manage", "customers.view", "customers.manage",
+  "customers.loyalty.manage", "customers.credit.manage", "reports.daily.view", "reports.dayclose.view",
+  "reports.dayclose.initiate", "reports.dayclose.confirm", "reports.dayclose.cancel",
+  "reports.dayclose.reopen", "reports.dayclose.adjust.cash", "reports.dayclose.adjust.financial",
+  "reports.dayclose.audit.view", "reports.dayclose.export", "reports.analytics.view",
+  "reports.analytics.drilldown", "reports.periodic", "reports.periodic.view", "reports.periodic.confirm",
+  "reports.periodic.rebuild", "reports.periodic.snapshot.view", "reports.period.insights", "reports.export",
+  "day_close.drawer.open", "day_close.drawer.count", "day_close.drawer.approve", "day_close.drawer.reopen",
+  "finance.income.view", "finance.drawer.open.own", "finance.drawer.open.any", "finance.drawer.assign",
+  "finance.drawer.close.own", "finance.drawer.close.any", "finance.drawer.expense.create",
+  "finance.drawer.expense.approve", "finance.drawer.transfer.to_safe", "finance.cash.safe.disburse",
+  "finance.cash.transfer.to_bank", "finance.bank_deposit.confirm", "finance.variance.approve",
+  "finance.daybook.view", "finance.ledger.view", "finance.coa.view", "finance.coa.manage",
+  "finance.coa.group.manage", "finance.coa.opening_balances.manage", "finance.sales.view",
+  "finance.sales.create", "finance.sales.return", "finance.journal.view", "finance.journal.manage",
+  "finance.journal.reverse", "finance.mapping.manage", "finance.accounting.adjust",
+  "finance.payment_instruments.manage", "finance.payment_settlements.manage", "finance.accounting.view",
+  "finance.accounting.setup", "finance.accounting.opening_balances.manage", "finance.accounting.vouchers.create",
+  "finance.accounting.vouchers.approve", "finance.accounting.vouchers.post", "finance.accounting.vouchers.reverse",
+  "finance.accounting.periods.close", "finance.accounting.periods.lock", "finance.accounting.periods.reopen",
+  "finance.accounting.settlements.manage", "finance.accounting.vat.export", "finance.accounting.override_locked_period",
+  "finance.ledger.backfill", "finance.expenses.view", "finance.expenses.manage", "finance.expenses.approve",
+  "finance.payroll.view", "finance.payroll.manage", "finance.reports.sales.view", "finance.reports.invoices.view",
+  "finance.reports.payments.view", "finance.reports.tax.view", "admin.staff.credit.manage", "attendance.clock",
+  "attendance.view", "attendance.manage", "attendance.device.manage", "attendance.payroll.export",
+  "admin.staff.view", "admin.staff.manage", "admin.roles.manage", "admin.settings.manage",
+  "settings.manage_restaurant", "qr.manage", "qr.print", "station.kitchen.view", "station.bar.view",
+  "station.cafe.view", "platform.restaurants.view", "platform.restaurants.manage", "platform.leads.view",
+  "platform.leads.manage", "platform.staff.view", "platform.staff.manage", "platform.roles.manage",
+  "platform.billing.manage", "platform.billing.view", "platform.billing.catalog.manage", "platform.billing.publish",
+  "platform.billing.subscriptions.manage", "platform.billing.overrides.manage", "platform.billing.payments.manage",
+  "platform.billing.audit.view",
+]);
 
 /**
  * Single permission gate for all analytics routes and APIs (Option A).
@@ -280,12 +433,7 @@ export const CANONICAL_ROUTE_GATES = {
 } as const satisfies Record<string, PermissionKey>;
 
 function isAnalyticsGatedPath(pathname: string): boolean {
-  return (
-    pathname === "/analytics" ||
-    pathname.startsWith("/analytics/") ||
-    pathname === "/transactions" ||
-    pathname.startsWith("/transactions/")
-  );
+  return pathname === "/analytics" || pathname.startsWith("/analytics/");
 }
 
 /**
@@ -314,14 +462,11 @@ export function hasAnalyticsViewPermission(
 ): boolean {
   if (!user) return false;
   const roles = normalizeRolesForUser(user);
-  if (roles.includes("admin") || roles.includes("manager")) {
+  if (roles.includes("admin")) {
     return true;
   }
   const perms = user.permissions ?? [];
-  return (
-    perms.includes(ANALYTICS_VIEW_PERMISSION) ||
-    perms.includes("reports.analytics.drilldown")
-  );
+  return perms.includes(ANALYTICS_VIEW_PERMISSION);
 }
 
 /**
@@ -341,23 +486,100 @@ export function hasPermission(
   if (permission === ANALYTICS_VIEW_PERMISSION) {
     return hasAnalyticsViewPermission(user);
   }
-  // Admin and Platform Staff bypass
+  // Tenant administrators bypass restaurant permissions only. Platform
+  // privileges are independent and never imply tenant data access.
   const roles = normalizeRolesForUser(user);
-  if (
-    roles.includes("admin") ||
-    (user.permissions?.includes("platform.restaurants.view") ?? false)
-  )
-    return true;
   const permissions = user.permissions ?? [];
-  if (permission.startsWith("hotel.") && permissions.includes("hotel.manage"))
+  if (permission.startsWith("platform.")) {
+    const effectivePlatform = new Set<PermissionKey>();
+    const pending = permissions.filter(
+      (key): key is PermissionKey =>
+        key.startsWith("platform.") &&
+        KNOWN_PERMISSION_KEYS.has(key as PermissionKey),
+    );
+    while (pending.length) {
+      const current = pending.pop()!;
+      if (effectivePlatform.has(current)) continue;
+      effectivePlatform.add(current);
+      pending.push(
+        ...(PERMISSION_IMPLICATIONS[current] ?? []).filter((key) =>
+          key.startsWith("platform."),
+        ),
+      );
+    }
+    return effectivePlatform.has(permission);
+  }
+  if (roles.includes("admin"))
     return true;
-  if (
-    permission === "hotel.housekeeping.view" &&
-    permissions.includes("hotel.housekeeping.manage")
-  )
-    return true;
-  // Granular permission check (works for all custom-role users)
-  return permissions.includes(permission);
+  const effective = new Set<PermissionKey>();
+  const pending = permissions.filter((key): key is PermissionKey =>
+    KNOWN_PERMISSION_KEYS.has(key as PermissionKey),
+  );
+  while (pending.length) {
+    const current = pending.pop()!;
+    if (effective.has(current)) continue;
+    effective.add(current);
+    pending.push(...(PERMISSION_IMPLICATIONS[current] ?? []));
+  }
+  return effective.has(permission);
+}
+
+/** Hotel workspace tabs, matched to the read grants required by their APIs. */
+export function getHotelWorkspaceTabs(user: Parameters<typeof hasPermission>[0]): string[] {
+  const tabs: Array<{ value: string; required: PermissionKey[] }> = [
+    { value: "front-desk", required: ["hotel.view"] },
+    { value: "bookings", required: ["hotel.view"] },
+    { value: "inventory", required: ["hotel.view"] },
+    { value: "rates", required: ["hotel.view"] },
+    { value: "housekeeping", required: ["hotel.housekeeping.view"] },
+    { value: "room-orders", required: ["hotel.view", "reports.analytics.view"] },
+    { value: "finance", required: ["hotel.view", "finance.income.view"] },
+    { value: "daybook", required: ["hotel.view", "reports.dayclose.view"] },
+    { value: "night-audit", required: ["hotel.view", "hotel.night_audit.run"] },
+  ];
+  return tabs
+    .filter(({ required }) => required.every((permission) => hasPermission(user, permission)))
+    .map(({ value }) => value);
+}
+
+/** Exact UI capabilities used by the attendance workspace and its tabs. */
+export function getAttendanceUiAccess(user: {
+  role?: string | null;
+  roles?: string[] | null;
+  permissions?: string[];
+} | null) {
+  const canView = hasPermission(user, "attendance.view");
+  const canManage = hasPermission(user, "attendance.manage");
+  const canManageDevices = hasPermission(user, "attendance.device.manage");
+  const canPayrollExport = hasPermission(user, "attendance.payroll.export");
+
+  return {
+    canView,
+    canManage,
+    canManageDevices,
+    // The current attendance CSV route is guarded by attendance.view.
+    canExport: canView,
+    canPayrollExport,
+    initialTab: canView
+      ? "overview"
+      : canManage
+        ? "schedules"
+        : canManageDevices
+          ? "devices"
+          : "payroll-export",
+  } as const;
+}
+
+/** Loyalty redemption also updates the order after redeeming customer points. */
+export function canRedeemOrderLoyalty(user: {
+  role?: string | null;
+  roles?: string[] | null;
+  permissions?: string[];
+} | null) {
+  return (
+    hasPermission(user, "customers.loyalty.manage") &&
+    hasPermission(user, "pos.order.edit")
+  );
 }
 
 /**
@@ -377,10 +599,7 @@ export function canAccessBusinessModule(
   if (!user) return false;
   const roles = normalizeRolesForUser(user);
   const permissions = user.permissions ?? [];
-  if (
-    roles.includes("admin") ||
-    permissions.includes("platform.restaurants.view")
-  ) {
+  if (roles.includes("admin")) {
     return true;
   }
   if (businessLine === "hotel") {
@@ -451,6 +670,7 @@ export interface SidebarItemDef {
   href: string;
   allowedRoles: UserRole[];
   requiredPermission?: PermissionKey;
+  requiredPermissions?: PermissionKey[];
   /** Opens in a new tab; not an in-app route */
   externalUrl?: string;
 }
@@ -491,39 +711,49 @@ export const SIDEBAR_ROLE_MAP: SidebarItemDef[] = [
     title: "Day Close",
     href: "/day-close",
     allowedRoles: ADMIN_SHELL_ROLES,
-    requiredPermission: "reports.daily.view",
+    requiredPermissions: ["reports.daily.view", "reports.dayclose.view"],
   },
   {
     title: "Cash Drawers",
     href: "/cash-drawers",
     allowedRoles: ADMIN_SHELL_ROLES,
-    requiredPermission: "day_close.drawer.open",
+    requiredPermissions: [
+      "day_close.drawer.open",
+      "finance.drawer.open.own",
+      "finance.drawer.open.any",
+      "finance.drawer.close.own",
+      "finance.drawer.close.any",
+    ],
   },
   // ── Kitchen stations ──
   {
     title: "Kitchen",
     href: "/kitchen",
     allowedRoles: KITCHEN_ROLES,
-    requiredPermission: "station.kitchen.view",
+    requiredPermissions: [
+      "station.kitchen.view",
+      "station.bar.view",
+      "station.cafe.view",
+    ],
   },
   // ── Manage sub-items ──
   {
     title: "Menu",
     href: "/menu/items",
     allowedRoles: ALL_DASHBOARD_ROLES,
-    requiredPermission: "menu.view",
+    requiredPermissions: ["menu.view", "pos.view"],
   },
   {
     title: "Categories",
     href: "/menu/categories",
     allowedRoles: ALL_DASHBOARD_ROLES,
-    requiredPermission: "menu.view",
+    requiredPermissions: ["menu.view", "pos.view"],
   },
   {
     title: "Options & add-ons",
     href: "/menu/modifiers",
     allowedRoles: ALL_DASHBOARD_ROLES,
-    requiredPermission: "menu.view",
+    requiredPermissions: ["menu.view", "pos.view"],
   },
   {
     title: "Inventory",
@@ -544,10 +774,16 @@ export const SIDEBAR_ROLE_MAP: SidebarItemDef[] = [
     requiredPermission: "finance.income.view",
   },
   {
+    title: "Accounting",
+    href: "/finance/accounting",
+    allowedRoles: ALL_DASHBOARD_ROLES,
+    requiredPermission: "finance.accounting.view",
+  },
+  {
     title: "Transactions",
     href: "/transactions",
     allowedRoles: ADMIN_SHELL_ROLES,
-    requiredPermission: "reports.analytics.view",
+    requiredPermission: "finance.ledger.view",
   },
   {
     title: "Customers",
@@ -559,7 +795,7 @@ export const SIDEBAR_ROLE_MAP: SidebarItemDef[] = [
     title: "Tables",
     href: "/tables",
     allowedRoles: ALL_DASHBOARD_ROLES,
-    requiredPermission: "tables.view",
+    requiredPermissions: ["tables.view", "pos.view"],
   },
   {
     title: "Reservations",
@@ -577,13 +813,18 @@ export const SIDEBAR_ROLE_MAP: SidebarItemDef[] = [
     title: "Settings",
     href: "/settings",
     allowedRoles: ALL_DASHBOARD_ROLES,
-    requiredPermission: "admin.staff.view",
+    requiredPermission: "admin.settings.manage",
   },
   {
     title: "Attendance",
     href: "/attendance",
     allowedRoles: ADMIN_SHELL_ROLES,
-    requiredPermission: "attendance.manage",
+    requiredPermissions: [
+      "attendance.view",
+      "attendance.manage",
+      "attendance.device.manage",
+      "attendance.payroll.export",
+    ],
   },
   {
     title: "Feedback",
@@ -606,6 +847,13 @@ export function getSidebarItemsForRoles(
   } | null,
 ) {
   return SIDEBAR_ROLE_MAP.filter((item) => {
+    if (item.href === "/orders/new") {
+      return (
+        hasPermission(user || null, "pos.order.create") &&
+        (hasPermission(user || null, "menu.view") ||
+          hasPermission(user || null, "pos.view"))
+      );
+    }
     // ─── Key design principle ─────────────────────────────────────────────
     // If an item has a `requiredPermission`, that permission is the SOLE gate.
     // The `allowedRoles` list is IGNORED for permission-protected items.
@@ -615,6 +863,11 @@ export function getSidebarItemsForRoles(
     // ─────────────────────────────────────────────────────────────────────
     if (item.requiredPermission) {
       return hasPermission(user || null, item.requiredPermission);
+    }
+    if (item.requiredPermissions) {
+      return item.requiredPermissions.some((permission) =>
+        hasPermission(user || null, permission),
+      );
     }
 
     // Items WITHOUT a requiredPermission (e.g. Feedback) fall back to legacy role check.
@@ -628,37 +881,199 @@ export function getSidebarItemsForRoles(
 export const ROUTE_PERMISSIONS: Record<string, PermissionKey> = {
   // Core pages
   "/dashboard": "dashboard.view",
+  "/dashboard/payments": "billing.view",
+  "/dashboard/subscriptions": "billing.view",
   "/analytics": "reports.analytics.view",
-  "/day-close": "reports.daily.view",
-  "/cash-drawers": "day_close.drawer.open",
-  "/transactions": "reports.analytics.view",
+  "/transactions": "finance.ledger.view",
   "/orders": "pos.view",
-  "/kitchen": "station.kitchen.view",
+  "/receipts": "billing.receipt.view",
+  "/orders/new": "pos.order.create",
+  "/orders/create": "pos.order.create",
+  "/orders/history": "pos.view",
+  "/orders/active": "pos.view",
+  "/order-history": "pos.view",
+  "/customers": "customers.view",
   // Management
-  "/menu": "menu.view",
+  "/menu/categories": "menu.view",
+  "/menu/items": "menu.view",
+  "/menu/modifiers": "menu.view",
   "/inventory": "inventory.view",
   "/suppliers": "inventory.suppliers.manage",
-  "/tables": "tables.view",
   "/reservations": "tables.reservation.view",
   "/discounts": "pos.order.discount.apply",
-  "/customers": "customers.view",
-  "/rooms": "hotel.manage",
-  "/hotel": "hotel.view",
+  "/rooms/checkin": "hotel.checkin",
+  "/rooms": "hotel.view",
   // Finance
   "/finance/heads": "finance.coa.view",
+  "/finance/reports/sales-book": "finance.reports.sales.view",
+  "/finance/reports/invoices": "finance.reports.invoices.view",
+  "/finance/reports/payments": "finance.reports.payments.view",
+  "/finance/reports/vat-sales": "finance.reports.tax.view",
+  "/finance/reports/vat-summary": "finance.reports.tax.view",
+  "/finance/reports/profit-and-loss": "finance.accounting.view",
+  "/finance/reports/balance-sheet": "finance.accounting.view",
+  "/finance/reports/cash-flow": "finance.accounting.view",
+  "/finance/reports/trial-balance": "finance.accounting.view",
+  "/finance/reports/account-ledger": "finance.ledger.view",
+  "/finance/reports/party-balances": "finance.ledger.view",
+  "/finance/reports/head-activity": "finance.coa.view",
+  "/finance/reports/department-breakdown": "finance.income.view",
+  "/finance/reports/daybook": "finance.daybook.view",
+  "/finance/reports/custody-reconciliation": "finance.daybook.view",
+  "/finance/reports/refunds": "finance.reports.payments.view",
+  "/finance/expenses": "finance.expenses.view",
+  "/finance": "finance.income.view",
+  "/finance/income": "finance.income.view",
+  "/finance/income-expenses": "finance.income.view",
+  "/finance/other-income": "finance.income.view",
+  "/finance/transactions": "finance.ledger.view",
+  "/finance/purchases": "inventory.view",
+  "/inventory/purchases": "inventory.view",
+  "/inventory/purchases/returns": "inventory.view",
   "/finance/sales/returns": "finance.sales.return",
   "/finance/sales": "finance.sales.view",
-  "/finance/journals": "finance.journal.view",
   "/finance/accounting/inventory": "inventory.accounting.view",
   "/finance/accounting": "finance.accounting.view",
-  "/finance": "finance.income.view",
-  "/attendance": "attendance.manage",
-  "/workforce": "admin.staff.view",
   // Admin
   "/staff/join-requests": "admin.staff.manage",
   "/staff": "admin.staff.view",
-  "/manage": "admin.staff.view",
+  "/manage/roles": "admin.roles.manage",
+  "/manage/additional-settings": "admin.settings.manage",
+  "/manage/settings": "admin.settings.manage",
+  "/manage/business-profile": "admin.settings.manage",
+  "/manage/compliance": "admin.settings.manage",
+  "/manage/audit-logs": "admin.settings.manage",
+  "/manage/awaiting-payments": "admin.settings.manage",
+  "/manage/purchases": "inventory.view",
+  "/manage/receipt-designer": "admin.settings.manage",
+  "/manage/kot-designer": "admin.settings.manage",
+  "/manage/suppliers": "inventory.suppliers.manage",
+  "/manage/taxes": "admin.settings.manage",
+  "/settings": "admin.settings.manage",
+  "/settings/administrators": "admin.staff.manage",
+  "/settings/branding": "admin.settings.manage",
+  "/settings/business-profile": "admin.settings.manage",
+  "/settings/finance": "admin.settings.manage",
+  "/settings/kot-designer": "admin.settings.manage",
+  "/settings/payment-integrations": "admin.settings.manage",
+  "/settings/printers": "admin.settings.manage",
+  "/settings/receipt-designer": "admin.settings.manage",
+  "/settings/roles": "admin.roles.manage",
+  "/settings/taxes": "admin.settings.manage",
+  "/manage/stations": "inventory.stations.view",
+  "/attendance": "attendance.view",
+  "/period-reports": "reports.periodic.view",
+  "/hotel-close": "hotel.night_audit.run",
 };
+
+/** Shared landing pages for features with independently granted capabilities. */
+export const ROUTE_ANY_PERMISSIONS: Record<string, PermissionKey[]> = {
+  "/manage": [
+    "admin.staff.view",
+    "admin.staff.manage",
+    "admin.roles.manage",
+    "admin.settings.manage",
+    "inventory.view",
+    "inventory.suppliers.manage",
+    "inventory.items.manage",
+    "inventory.stock.manage",
+    "inventory.stock.add",
+    "inventory.stock.reduce",
+    "inventory.purchases.post",
+    "inventory.purchases.void",
+    "inventory.purchase_returns.create",
+    "inventory.recipes.manage",
+    "inventory.stations.view",
+    "attendance.view",
+    "attendance.manage",
+    "attendance.clock",
+    "menu.items.manage",
+    "menu.categories.manage",
+    "tables.manage",
+    "hotel.view",
+    "hotel.manage",
+    "finance.income.view",
+    "finance.accounting.view",
+    "finance.expenses.view",
+    "finance.expenses.manage",
+  ],
+  "/menu": ["menu.view", "pos.view"],
+  "/menu/categories": ["menu.view", "pos.view"],
+  "/menu/items": ["menu.view", "pos.view"],
+  "/menu/modifiers": ["menu.view", "pos.view"],
+  "/tables": ["tables.view", "pos.view"],
+  "/finance/operations": [
+    "finance.daybook.view",
+    "finance.drawer.transfer.to_safe",
+    "finance.cash.transfer.to_bank",
+  ],
+  "/finance/reports": [
+    "finance.income.view",
+    "finance.reports.sales.view",
+    "finance.reports.invoices.view",
+    "finance.reports.payments.view",
+    "finance.reports.tax.view",
+    "finance.accounting.view",
+  ],
+  "/finance/setup": [
+    "finance.accounting.setup",
+    "finance.coa.view",
+    "finance.payment_instruments.manage",
+    "finance.payment_settlements.manage",
+  ],
+  "/finance/payments": ["finance.reports.payments.view"],
+  "/finance/receivables": [
+    "customers.credit.manage",
+    "customers.view",
+    "finance.ledger.view",
+  ],
+  "/finance/payables": [
+    "inventory.suppliers.manage",
+    "inventory.view",
+    "finance.expenses.view",
+  ],
+  "/day-close": ["reports.daily.view", "reports.dayclose.view"],
+  "/attendance": ["attendance.manage", "attendance.device.manage", "attendance.payroll.export"],
+  "/cash-drawers": [
+    "day_close.drawer.open",
+    "finance.drawer.open.own",
+    "finance.drawer.open.any",
+    "finance.drawer.close.own",
+    "finance.drawer.close.any",
+  ],
+  "/kitchen": ["station.kitchen.view", "station.bar.view", "station.cafe.view"],
+  "/hotel": [
+    "hotel.view",
+    "hotel.manage",
+    "hotel.checkin",
+    "hotel.checkout",
+    "hotel.early_departure.override",
+    "hotel.folio.view",
+    "hotel.folio.edit",
+    "hotel.folio.override",
+    "hotel.bookings.manage",
+    "hotel.inventory.manage",
+    "hotel.housekeeping.view",
+    "hotel.housekeeping.manage",
+    "hotel.rates.manage",
+    "hotel.night_audit.run",
+  ],
+  "/premium": ["admin.settings.manage", "billing.view"],
+};
+
+const DYNAMIC_ROUTE_PERMISSIONS: Array<{
+  pattern: RegExp;
+  permissions: PermissionKey[];
+  requiresAll?: PermissionKey[];
+}> = [
+  { pattern: /^\/orders\/[^/]+\/(?:edit|add-items)$/, permissions: ["pos.order.edit"], requiresAll: ["pos.view"] },
+  { pattern: /^\/orders\/[^/]+\/checkout$/, permissions: ["billing.view", "billing.payment.process", "billing.bill.split", "hotel.checkout"], requiresAll: ["pos.view"] },
+  { pattern: /^\/orders\/[^/]+\/receipt$/, permissions: ["billing.receipt.view", "billing.receipt.print"], requiresAll: ["pos.view"] },
+  { pattern: /^\/customers\/[^/]+$/, permissions: ["customers.view"] },
+  { pattern: /^\/staff\/[^/]+$/, permissions: ["admin.staff.view"] },
+  { pattern: /^\/suppliers\/[^/]+$/, permissions: ["inventory.suppliers.manage"] },
+  { pattern: /^\/transactions\/[^/]+$/, permissions: ["finance.ledger.view"] },
+];
 
 // ─── Route-level ACL ────────────────────────────────────────────────────────
 // Maps route prefixes to allowed roles. Used by RoleGuard component.
@@ -716,6 +1131,28 @@ export function isRouteAllowed(
     return true;
   }
 
+  // Creating an order also needs readable menu data or POS order scope; the
+  // backend's grouped-menu and order APIs enforce those complementary grants.
+  if (pathname === "/orders/new" || pathname === "/orders/create") {
+    return (
+      hasPermission(user, "pos.order.create") &&
+      (hasPermission(user, "menu.view") || hasPermission(user, "pos.view"))
+    );
+  }
+
+  // Join requests require staff management, not staff profile viewing. Keep
+  // this exact route ahead of the dynamic /staff/:id detail rule below.
+  if (pathname === "/staff/join-requests") {
+    return hasPermission(user, "admin.staff.manage");
+  }
+
+  if (pathname === "/analytics/compare" || pathname.startsWith("/analytics/compare/")) {
+    return (
+      hasAnalyticsViewPermission(user) &&
+      hasPermission(user, "reports.period.insights")
+    );
+  }
+
   // Analytics routes never bypass via admin role — explicit permission only
   if (isAnalyticsGatedPath(pathname)) {
     return hasAnalyticsViewPermission(user);
@@ -723,23 +1160,38 @@ export function isRouteAllowed(
 
   // Build the set of normalized legacy roles for this user
   const roles = normalizeRolesForUser(user);
-  const isGlobalAdmin =
-    roles.includes("admin") ||
-    (user.permissions?.includes("platform.restaurants.view") ?? false);
+  const isGlobalAdmin = roles.includes("admin");
 
   if (isGlobalAdmin) return true;
 
+  const dynamicRoute = DYNAMIC_ROUTE_PERMISSIONS.find(({ pattern }) =>
+    pattern.test(pathname),
+  );
+  if (dynamicRoute) {
+    return (
+      (dynamicRoute.requiresAll ?? []).every((permission) =>
+        hasPermission(user, permission),
+      ) &&
+      dynamicRoute.permissions.some((permission) => hasPermission(user, permission))
+    );
+  }
+
   // 1. Check Granular Permissions first (works for both legacy & custom-role users)
-  const sortedPermissionPrefixes = Object.keys(ROUTE_PERMISSIONS).sort(
+  const sortedPermissionPrefixes = Array.from(
+    new Set([
+      ...Object.keys(ROUTE_PERMISSIONS),
+      ...Object.keys(ROUTE_ANY_PERMISSIONS),
+    ]),
+  ).sort(
     (a, b) => b.length - a.length,
   );
   for (const prefix of sortedPermissionPrefixes) {
     if (pathname === prefix || pathname.startsWith(prefix + "/")) {
       const required = ROUTE_PERMISSIONS[prefix];
-      // If user has the required permission → they're allowed regardless of legacy role
-      if (hasPermission(user, required)) return true;
-      // If user does NOT have the required permission → deny immediately
-      return false;
+      const anyRequired = ROUTE_ANY_PERMISSIONS[prefix];
+      return [required, ...(anyRequired ?? [])]
+        .filter((permission): permission is PermissionKey => Boolean(permission))
+        .some((permission) => hasPermission(user, permission));
     }
   }
 
@@ -790,8 +1242,7 @@ export function isPathAccessible(
 /** Hotel sidebar href → permission key (matches ROUTE_PERMISSIONS where applicable). */
 export const HOTEL_SIDEBAR_PERMISSIONS: Partial<Record<string, PermissionKey>> =
   {
-    "/hotel": "hotel.view",
-    "/rooms": "hotel.manage",
+    "/rooms": "hotel.view",
     "/rooms/checkin": "hotel.manage",
     "/orders": "pos.view",
     "/orders/new": "pos.order.create",
@@ -799,7 +1250,7 @@ export const HOTEL_SIDEBAR_PERMISSIONS: Partial<Record<string, PermissionKey>> =
     "/finance/income": "finance.income.view",
     "/customers": "customers.view",
     "/manage": "admin.staff.view",
-    "/settings": "admin.staff.view",
+    "/settings": "admin.settings.manage",
     "/analytics": "reports.analytics.view",
   };
 
@@ -807,12 +1258,22 @@ export function filterSidebarLinksByAccess<T extends { href: string }>(
   items: T[],
   user: Parameters<typeof isPathAccessible>[1],
 ): T[] {
-  return items.filter((item) => {
+  return items.flatMap((item) => {
+    const nestedItem = item as T & { subItems?: T[] };
+    const accessibleChildren = nestedItem.subItems
+      ? filterSidebarLinksByAccess(nestedItem.subItems, user)
+      : undefined;
     const hotelPerm = HOTEL_SIDEBAR_PERMISSIONS[item.href];
-    if (hotelPerm) {
-      return hasPermission(user, hotelPerm);
+    const canOpenSelf = hotelPerm
+      ? hasPermission(user, hotelPerm)
+      : isPathAccessible(item.href, user);
+    if (!canOpenSelf && !accessibleChildren?.length) return [];
+    const nextItem = { ...nestedItem } as T & { subItems?: T[] };
+    if (accessibleChildren) nextItem.subItems = accessibleChildren;
+    if (!canOpenSelf && accessibleChildren?.length) {
+      nextItem.href = accessibleChildren[0].href;
     }
-    return isPathAccessible(item.href, user);
+    return [nextItem as T];
   });
 }
 
@@ -867,23 +1328,22 @@ export function getHomeRouteForUser(
   if (!user) return "/";
 
   const roles = normalizeRolesForUser(user);
-  if (roles.length > 0) {
-    const home = getHomeRouteForRoles(roles);
-    // Restaurant owners must never land on the staff "waiting for role" screen.
-    if (home === "/welcome" && user.restaurant_id) {
-      return "/dashboard";
-    }
-    return home;
+  if (Array.isArray(user.permissions)) {
+    const preferred = hasAnyRole(roles, ["admin", "manager", "cashier"])
+      ? ["/dashboard", "/orders/active", "/orders/new", "/kitchen"]
+      : hasAnyRole(roles, ["waiter"])
+      ? ["/orders/active", "/orders/new", "/kitchen"]
+      : hasAnyRole(roles, ["kitchen", "bar", "cafe", "barista"])
+        ? ["/kitchen", "/orders/active", "/orders/new"]
+        : roles.length ? ["/dashboard"] : ["/orders/active", "/orders/new"];
+    const candidates = [
+      ...preferred, "/dashboard", "/orders/active", "/orders/new", "/kitchen",
+      "/hotel", "/finance", "/finance/operations", "/finance/reports", "/finance/accounting",
+      "/manage", "/workforce", "/staff", "/attendance", "/analytics",
+      "/customers", "/tables", "/reservations", "/inventory", "/menu/items",
+    ];
+    return candidates.find((route) => isRouteAllowed(route, user)) ?? "/manage/profile";
   }
-
-  // Custom-role user with no recognized legacy role — use permissions to decide
-  const perms = user.permissions || [];
-  if (perms.includes("dashboard.view")) return "/dashboard";
-  if (perms.includes("pos.view")) return "/orders/active";
-  if (perms.includes("station.kitchen.view")) return "/kitchen";
-
-  // Owner who just finished onboarding may briefly lack normalized roles.
-  if (user.restaurant_id) return "/dashboard";
-
-  return "/dashboard"; // Sensible default for any authenticated custom-role user
+  const home = getHomeRouteForRoles(roles);
+  return home === "/welcome" && user.restaurant_id ? "/dashboard" : home === "/" ? "/manage/profile" : home;
 }

@@ -785,12 +785,12 @@ export function Sidebar() {
                       <User className="h-4 w-4 text-muted-foreground" /> My profile
                     </DropdownMenuItem>
 
-                    <DropdownMenuItem
+                    {isPathAccessible("/settings/business-profile", user) && (<DropdownMenuItem
                       onClick={() => router.push("/settings/business-profile")}
                       className="cursor-pointer gap-2.5 py-2 px-2.5 text-xs font-medium text-foreground/90 hover:text-foreground rounded-lg"
                     >
                       <Pencil className="h-4 w-4 text-muted-foreground" /> Business Profile
-                    </DropdownMenuItem>
+                    </DropdownMenuItem>)}
 
                     <DropdownMenuItem
                       onClick={() => router.push("/feedback")}
@@ -823,12 +823,12 @@ export function Sidebar() {
 
                     <DropdownMenuSeparator className="my-1 bg-border/50" />
 
-                    <DropdownMenuItem
+                    {isPathAccessible("/settings", user) && (<DropdownMenuItem
                       onClick={() => router.push("/settings")}
                       className="cursor-pointer gap-2.5 py-2 px-2.5 text-xs font-medium text-foreground/90 hover:text-foreground rounded-lg"
                     >
                       <Settings className="h-4 w-4 text-muted-foreground" /> Settings
-                    </DropdownMenuItem>
+                    </DropdownMenuItem>)}
                   </div>
 
                   <div className="pt-1.5 px-0.5 pb-0.5 border-t border-border/40 mt-1">

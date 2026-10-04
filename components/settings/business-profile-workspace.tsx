@@ -220,7 +220,7 @@ export function BusinessProfileWorkspace() {
 
   return (
     <AppPage width="workspace" className="pb-24 lg:pb-8">
-      <div className="lg:flex lg:items-start lg:gap-8">
+      <div className="2xl:flex 2xl:items-start 2xl:gap-8">
         <SettingsDesktopRail activeItemId="business_profile" />
         <main className="min-w-0 flex-1">
           <PageHeader

@@ -421,7 +421,7 @@ export function KOTTicketCard({
   delayed: boolean;
   isUpdating: boolean;
   primaryAction?: KitchenTicketPrimaryAction | null;
-  onReject: () => void;
+  onReject?: () => void;
   onOpenDetails: () => void;
 }) {
   const isTerminal = TERMINAL_STATUSES.has(
@@ -463,7 +463,7 @@ export function KOTTicketCard({
         <span className="mr-auto text-xs font-medium text-muted-foreground">
           {itemCount} {itemCount === 1 ? "item" : "items"}
         </span>
-        {!isTerminal ? (
+        {!isTerminal && onReject ? (
           <Button
             type="button"
             variant="ghost"

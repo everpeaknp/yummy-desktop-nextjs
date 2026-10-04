@@ -6,6 +6,7 @@ import { Edit, FolderTree, Plus, Trash2 } from "lucide-react";
 import apiClient from "@/lib/api-client";
 import { ItemCategoryApis, StationApis } from "@/lib/api/endpoints";
 import { useAuth } from "@/hooks/use-auth";
+import { hasPermission } from "@/lib/role-permissions";
 import { useToast } from "@/components/ui/use-toast";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -55,7 +56,11 @@ export default function CategoriesPage() {
     null,
   );
 
-  const restaurantId = useAuth((state) => state.user?.restaurant_id);
+  const user = useAuth((state) => state.user);
+  const restaurantId = user?.restaurant_id;
+  const canManageCategories = hasPermission(user, "menu.categories.manage");
+  const canViewStations = hasPermission(user, "inventory.stations.view")
+    || hasPermission(user, "inventory.stations.manage");
   const { toast } = useToast();
 
   const fetchCategories = useCallback(async () => {
@@ -65,17 +70,18 @@ export default function CategoriesPage() {
     }
 
     setLoading(true);
+    if (!canViewStations) setStationNames({});
     try {
       const [categoriesRes, stationsRes] = await Promise.all([
         apiClient.get(ItemCategoryApis.getItemCategories(restaurantId)),
-        apiClient.get(
+        canViewStations ? apiClient.get(
           StationApis.list({ restaurantId, isActive: true, limit: 200 }),
-        ),
+        ).catch(() => null) : Promise.resolve(null),
       ]);
       if (categoriesRes.data.status === "success") {
         setCategories(categoriesRes.data.data);
       }
-      if (stationsRes.data.status === "success") {
+      if (stationsRes?.data.status === "success") {
         const stations = stationsRes.data.data?.stations || [];
         setStationNames(
           Object.fromEntries(
@@ -96,13 +102,13 @@ export default function CategoriesPage() {
     } finally {
       setLoading(false);
     }
-  }, [restaurantId, toast]);
+  }, [restaurantId, toast, canViewStations]);
 
   useEffect(() => {
     fetchCategories();
   }, [fetchCategories]);
 
-  const handleCreate = async (data: { name: string; station_id: number }) => {
+  const handleCreate = async (data: { name: string; station_id?: number }) => {
     if (!restaurantId) return;
     try {
       await apiClient.post(
@@ -121,7 +127,7 @@ export default function CategoriesPage() {
     }
   };
 
-  const handleUpdate = async (data: { name: string; station_id: number }) => {
+  const handleUpdate = async (data: { name: string; station_id?: number }) => {
     if (!editingCategory) return;
     try {
       await apiClient.put(
@@ -180,11 +186,11 @@ export default function CategoriesPage() {
         className="hidden lg:flex"
         title="Categories"
         description="Organize menu items and their preparation station."
-        actions={
+        actions={canManageCategories ? (
           <Button onClick={openCreateDialog} className="h-11 rounded-xl">
             <Plus className="mr-1.5 h-4 w-4" /> Add category
           </Button>
-        }
+        ) : null}
       />
 
       <MobileRegisterToolbar
@@ -231,8 +237,8 @@ export default function CategoriesPage() {
               ? "Try another category or station name."
               : "Create a category to organize the menu and preparation routing."
           }
-          actionLabel={searchQuery ? undefined : "Add category"}
-          onAction={searchQuery ? undefined : openCreateDialog}
+          actionLabel={!searchQuery && canManageCategories ? "Add category" : undefined}
+          onAction={!searchQuery && canManageCategories ? openCreateDialog : undefined}
         />
       ) : (
         <DataList>
@@ -241,8 +247,8 @@ export default function CategoriesPage() {
               key={category.id}
               leading={<FolderTree className="h-4 w-4" />}
               title={category.name}
-              description={stationLabel(category, stationNames)}
-              trailing={
+              description={canViewStations ? stationLabel(category, stationNames) : undefined}
+              trailing={canManageCategories ? (
                 <div className="flex items-center gap-1">
                   <Button
                     variant="ghost"
@@ -269,7 +275,7 @@ export default function CategoriesPage() {
                     <Trash2 className="h-4 w-4" />
                   </Button>
                 </div>
-              }
+              ) : undefined}
             />
           ))}
         </DataList>
@@ -282,9 +288,9 @@ export default function CategoriesPage() {
         </p>
       </div>
 
-      <MobileCreateFab label="Add category" onClick={openCreateDialog} />
+      {canManageCategories ? <MobileCreateFab label="Add category" onClick={openCreateDialog} /> : null}
 
-      {restaurantId ? (
+      {canManageCategories && restaurantId ? (
         <CategoryDialog
           open={dialogOpen}
           onOpenChange={setDialogOpen}
@@ -294,7 +300,7 @@ export default function CategoriesPage() {
         />
       ) : null}
 
-      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+      {canManageCategories ? <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete category?</AlertDialogTitle>
@@ -316,7 +322,7 @@ export default function CategoriesPage() {
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
-      </AlertDialog>
+      </AlertDialog> : null}
     </AppPage>
   );
 }

@@ -58,6 +58,10 @@ type DashboardProps = {
   occupancy: DataRow[]
   dayCloseStatus?: DataRow
   canViewAnalytics: boolean
+  canManageMenuItems: boolean
+  canViewStaff: boolean
+  canViewDayClose: boolean
+  canExport: boolean
   onExport: () => void
 }
 
@@ -137,7 +141,7 @@ function statusDotTone(status: string) {
 export function FigmaExecutiveDashboard({
   userName, outletName, currency, dateControl, statusControl, chartRange, periodLabel, onChartRangeChange,
   canShowHourly, canShowWeekly, connectionMessage, metrics, financialSummary, trends, attention, quickActions, orderStatuses,
-  cashWatch, activeOrders, topItems, paymentMix, sourceMix, staff, occupancy, dayCloseStatus, canViewAnalytics, onExport,
+  cashWatch, activeOrders, topItems, paymentMix, sourceMix, staff, occupancy, dayCloseStatus, canViewAnalytics, canManageMenuItems, canViewStaff, canViewDayClose, canExport, onExport,
 }: DashboardProps) {
   const rawChartData = trends.map((row, index) => ({
     label: value(row, ["date", "label", "timestamp"], String(index + 1)),
@@ -216,12 +220,12 @@ export function FigmaExecutiveDashboard({
 
       {connectionMessage ? <div>{connectionMessage}</div> : null}
 
-      <section aria-label="Current shift" className="grid grid-cols-2 gap-3 xl:grid-cols-5">
+      <section aria-label="Current shift" className={`grid grid-cols-2 gap-3 ${canViewAnalytics ? "xl:grid-cols-5" : "xl:grid-cols-3"}`}>
         <Metric label="Active orders" value={metrics.activeOrders} detail="Current shift · In progress" tone="orange" />
         <Metric label="Kitchen tickets" value={metrics.kotPending} detail="Current shift · Waiting to be prepared" tone="blue" />
         <Metric label="Delayed tickets" value={metrics.delayedKots} detail={metrics.delayedKots ? "Current shift · Needs follow-up" : "Current shift · On schedule"} tone={metrics.delayedKots ? "rose" : "green"} />
-        <Metric label="Refunds" value={metrics.refunds} detail="Selected period" tone="slate" />
-        <Metric label="Sales" value={amount(metrics.netSales, currency)} detail="Selected period" tone="green" />
+        {canViewAnalytics ? <Metric label="Refunds" value={metrics.refunds} detail="Selected period" tone="slate" /> : null}
+        {canViewAnalytics ? <Metric label="Sales" value={amount(metrics.netSales, currency)} detail="Selected period" tone="green" /> : null}
       </section>
 
       <section aria-label="Promotions">
@@ -230,7 +234,7 @@ export function FigmaExecutiveDashboard({
 
       <section className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.8fr)_minmax(300px,0.9fr)]">
         <div className="min-w-0 space-y-4">
-<Panel className="p-5">
+{canViewAnalytics ? <Panel className="p-5">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div><h2 className="text-base font-semibold">{chartRange === "hourly" ? "Sales by hour" : "Sales trend"}</h2><p className="mt-1 text-xs text-muted-foreground">{periodLabel} · grouped by {chartRange === "hourly" ? "hour" : chartRange === "daily" ? "day" : "week"}</p>{chartRange === "daily" && chartData.length > 7 ? <span className="mt-1.5 inline-flex items-center gap-2 text-xs text-muted-foreground"><span aria-hidden="true" className="w-5 border-t-2 border-dashed border-muted-foreground" />7-day average</span> : null}</div>
             <div className="flex rounded-lg bg-muted p-1" aria-label="Sales chart granularity">
@@ -250,14 +254,14 @@ export function FigmaExecutiveDashboard({
               </AreaChart>
             </ResponsiveContainer> : <Empty>No sales activity for this period.</Empty>}
           </div>
-        </Panel>
-<Panel className="dashboard-muted-card min-w-0 overflow-hidden border-blue-100 bg-gradient-to-br from-white via-white to-blue-50/70 p-5 dark:border-blue-950 dark:from-card dark:to-blue-950/20">
+        </Panel> : null}
+{canViewAnalytics ? <Panel className="dashboard-muted-card min-w-0 overflow-hidden border-blue-100 bg-gradient-to-br from-white via-white to-blue-50/70 p-5 dark:border-blue-950 dark:from-card dark:to-blue-950/20">
   <div className="flex flex-wrap items-center justify-between gap-3">
     <div className="flex flex-wrap items-center gap-3">
       <h2 className="text-lg font-semibold">Financial Summary</h2>
       {dayCloseStatus?.status ? <span className="rounded-full border border-emerald-300 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300">Day close: {formatStatus(String(dayCloseStatus.status))}</span> : null}
     </div>
-    <Link href="/day-close" className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline">View Shift Logs <ArrowRight className="h-4 w-4" /></Link>
+    {canViewDayClose ? <Link href="/day-close" className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline">View Shift Logs <ArrowRight className="h-4 w-4" /></Link> : null}
   </div>
   <p className="mt-1.5 text-sm text-muted-foreground">Your sales and payment mix for the selected period</p>
   <div className="mt-4 grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
@@ -293,8 +297,8 @@ export function FigmaExecutiveDashboard({
       </div> : <Empty>Payment breakdown is unavailable for this period.</Empty>}
     </div>
   </div>
-</Panel>
-<Panel className="dashboard-muted-card border-emerald-100 bg-gradient-to-br from-white via-white to-emerald-50/60 p-5 dark:border-emerald-950 dark:from-card dark:to-emerald-950/20"><div className="mb-4 flex flex-wrap items-center justify-between gap-3"><div className="flex items-center gap-2"><span className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100 text-emerald-600 dark:bg-muted dark:text-muted-foreground"><Star className="h-4 w-4 fill-current"/></span><div><h2 className="text-base font-semibold">Top performing items</h2><p className="text-xs text-muted-foreground">Best sellers with photos from your menu</p></div></div><div className="flex flex-wrap gap-2">{canViewAnalytics ? <Link href="/analytics" className="inline-flex h-9 items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 text-sm font-semibold text-emerald-800 transition-colors hover:bg-emerald-100 dark:border-border dark:bg-muted dark:text-muted-foreground"><BarChart3 className="h-4 w-4"/>View analytics</Link> : null}<Link href="/menu/items" className="inline-flex h-9 items-center gap-2 rounded-lg border border-emerald-200 bg-white px-3 text-sm font-semibold text-emerald-700 transition-colors hover:bg-emerald-50 dark:border-border dark:bg-muted dark:text-muted-foreground dark:hover:bg-slate-700"><Plus className="h-4 w-4"/>Manage menu items</Link></div></div>{topItems.length ? <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 2xl:grid-cols-6">{topItems.slice(0, 6).map((item,index)=>{const image = value(item,["image"]);const imageSrc = menuImageUrl(image);const name = value(item,["name","label"],"Menu item");return <div key={`${value(item,["id","item_id","name","label"])}-${index}`} className="group min-w-0 rounded-xl border border-emerald-100 bg-white/90 p-2 text-center transition-shadow hover:shadow-md dark:border-border dark:bg-card"><div className="relative mb-2 h-16 overflow-hidden rounded-lg border border-orange-100/80 bg-orange-50 sm:h-20 dark:border-border dark:bg-muted"><Image src={imageSrc} alt={name} title={name} fill unoptimized sizes="(max-width: 1279px) 12vw, 180px" className="object-contain p-1 transition-transform duration-300 group-hover:scale-105 dark:brightness-90"/></div><p title={name} className="line-clamp-3 min-h-12 whitespace-normal break-words text-xs font-medium leading-4">{name}</p><p className="truncate text-[11px] leading-4 text-muted-foreground">{value(item,["qty","quantity_sold","quantity","orders"],"0")} sold</p><p className="mt-0.5 truncate text-xs font-semibold text-emerald-700 tabular-nums dark:text-emerald-400">{amount(item.revenue ?? item.value, currency)}</p></div>})}</div> : <Empty>No top-selling menu items with photos for this period.</Empty>}</Panel>
+</Panel> : null}
+{canViewAnalytics ? <Panel className="dashboard-muted-card border-emerald-100 bg-gradient-to-br from-white via-white to-emerald-50/60 p-5 dark:border-emerald-950 dark:from-card dark:to-emerald-950/20"><div className="mb-4 flex flex-wrap items-center justify-between gap-3"><div className="flex items-center gap-2"><span className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100 text-emerald-600 dark:bg-muted dark:text-muted-foreground"><Star className="h-4 w-4 fill-current"/></span><div><h2 className="text-base font-semibold">Top performing items</h2><p className="text-xs text-muted-foreground">Best sellers with photos from your menu</p></div></div><div className="flex flex-wrap gap-2">{canViewAnalytics ? <Link href="/analytics" className="inline-flex h-9 items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 text-sm font-semibold text-emerald-800 transition-colors hover:bg-emerald-100 dark:border-border dark:bg-muted dark:text-muted-foreground"><BarChart3 className="h-4 w-4"/>View analytics</Link> : null}{canManageMenuItems ? <Link href="/menu/items" className="inline-flex h-9 items-center gap-2 rounded-lg border border-emerald-200 bg-white px-3 text-sm font-semibold text-emerald-700 transition-colors hover:bg-emerald-50 dark:border-border dark:bg-muted dark:text-muted-foreground dark:hover:bg-slate-700"><Plus className="h-4 w-4"/>Manage menu items</Link> : null}</div></div>{topItems.length ? <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 2xl:grid-cols-6">{topItems.slice(0, 6).map((item,index)=>{const image = value(item,["image"]);const imageSrc = menuImageUrl(image);const name = value(item,["name","label"],"Menu item");return <div key={`${value(item,["id","item_id","name","label"])}-${index}`} className="group min-w-0 rounded-xl border border-emerald-100 bg-white/90 p-2 text-center transition-shadow hover:shadow-md dark:border-border dark:bg-card"><div className="relative mb-2 h-16 overflow-hidden rounded-lg border border-orange-100/80 bg-orange-50 sm:h-20 dark:border-border dark:bg-muted"><Image src={imageSrc} alt={name} title={name} fill unoptimized sizes="(max-width: 1279px) 12vw, 180px" className="object-contain p-1 transition-transform duration-300 group-hover:scale-105 dark:brightness-90"/></div><p title={name} className="line-clamp-3 min-h-12 whitespace-normal break-words text-xs font-medium leading-4">{name}</p><p className="truncate text-[11px] leading-4 text-muted-foreground">{value(item,["qty","quantity_sold","quantity","orders"],"0")} sold</p><p className="mt-0.5 truncate text-xs font-semibold text-emerald-700 tabular-nums dark:text-emerald-400">{amount(item.revenue ?? item.value, currency)}</p></div>})}</div> : <Empty>No top-selling menu items with photos for this period.</Empty>}</Panel> : null}
         </div>
         <div className="min-w-0 space-y-4">
 <Panel className="p-5">
@@ -328,12 +332,12 @@ export function FigmaExecutiveDashboard({
           {attention.length > 3 ? <button type="button" onClick={() => setShowAllAlerts((shown) => !shown)} className="mt-3 inline-flex min-h-9 items-center gap-1 rounded-lg border border-border px-3 text-sm font-medium text-primary transition-colors hover:bg-muted">{showAllAlerts ? "Show less" : `View more (${attention.length - 3})`}<ArrowRight className="h-4 w-4" /></button> : null}
           {hasAction("/orders/active") ? <Link href="/orders/active" className="mt-4 inline-flex items-center gap-1 text-sm font-medium text-primary">Review active orders <ArrowRight className="h-4 w-4" /></Link> : null}
         </Panel>
-<Panel className="p-5"><div className="mb-4 flex items-center justify-between gap-2"><div className="flex items-center gap-2"><Users className="h-4 w-4 text-primary"/><h2 className="text-base font-semibold">Floor staff on duty</h2></div><span className="text-xs text-muted-foreground">{staff.length} active</span></div>{staff.length ? <div className="space-y-1.5">{(showAllStaff ? staff : staff.slice(0, 4)).map((member,index)=><div key={value(member,["id","user_id"],String(index))} className="flex items-center justify-between gap-3 rounded-lg border border-border/90 px-3 py-2"><span className="min-w-0"><span className="block truncate text-sm font-medium">{value(member,["user_name","name"],"Team member")}</span><span className="block truncate text-xs capitalize text-muted-foreground">{value(member,["role","primary_role"],"Staff")}</span></span><span className="text-xs text-muted-foreground">{value(member,["active_orders","assigned_orders"],"On duty")}</span></div>)}</div> : <Empty>No staff profiles available.</Empty>}{staff.length > 4 ? <button type="button" onClick={() => setShowAllStaff((shown) => !shown)} className="mt-2 inline-flex min-h-8 items-center gap-1 text-sm font-medium text-primary hover:underline">{showAllStaff ? "Show less" : `View ${staff.length - 4} more`}<ArrowRight className="h-4 w-4" /></button> : null}{occupancy.length ? <p className="mt-3 border-t border-border pt-3 text-xs text-muted-foreground">Table occupancy data is available in the tables workspace.</p> : null}</Panel>
+{canViewStaff ? <Panel className="p-5"><div className="mb-4 flex items-center justify-between gap-2"><div className="flex items-center gap-2"><Users className="h-4 w-4 text-primary"/><h2 className="text-base font-semibold">Floor staff on duty</h2></div><span className="text-xs text-muted-foreground">{staff.length} active</span></div>{staff.length ? <div className="space-y-1.5">{(showAllStaff ? staff : staff.slice(0, 4)).map((member,index)=><div key={value(member,["id","user_id"],String(index))} className="flex items-center justify-between gap-3 rounded-lg border border-border/90 px-3 py-2"><span className="min-w-0"><span className="block truncate text-sm font-medium">{value(member,["user_name","name"],"Team member")}</span><span className="block truncate text-xs capitalize text-muted-foreground">{value(member,["role","primary_role"],"Staff")}</span></span><span className="text-xs text-muted-foreground">{value(member,["active_orders","assigned_orders"],"On duty")}</span></div>)}</div> : <Empty>No staff profiles available.</Empty>}{staff.length > 4 ? <button type="button" onClick={() => setShowAllStaff((shown) => !shown)} className="mt-2 inline-flex min-h-8 items-center gap-1 text-sm font-medium text-primary hover:underline">{showAllStaff ? "Show less" : `View ${staff.length - 4} more`}<ArrowRight className="h-4 w-4" /></button> : null}{occupancy.length ? <p className="mt-3 border-t border-border pt-3 text-xs text-muted-foreground">Table occupancy data is available in the tables workspace.</p> : null}</Panel> : null}
 
         </div>
       </section>
       <section className="grid items-stretch gap-5 xl:grid-cols-[minmax(0,0.75fr)_minmax(0,1.25fr)]">
-        <Panel className="dashboard-muted-card flex h-full min-w-0 flex-col border-violet-100 bg-gradient-to-br from-white via-white to-violet-50/60 p-5 dark:border-violet-950 dark:from-card dark:to-violet-950/20">
+        {canViewAnalytics ? <Panel className="dashboard-muted-card flex h-full min-w-0 flex-col border-violet-100 bg-gradient-to-br from-white via-white to-violet-50/60 p-5 dark:border-violet-950 dark:from-card dark:to-violet-950/20">
   <div className="mb-4 flex items-start justify-between gap-3">
     <div><h2 className="text-base font-semibold">Revenue by Source</h2><p className="mt-1 text-xs text-muted-foreground">Sales split by dine-in, takeaway &amp; delivery for the selected period</p></div>
     {financialSummary.averageOrderValue != null ? <span className="shrink-0 text-xs text-muted-foreground">Avg Ticket: {amount(financialSummary.averageOrderValue, currency)}</span> : null}
@@ -364,7 +368,7 @@ export function FigmaExecutiveDashboard({
     {hasAction("/orders/new") ? <Link href="/orders/new" className="mt-4 inline-flex min-h-10 items-center gap-2 rounded-lg bg-orange-500 px-4 text-sm font-semibold text-white transition-colors hover:bg-orange-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 focus-visible:ring-offset-2 dark:bg-orange-400 dark:text-slate-950 dark:hover:bg-orange-300"><Plus className="h-4 w-4" />New order<ArrowRight className="h-4 w-4" /></Link> : null}
   </div>}
   {hasSourceRevenue && highlightItem ? <div className="mt-auto flex items-center justify-between gap-3 border-t border-violet-100 pt-3 text-xs dark:border-violet-950"><span className="min-w-0 truncate text-muted-foreground">Most popular: <strong className="font-medium text-foreground">{value(highlightItem, ["name", "label"], "Menu item")}</strong></span><span className="shrink-0 font-medium">{value(highlightItem, ["qty", "quantity_sold", "quantity", "orders"], "0")} sold</span></div> : null}
-</Panel>
+</Panel> : null}
         <div className="min-w-0 space-y-4">
                 {actions.length ? <Panel className="p-4 sm:p-5">
                   <div className="mb-3 flex items-center justify-between">
@@ -387,7 +391,7 @@ export function FigmaExecutiveDashboard({
                 </Panel> : null}
 
 
-      <Panel className="dashboard-muted-card relative overflow-hidden border-orange-200/80 bg-gradient-to-r from-[#fff8ef] via-[#fff5e8] to-[#ffecd8] p-0 dark:border-orange-950 dark:from-orange-950/30 dark:via-card dark:to-amber-950/20">
+      {canViewAnalytics ? <Panel className="dashboard-muted-card relative overflow-hidden border-orange-200/80 bg-gradient-to-r from-[#fff8ef] via-[#fff5e8] to-[#ffecd8] p-0 dark:border-orange-950 dark:from-orange-950/30 dark:via-card dark:to-amber-950/20">
         <div aria-hidden="true" className="pointer-events-none absolute -bottom-10 right-12 h-24 w-40 rounded-full bg-orange-200/40 dark:bg-slate-800/40" />
         {highlightItem ? <div className="relative flex min-h-[142px] items-center justify-between gap-2 px-5 py-4 sm:min-h-[158px] sm:px-7">
           <div className="relative z-10 min-w-0 flex-1">
@@ -411,14 +415,14 @@ export function FigmaExecutiveDashboard({
             <Heart aria-hidden="true" className="absolute bottom-0 left-1 z-20 h-5 w-5 -rotate-12 text-rose-500 dark:text-muted-foreground" />
           </div> : null}
         </div> : <div className="relative p-5"><span className="text-xs font-semibold uppercase tracking-wide text-orange-700 dark:text-orange-300">Selected-period highlight</span><p className="mt-2 text-sm text-muted-foreground">Item highlights appear when sales data is available.</p></div>}
-      </Panel>
+      </Panel> : null}
         </div>
       </section>
       <section className="grid items-stretch gap-4 xl:grid-cols-2">
-        <Panel className="dashboard-muted-card flex h-full flex-col border-blue-100 bg-gradient-to-br from-white to-blue-50/70 p-5 dark:border-blue-950 dark:from-card dark:to-blue-950/20">
+        {canViewAnalytics ? <Panel className="dashboard-muted-card flex h-full flex-col border-blue-100 bg-gradient-to-br from-white to-blue-50/70 p-5 dark:border-blue-950 dark:from-card dark:to-blue-950/20">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3"><div className="flex items-center gap-2"><Wallet className="h-4 w-4 text-blue-600 dark:text-muted-foreground"/><h2 className="text-base font-semibold">Shift snapshot</h2></div><div className="flex flex-wrap gap-x-4 gap-y-2">{hasAction("/kitchen") ? <Link href="/kitchen" className="inline-flex min-h-8 items-center gap-1.5 text-sm font-medium text-primary hover:underline"><ChefHat className="h-4 w-4"/>Kitchen tickets<ArrowRight className="h-3.5 w-3.5"/></Link> : null}{hasAction("/day-close") ? <Link href="/day-close" className="inline-flex min-h-8 items-center gap-1.5 text-sm font-medium text-primary hover:underline"><Clock3 className="h-4 w-4"/>Day close<ArrowRight className="h-3.5 w-3.5"/></Link> : null}</div></div>
           {hasShiftCollections ? <div className="grid grid-cols-3 gap-2">{payments.map((item) => <div key={item.label} className="min-w-0 rounded-lg border border-slate-200 bg-white/80 px-3 py-2.5 dark:border-border dark:bg-muted/50"><span className="block truncate text-xs text-muted-foreground">{item.label}</span><span className="mt-1 block truncate text-base font-semibold tabular-nums">{amount(item.value, currency)}</span></div>)}</div> : payments.length ? <div className="flex min-h-20 items-center gap-3 rounded-xl border border-dashed border-slate-300 bg-white/50 px-4 dark:border-border dark:bg-background/40"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-700 dark:bg-muted dark:text-muted-foreground"><Wallet className="h-4 w-4"/></span><span><span className="block text-sm font-medium">No collections recorded this shift yet</span><span className="block text-xs text-muted-foreground">Payment totals will appear when sales are recorded.</span></span></div> : <p className="text-sm text-muted-foreground">Collection data is unavailable for this shift.</p>}
-        </Panel>
+        </Panel> : null}
         <Panel className="h-full p-5">
           <div className="mb-4 flex items-center justify-between gap-3"><div className="flex items-center gap-2"><ClipboardList className="h-4 w-4 text-primary" /><h2 className="text-base font-semibold">Current order pipeline</h2></div><span className="text-xs text-muted-foreground">{pipelineOrdersTotal} orders</span></div>
           {pipelineOrdersTotal > 0 && orderedStatuses.length ? <div className="space-y-4">{orderedStatuses.map((row, index) => { const status = value(row, ["status", "name"], "Orders"); const color = status.toLowerCase().includes("complete") ? "#10b981" : status.toLowerCase().includes("ready") ? "#14b8a6" : status.toLowerCase().includes("prep") ? "#3b82f6" : status.toLowerCase().includes("request") ? "#f59e0b" : "var(--dashboard-chart-orange)"; return <div key={`${status}-${index}`}><div className="mb-1.5 flex items-center justify-between gap-3 text-sm"><span className="truncate capitalize">{status.replaceAll("_", " ").toLowerCase()}</span><span className="font-medium tabular-nums">{Number(row.count || 0)}</span></div><div className="h-1.5 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full" style={{ backgroundColor: color, width: `${Math.min(100, Number(row.count || 0) / pipelineOrdersTotal * 100)}%` }} /></div></div>})}</div> : <div className="flex items-center gap-3 rounded-xl border border-dashed border-border bg-muted/30 px-3 py-2.5"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-card text-muted-foreground"><ClipboardList className="h-4 w-4" /></span><span className="min-w-0 flex-1"><span className="block text-sm font-medium">No orders in the pipeline</span><span className="block text-xs text-muted-foreground">New orders will appear here as they are placed.</span></span>{hasAction("/orders/new") ? <Link href="/orders/new" className="inline-flex min-h-8 shrink-0 items-center gap-1 rounded-lg bg-primary px-3 text-xs font-semibold text-primary-foreground"><Plus className="h-3.5 w-3.5" />New order</Link> : null}</div>}
@@ -464,7 +468,7 @@ export function FigmaExecutiveDashboard({
       </Panel>
       <footer className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border/90 bg-card px-4 py-3">
         {canViewAnalytics ? <Link href="/analytics" className="inline-flex items-center gap-2 text-sm font-medium text-primary"><BarChart3 className="h-4 w-4" /> Open detailed analytics <ArrowRight className="h-4 w-4" /></Link> : <span />}
-        <button type="button" onClick={onExport} className="inline-flex h-9 items-center gap-2 rounded-lg border border-border px-3 text-sm font-medium hover:bg-muted"><DollarSign className="h-4 w-4" /> Export summary</button>
+        {canExport && canViewAnalytics ? <button type="button" onClick={onExport} className="inline-flex h-9 items-center gap-2 rounded-lg border border-border px-3 text-sm font-medium hover:bg-muted"><DollarSign className="h-4 w-4" /> Export summary</button> : null}
       </footer>
     </main>
   </div>

@@ -63,7 +63,7 @@ export function WorkforceMetricStrip({
   return (
     <dl
       className={cn(
-        "grid overflow-hidden rounded-xl border bg-card grid-cols-2 lg:grid-cols-4",
+        "grid min-w-0 grid-cols-2 overflow-hidden rounded-xl border bg-card 2xl:grid-cols-4",
         className,
       )}
     >
@@ -73,7 +73,7 @@ export function WorkforceMetricStrip({
           <div
             key={item.label}
             className={cn(
-              "min-w-0 border-b p-3 last:border-b-0 even:border-l lg:border-b-0 lg:border-l lg:first:border-l-0",
+              "min-w-0 border-b p-3 last:border-b-0 even:border-l 2xl:border-b-0 2xl:border-l 2xl:first:border-l-0",
               item.className,
             )}
           >

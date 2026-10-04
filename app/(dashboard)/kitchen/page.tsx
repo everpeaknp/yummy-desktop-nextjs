@@ -2,6 +2,8 @@
 
 import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { useAuth } from "@/hooks/use-auth";
+import { hasPermission } from "@/lib/role-permissions";
+import { kitchenStationOptions } from "@/lib/kitchen-station-access";
 import { useCustomFinanceStations } from "@/hooks/use-custom-finance-stations";
 import { useRouter } from "next/navigation";
 import apiClient from "@/lib/api-client";
@@ -113,7 +115,6 @@ const ALL_STATUSES: KotStatus[] = [
   "SERVED",
   "REJECTED",
 ];
-const FIXED_STATIONS = ["All", "Kitchen", "Bar", "Cafe"];
 
 // ── Helpers ────────────────────────────────────────────────────────────
 function nextStatus(s: string): KotStatus | null {
@@ -270,15 +271,14 @@ export default function KitchenPage() {
   }>({});
   useElapsedTick();
 
+  const canOperateTickets = hasPermission(user, "pos.view");
   const restaurantId = user?.restaurant_id;
-  const customStations = useCustomFinanceStations(restaurantId);
-  const STATIONS = useMemo(() => {
-    const fixedLower = new Set(FIXED_STATIONS.map((s) => s.toLowerCase()));
-    const extra = customStations
-      .map((s) => s.name.trim())
-      .filter((name) => name && !fixedLower.has(name.toLowerCase()));
-    return [...FIXED_STATIONS, ...Array.from(new Set(extra))];
-  }, [customStations]);
+  const canListStations = hasPermission(user, "inventory.stations.view") || hasPermission(user, "inventory.stations.manage");
+  const customStations = useCustomFinanceStations(canListStations ? restaurantId : null);
+  const STATIONS = useMemo(() => kitchenStationOptions(user, customStations.map((s) => s.name.trim())), [user, customStations]);
+  useEffect(() => {
+    if (!STATIONS.includes(stationTab)) setStationTab(STATIONS[0] || "All");
+  }, [STATIONS, stationTab]);
 
   // ── Auth guard ─────────────────────────────────────────────────────
   useEffect(() => {
@@ -331,15 +331,15 @@ export default function KitchenPage() {
 
   // Trigger fetch when date changes
   useEffect(() => {
-    if (restaurantId) {
+    if (restaurantId && canOperateTickets) {
       setLoading(true);
       doFetch(restaurantId);
     }
-  }, [restaurantId, selectedDate, doFetch]);
+  }, [restaurantId, selectedDate, doFetch, canOperateTickets]);
 
   // Initial fetch + polling + WebSocket — single effect, clean lifecycle
   useEffect(() => {
-    if (!restaurantId) return;
+    if (!restaurantId || !canOperateTickets) return;
     let alive = true;
 
     // ── WebSocket ──────────────────────────────────────────────────
@@ -441,7 +441,7 @@ export default function KitchenPage() {
       if (timersRef.current.poll) clearInterval(timersRef.current.poll);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [restaurantId, doFetch]); // Dependency on doFetch correct? Yes, because doFetch changes when date changes.
+  }, [canOperateTickets, restaurantId, doFetch]); // Dependency on doFetch correct? Yes, because doFetch changes when date changes.
 
   // ── Auto-dismiss messages ────────────────────────────────────────────
   useEffect(() => {
@@ -656,6 +656,10 @@ export default function KitchenPage() {
   // ════════════════════════════════════════════════════════════════════
   // RENDER
   // ════════════════════════════════════════════════════════════════════
+  if (user && !canOperateTickets) {
+    return <div className="p-4 sm:p-6"><h1 className="text-xl font-semibold">Kitchen</h1><p className="mt-4 text-sm text-muted-foreground">Kitchen ticket access also requires POS view permission. Ask an administrator to update your access.</p></div>;
+  }
+
   return (
     <div className="mx-auto flex h-[calc(100vh-4rem)] w-full min-w-0 max-w-[1800px] flex-col overflow-x-clip bg-background">
       {/* Toast */}
@@ -881,7 +885,7 @@ export default function KitchenPage() {
                     )}
                     delayed={isDelayed(kot)}
                     primaryAction={
-                      nextStatus(kot.status)
+                      canOperateTickets && nextStatus(kot.status)
                         ? {
                             label: actionLabel(
                               kot.status,
@@ -896,7 +900,7 @@ export default function KitchenPage() {
                           }
                         : null
                     }
-                    onReject={() => openRejectKot(kot.id)}
+                    onReject={canOperateTickets ? () => openRejectKot(kot.id) : undefined}
                     onOpenDetails={() => {
                       setActiveKot(kot);
                       setDetailOpen(true);
@@ -949,7 +953,7 @@ export default function KitchenPage() {
                     activeKot.status,
                   ) || "Recorded ticket"}
                 </p>
-                {nextStatus(activeKot.status) ? (
+                {canOperateTickets && nextStatus(activeKot.status) ? (
                   <div className="mt-4 flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
                     <Button
                       type="button"
@@ -1030,7 +1034,7 @@ export default function KitchenPage() {
                             const isServed =
                               ordered > 0 && item.qty_served >= ordered;
                             const canInteract =
-                              activeKot.status !== "SERVED" &&
+                              canOperateTickets && activeKot.status !== "SERVED" &&
                               activeKot.status !== "REJECTED" &&
                               item.qty_change > 0 &&
                               !item.is_deleted;

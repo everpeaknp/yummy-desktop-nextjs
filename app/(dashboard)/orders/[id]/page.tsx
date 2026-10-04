@@ -12,6 +12,7 @@ import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
 import apiClient from "@/lib/api-client";
 import { useAuth } from "@/hooks/use-auth";
+import { hasPermission } from "@/lib/role-permissions";
 import { useOrderFull } from "@/hooks/use-order-full";
 import {
   OrderApis,
@@ -314,7 +315,15 @@ export default function OrderDetailPage() {
   >({});
   const [kotUpdatingIds, setKotUpdatingIds] = useState<Set<number>>(new Set());
 
-  const { canVoidOrder, canTransferOrder, canMarkNc } =
+  const {
+    canVoidOrder,
+    canTransferOrder,
+    canMarkNc,
+    canEditOrder,
+    canViewBilling,
+    canProcessPayment,
+    canViewReceipt,
+  } =
     usePosBillingPermissions();
   const sourceOrder = context?.order;
   const displayOrder = sourceOrder
@@ -855,7 +864,7 @@ export default function OrderDetailPage() {
             </Button>
           )}
 
-          {isEditable && (
+          {isEditable && canEditOrder && (
             <Link href={`/orders/${orderId}/add-items`} className="shrink-0">
               <Button
                 variant="outline"
@@ -869,7 +878,7 @@ export default function OrderDetailPage() {
             </Link>
           )}
 
-          {String(order.status).toLowerCase() === "requested" ? (
+          {String(order.status).toLowerCase() === "requested" && canEditOrder ? (
             <Button
               size="sm"
               className="h-10 min-w-0 flex-1 gap-2 rounded-xl bg-indigo-600 px-3 font-semibold text-white shadow-sm hover:bg-indigo-700 sm:flex-none"
@@ -883,7 +892,7 @@ export default function OrderDetailPage() {
               )}
               Verify
             </Button>
-          ) : !isRoomServiceOrder && isEditable && isFullyPaid ? (
+          ) : !isRoomServiceOrder && isEditable && isFullyPaid && canEditOrder ? (
             <Button
               size="sm"
               className="h-10 min-w-0 flex-1 gap-2 rounded-xl bg-emerald-600 px-3 font-semibold text-white shadow-sm hover:bg-emerald-700 sm:flex-none"
@@ -897,7 +906,7 @@ export default function OrderDetailPage() {
               )}
               Complete
             </Button>
-          ) : (
+          ) : canViewBilling || canProcessPayment || (isRoomServiceOrder && hasPermission(user, "hotel.checkout")) ? (
             <Link
               href={`/orders/${orderId}/checkout`}
               className="min-w-0 flex-1 sm:flex-none"
@@ -916,7 +925,7 @@ export default function OrderDetailPage() {
                 </span>
               </Button>
             </Link>
-          )}
+          ) : null}
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -930,14 +939,14 @@ export default function OrderDetailPage() {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-48">
-              <DropdownMenuItem asChild>
+              {canViewReceipt && <DropdownMenuItem asChild>
                 <Link
                   href={`/orders/${orderId}/receipt`}
                   className="flex cursor-pointer items-center gap-2"
                 >
                   <Eye className="h-4 w-4" /> View receipt
                 </Link>
-              </DropdownMenuItem>
+              </DropdownMenuItem>}
               <DropdownMenuItem onSelect={handleRefresh} className="gap-2">
                 <RefreshCw className="h-4 w-4" /> Refresh order
               </DropdownMenuItem>

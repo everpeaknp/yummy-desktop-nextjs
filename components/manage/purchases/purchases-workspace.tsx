@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useAuth } from "@/hooks/use-auth";
+import { hasPermission } from "@/lib/role-permissions";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import {
   Plus,
@@ -104,6 +105,7 @@ export function PurchasesWorkspace({
   returnedOnly?: boolean;
 } = {}) {
   const user = useAuth((state) => state.user);
+  const canManageGeneralPurchases = hasPermission(user, "inventory.stock.manage");
   const restaurant = useRestaurant((s) => s.restaurant);
   const [purchases, setPurchases] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -148,6 +150,7 @@ export function PurchasesWorkspace({
   ]);
 
   const startPurchase = () => {
+    if (!canManageGeneralPurchases) return;
     if (dualBusinessLines && businessLine === "all") {
       toast.info("Choose Restaurant or Hotel before recording a purchase.");
       return;
@@ -185,6 +188,7 @@ export function PurchasesWorkspace({
     id: number,
     action: "receive" | "cancel" | "delete",
   ) => {
+    if (!canManageGeneralPurchases) return;
     if (!confirm(`Are you sure you want to ${action} this purchase?`)) return;
 
     try {
@@ -207,12 +211,14 @@ export function PurchasesWorkspace({
   };
 
   const openReturn = (purchase: any) => {
+    if (!canManageGeneralPurchases) return;
     setReturningPurchase(purchase);
     setReturnReason("");
     setReturnAmount(String(Number(purchase.total_cost || 0).toFixed(2)));
   };
 
   const handleReturn = async () => {
+    if (!canManageGeneralPurchases) return;
     const parsedReturnAmount = Number(returnAmount || 0);
     if (
       !returningPurchase?.id ||
@@ -428,7 +434,7 @@ export function PurchasesWorkspace({
         }
         actions={
           <>
-            {!returnedOnly ? (
+            {!returnedOnly && canManageGeneralPurchases ? (
               <Button className="h-11 rounded-xl" onClick={startPurchase}>
                 <Plus className="w-4 h-4 mr-2" />
                 Record Purchase
@@ -444,11 +450,11 @@ export function PurchasesWorkspace({
             { label: "Purchases", href: "/finance/purchases" },
             { label: "Purchase returns", href: "/finance/purchases/returns" },
           ]}
-          action={
+          action={canManageGeneralPurchases ? (
             returnedOnly
               ? { label: "Record purchase", href: "/finance/purchases" }
               : { label: "Open suppliers", href: "/suppliers" }
-          }
+          ) : undefined}
         />
       ) : null}
 
@@ -620,7 +626,7 @@ export function PurchasesWorkspace({
                         onClick={(event) => event.stopPropagation()}
                         onKeyDown={(event) => event.stopPropagation()}
                       >
-                        <DropdownMenu>
+                        {canManageGeneralPurchases ? <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <Button
                               variant="ghost"
@@ -692,7 +698,7 @@ export function PurchasesWorkspace({
                               </DropdownMenuItem>
                             )}
                           </DropdownMenuContent>
-                        </DropdownMenu>
+                        </DropdownMenu> : null}
                       </div>
                     </TableCell>
                   </TableRow>
@@ -703,13 +709,13 @@ export function PurchasesWorkspace({
         </>
       )}
 
-      <PurchaseDialog
+      {canManageGeneralPurchases ? <PurchaseDialog
         open={isDialogOpen}
         onOpenChange={setIsDialogOpen}
         purchase={selectedPurchase}
         businessLine={createBusinessLine}
         onSuccess={fetchPurchases}
-      />
+      /> : null}
       <TransactionDetailSheet
         open={detailPurchase != null}
         onOpenChange={(open) => !open && setDetailPurchase(null)}
@@ -721,7 +727,7 @@ export function PurchasesWorkspace({
         }
         actionLabel="Open supplier"
       />
-      <Dialog
+      {canManageGeneralPurchases ? <Dialog
         open={Boolean(returningPurchase)}
         onOpenChange={(open) => {
           if (!open && !returning) setReturningPurchase(null);
@@ -775,7 +781,7 @@ export function PurchasesWorkspace({
             </Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog>
+      </Dialog> : null}
     </AppPage>
   );
 }

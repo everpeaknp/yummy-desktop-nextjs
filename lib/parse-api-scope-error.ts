@@ -96,7 +96,7 @@ export function parseApiScopeError(
     (typeof axiosErr.response?.data?.message === "string"
       ? axiosErr.response.data.message
       : null) ||
-    "You do not have permission to view data for this date range.";
+    "You do not have permission to view this data.";
 
   if (code === "PLAN_DATE_SCOPE_EXCEEDED" || code === "PLAN_LIMIT_REACHED") {
     return {
@@ -133,25 +133,13 @@ export function parseApiScopeError(
     };
   }
 
-  const role = (context?.role || "").toLowerCase();
-  if (
-    role === "manager" ||
-    /not allowed to access this permission/i.test(text) ||
-    /30 day/i.test(text)
-  ) {
+  // A role label or a generic 403 does not establish a temporal restriction.
+  // Only an explicit date-window response can justify a date-range recovery action.
+  if (/30 day/i.test(text) && /restrict|only|last|limit|past/i.test(text)) {
     return {
       kind: "role_manager_limit",
-      message: "Managers are restricted to viewing the last 30 days of data.",
+      message: text,
       maxDays: 30,
-      code,
-    };
-  }
-
-  if (role === "cashier" || role === "waiter") {
-    return {
-      kind: "role_cashier_limit",
-      message: "Your role is restricted to viewing today's orders only.",
-      maxDays: 1,
       code,
     };
   }

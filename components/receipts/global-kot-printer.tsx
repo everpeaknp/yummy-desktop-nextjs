@@ -474,6 +474,12 @@ export function GlobalKotPrinter() {
     const handlePrintEvent = async (e: any) => {
       let data = e.detail;
       if (!data) return;
+      // Browsers must not claim tickets that only an Electron terminal can print.
+      const winAny = window as any;
+      if (!winAny.electronAPI || (
+        typeof winAny.electronAPI.printNetworkRaw !== "function" &&
+        typeof winAny.electronAPI.printSilent !== "function"
+      )) return;
 
       console.log("[GlobalKotPrinter] Received KOT event:", data);
 
@@ -600,6 +606,14 @@ export function GlobalKotPrinter() {
         assignedPrinter.printer_type,
       );
 
+      const isNetworkPrinter =
+        assignedPrinter.printer_type === "network" ||
+        /^\d{1,3}(\.\d{1,3}){3}$/.test(
+          String(assignedPrinter.address || "").trim(),
+        );
+      if (!(isNetworkPrinter && typeof winAny.electronAPI.printNetworkRaw === "function")
+        && typeof winAny.electronAPI.printSilent !== "function") return;
+
       // ── Atomic Backend Claim (prevents Flutter + Electron double printing) ──
       // FAIL-OPEN: only skip if backend EXPLICITLY returns false (another device claimed it).
       // On network errors or timeouts → still print (don't block on backend unavailability).
@@ -634,18 +648,6 @@ export function GlobalKotPrinter() {
           );
         }
       }
-
-      const winAny = window as any;
-      if (!winAny.electronAPI) {
-        console.warn("[GlobalKotPrinter] Not in Electron. Cannot print.");
-        return;
-      }
-
-      const isNetworkPrinter =
-        assignedPrinter.printer_type === "network" ||
-        /^\d{1,3}(\.\d{1,3}){3}$/.test(
-          String(assignedPrinter.address || "").trim(),
-        );
 
       if (isNetworkPrinter && winAny.electronAPI.printNetworkRaw) {
         const host = String(assignedPrinter.address || "").trim();

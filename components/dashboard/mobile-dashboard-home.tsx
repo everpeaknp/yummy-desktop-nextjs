@@ -21,6 +21,8 @@ import { type ReactNode } from "react"
 
 import { MetricCard } from "@/components/cards/metric-card"
 import { DashboardPromoCarousel } from "@/components/dashboard/dashboard-promo-carousel"
+import { useAuth } from "@/hooks/use-auth"
+import { hasPermission, isPathAccessible } from "@/lib/role-permissions"
 
 type Props = {
   home: any
@@ -61,11 +63,17 @@ function SectionTitle({ children }: { children: ReactNode }) {
 }
 
 export function MobileDashboardHome({ home, currency }: Props) {
+  const user = useAuth((state) => state.user)
+  const canViewAnalytics = hasPermission(user, "reports.analytics.view")
   const shift = home?.shift_pulse
   const cash = home?.cash_watch
   const pipeline = home?.pipeline
   const attention = home?.attention_items?.items || []
-  const quickActions = (home?.quick_actions?.items || []).filter((item: any) => item.enabled).filter((item: any) => !["tables", "reservations"].includes(item.key)).slice(0, 6)
+  const quickActions = (home?.quick_actions?.items || [])
+    .filter((item: any) => item.enabled)
+    .filter((item: any) => !["tables", "reservations"].includes(item.key))
+    .filter((item: any) => Boolean(item.route || item.href || actionRoutes[item.key]) && isPathAccessible(resolveActionHref(item), user))
+    .slice(0, 6)
   const topItems = (home?.top_items_live?.items || []).slice(0, 4)
   const insight = home?.quick_insights?.items?.[0] || home?.alerts?.items?.[0]
   const serviceMetrics = [
@@ -103,7 +111,7 @@ export function MobileDashboardHome({ home, currency }: Props) {
         </div>
       </section>
 
-      <section className="space-y-3">
+      {canViewAnalytics && <section className="space-y-3">
         <SectionTitle>Money snapshot</SectionTitle>
         <div className="grid grid-cols-2 gap-3">
           <MetricCard label="Cash collected" value={money(cash?.cash_collected, currency)} tone="success" className="rounded-xl p-3 [&_div.text-xl]:text-base" />
@@ -111,15 +119,15 @@ export function MobileDashboardHome({ home, currency }: Props) {
           <MetricCard label="Credit sales" value={money(cash?.credit_sales, currency)} className="rounded-xl p-3 [&_div.text-xl]:text-base" />
           <MetricCard label="Outstanding" value={money(cash?.total_outstanding, currency)} tone="warning" className="rounded-xl p-3 [&_div.text-xl]:text-base" />
         </div>
-      </section>
+      </section>}
 
-      {attention.length > 0 && <section className="space-y-3"><SectionTitle>Needs attention</SectionTitle><div className="overflow-hidden rounded-xl border border-border bg-card">{attention.slice(0, 3).map((item: any) => <Link key={`${item.type}-${item.entity_id}-${item.title}`} href={resolveActionHref({ route: item.route })} className="flex items-center gap-3 border-b border-border px-3 py-3 last:border-0"><span className="h-2 w-2 shrink-0 rounded-full bg-amber-500" /><span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium">{item.title}</span><span className="block truncate text-xs text-muted-foreground">{item.subtitle}</span></span></Link>)}</div></section>}
+      {attention.some((item: any) => typeof item.route === "string" && isPathAccessible(item.route, user)) && <section className="space-y-3"><SectionTitle>Needs attention</SectionTitle><div className="overflow-hidden rounded-xl border border-border bg-card">{attention.filter((item: any) => typeof item.route === "string" && isPathAccessible(item.route, user)).slice(0, 3).map((item: any) => <Link key={`${item.type}-${item.entity_id}-${item.title}`} href={item.route} className="flex items-center gap-3 border-b border-border px-3 py-3 last:border-0"><span className="h-2 w-2 shrink-0 rounded-full bg-amber-500" /><span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium">{item.title}</span><span className="block truncate text-xs text-muted-foreground">{item.subtitle}</span></span></Link>)}</div></section>}
 
-      {insight && <section className="rounded-xl border border-primary/20 bg-primary/5 p-3"><p className="text-sm font-medium">{insight.title || "Quick insight"}</p><p className="mt-1 text-sm leading-5 text-muted-foreground">{insight.message || insight.subtitle}</p></section>}
+      {canViewAnalytics && insight && <section className="rounded-xl border border-primary/20 bg-primary/5 p-3"><p className="text-sm font-medium">{insight.title || "Quick insight"}</p><p className="mt-1 text-sm leading-5 text-muted-foreground">{insight.message || insight.subtitle}</p></section>}
 
       <section className="space-y-3"><SectionTitle>Pipeline</SectionTitle><div className="overflow-hidden rounded-xl border border-border bg-card">{(pipeline?.status_counts || []).slice(0, 5).map((item: any) => <div key={item.status} className="flex items-center justify-between border-b border-border px-3 py-3 last:border-0"><span className="text-sm capitalize">{String(item.status || "Unknown").toLowerCase()}</span><span className="font-semibold tabular-nums">{item.count || 0}</span></div>)}</div></section>
 
-      <section className="space-y-3"><SectionTitle>Top items</SectionTitle><div className="overflow-hidden rounded-xl border border-border bg-card">{topItems.length ? topItems.map((item: any, index: number) => <div key={item.item_id || item.name || index} className="flex items-center justify-between border-b border-border px-3 py-3 last:border-0"><span className="min-w-0"><span className="block truncate text-sm font-medium">{item.name}</span><span className="text-xs text-muted-foreground">{item.qty || 0} sold</span></span><span className="text-sm font-semibold tabular-nums">{money(item.revenue, currency)}</span></div>) : <p className="px-3 py-4 text-sm text-muted-foreground">No live item activity yet.</p>}</div></section>
+      {canViewAnalytics && <section className="space-y-3"><SectionTitle>Top items</SectionTitle><div className="overflow-hidden rounded-xl border border-border bg-card">{topItems.length ? topItems.map((item: any, index: number) => <div key={item.item_id || item.name || index} className="flex items-center justify-between border-b border-border px-3 py-3 last:border-0"><span className="min-w-0"><span className="block truncate text-sm font-medium">{item.name}</span><span className="text-xs text-muted-foreground">{item.qty || 0} sold</span></span><span className="text-sm font-semibold tabular-nums">{money(item.revenue, currency)}</span></div>) : <p className="px-3 py-4 text-sm text-muted-foreground">No live item activity yet.</p>}</div></section>}
     </main>
   )
 }

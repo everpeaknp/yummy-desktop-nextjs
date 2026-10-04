@@ -50,6 +50,7 @@ import apiClient from "@/lib/api-client";
 import { PrinterApis, StationApis } from "@/lib/api/endpoints";
 import { useAuth } from "@/hooks/use-auth";
 import { useRestaurant } from "@/hooks/use-restaurant";
+import { hasPermission } from "@/lib/role-permissions";
 
 interface StationRow {
   id: number;
@@ -90,6 +91,7 @@ export function StationsManagementClient() {
   const user = useAuth((s) => s.user);
   const restaurant = useRestaurant((s) => s.restaurant);
   const restaurantId = restaurant?.id || user?.restaurant_id || 0;
+  const canManageStations = hasPermission(user, "inventory.stations.manage");
 
   const [stations, setStations] = useState<StationRow[]>([]);
   const [printers, setPrinters] = useState<PrinterOption[]>([]);
@@ -157,6 +159,7 @@ export function StationsManagementClient() {
   });
 
   const handleCreate = async () => {
+    if (!canManageStations) return;
     if (!createForm.name.trim()) {
       toast.error("Station name is required.");
       return;
@@ -192,6 +195,7 @@ export function StationsManagementClient() {
   };
 
   const handleEditSave = async () => {
+    if (!canManageStations) return;
     if (!editStation || !editForm.name.trim()) {
       toast.error("Station name is required.");
       return;
@@ -215,6 +219,7 @@ export function StationsManagementClient() {
   };
 
   const handleToggleActive = async () => {
+    if (!canManageStations) return;
     if (!toggleTarget) return;
     setToggling(true);
     try {
@@ -320,9 +325,9 @@ export function StationsManagementClient() {
             Income attribution across the app.
           </p>
         </div>
-        <Button onClick={() => setCreateOpen(true)}>
+        {canManageStations ? <Button onClick={() => setCreateOpen(true)}>
           <Plus className="mr-2 h-4 w-4" /> Add Station
-        </Button>
+        </Button> : null}
       </header>
 
       <Card className="border-border shadow-none">
@@ -389,15 +394,15 @@ export function StationsManagementClient() {
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-1">
-                            <Button
+                            {canManageStations ? <Button
                               variant="outline"
                               size="icon"
                               title="Edit station"
                               onClick={() => openEdit(station)}
                             >
                               <Pencil className="h-4 w-4" />
-                            </Button>
-                            <Button
+                            </Button> : null}
+                            {canManageStations ? <Button
                               variant="outline"
                               size="icon"
                               title={station.is_active ? "Deactivate station" : "Reactivate station"}
@@ -408,7 +413,7 @@ export function StationsManagementClient() {
                               ) : (
                                 <Power className="h-4 w-4" />
                               )}
-                            </Button>
+                            </Button> : null}
                           </div>
                         </TableCell>
                       </TableRow>
@@ -421,7 +426,7 @@ export function StationsManagementClient() {
         </CardContent>
       </Card>
 
-      <Dialog open={createOpen} onOpenChange={(open) => { setCreateOpen(open); if (!open) setCreateForm(emptyForm); }}>
+      {canManageStations ? <Dialog open={createOpen} onOpenChange={(open) => { setCreateOpen(open); if (!open) setCreateForm(emptyForm); }}>
         <DialogContent className="sm:max-w-[440px]">
           <DialogHeader>
             <DialogTitle>Add Station</DialogTitle>
@@ -440,9 +445,9 @@ export function StationsManagementClient() {
             </Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog>
+      </Dialog> : null}
 
-      <Dialog open={editStation != null} onOpenChange={(open) => { if (!open) setEditStation(null); }}>
+      {canManageStations ? <Dialog open={editStation != null} onOpenChange={(open) => { if (!open) setEditStation(null); }}>
         <DialogContent className="sm:max-w-[440px]">
           <DialogHeader>
             <DialogTitle>Edit Station</DialogTitle>
@@ -461,9 +466,9 @@ export function StationsManagementClient() {
             </Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog>
+      </Dialog> : null}
 
-      <AlertDialog open={toggleTarget != null} onOpenChange={(open) => { if (!open) setToggleTarget(null); }}>
+      {canManageStations ? <AlertDialog open={toggleTarget != null} onOpenChange={(open) => { if (!open) setToggleTarget(null); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
@@ -483,7 +488,7 @@ export function StationsManagementClient() {
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
-      </AlertDialog>
+      </AlertDialog> : null}
     </div>
   );
 }

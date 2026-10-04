@@ -23,6 +23,7 @@ import apiClient from "@/lib/api-client";
 import { CustomerApis, OrderApis } from "@/lib/api/endpoints";
 import { presentCustomerBalance } from "@/lib/presentation/customer-balance";
 import { formatCurrency } from "@/lib/utils";
+import { hasPermission } from "@/lib/role-permissions";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -56,6 +57,7 @@ export default function CustomersPage() {
   const me = useAuth((state) => state.me);
   const restaurant = useRestaurant((state) => state.restaurant);
   const router = useRouter();
+  const canManageCustomers = hasPermission(user, "customers.manage");
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -172,7 +174,7 @@ export default function CustomersPage() {
         <PageHeader
           title="Customers"
           description="Manage customer relationships, sales history, and settlements."
-          actions={
+          actions={canManageCustomers ? (
             <Button
               type="button"
               className="h-11 rounded-xl"
@@ -181,7 +183,7 @@ export default function CustomersPage() {
               <Plus className="mr-2 h-4 w-4" />
               Add customer
             </Button>
-          }
+          ) : null}
         />
       </div>
 
@@ -369,16 +371,16 @@ export default function CustomersPage() {
         </>
       )}
 
-      <MobileCreateFab
+      {canManageCustomers ? <MobileCreateFab
         label="Add customer"
         onClick={() => setAddCustomerOpen(true)}
-      />
-      <AddCustomerDialog
+      /> : null}
+      {canManageCustomers ? <AddCustomerDialog
         hideTrigger
         open={addCustomerOpen}
         onOpenChange={setAddCustomerOpen}
         onCustomerAdded={fetchCustomers}
-      />
+      /> : null}
     </AppPage>
   );
 }

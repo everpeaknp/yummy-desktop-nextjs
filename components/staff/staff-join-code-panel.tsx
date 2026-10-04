@@ -120,6 +120,27 @@ export function StaffJoinCodePanel({
       );
       setLoadState("loaded");
     } catch (error) {
+      const response = (
+        error as {
+          response?: {
+            status?: number;
+            data?: { message?: unknown; detail?: unknown };
+          };
+        }
+      )?.response;
+      const message = String(
+        response?.data?.message ?? response?.data?.detail ?? "",
+      );
+      if (
+        response?.status === 404 &&
+        message.toLowerCase().includes("join code has not been generated")
+      ) {
+        setJoinCode("");
+        setJoinLink("");
+        setQr("");
+        setLoadState("loaded");
+        return;
+      }
       console.warn("Failed to load the staff join code", error);
       setLoadState("error");
     }

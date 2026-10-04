@@ -1,5 +1,7 @@
 "use client";
 
+import { useAuth } from "@/hooks/use-auth";
+import { hasPermission } from "@/lib/role-permissions";
 import { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -27,7 +29,7 @@ import { StationPicker } from "@/components/stations/station-picker";
 
 const formSchema = z.object({
   name: z.string().min(1, "Name is required"),
-  station_id: z.number({ required_error: "Station is required" }),
+  station_id: z.number().optional(),
 });
 
 interface Category {
@@ -51,6 +53,9 @@ export function CategoryDialog({
   initialData,
   restaurantId,
 }: CategoryDialogProps) {
+  const user = useAuth((state) => state.user);
+  const canManageStations = hasPermission(user, "inventory.stations.manage");
+  const canViewStations = canManageStations || hasPermission(user, "inventory.stations.view");
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
@@ -74,7 +79,11 @@ export function CategoryDialog({
   }, [initialData, form, open]);
 
   const handleSubmit = async (values: z.infer<typeof formSchema>) => {
-    await onSubmit(values);
+    if (!initialData && (!canViewStations || values.station_id == null)) {
+      form.setError("station_id", { message: "Station access and selection are required to create a category." });
+      return;
+    }
+    await onSubmit(canViewStations ? values : { name: values.name });
     onOpenChange(false);
   };
 
@@ -110,12 +119,14 @@ export function CategoryDialog({
                   </FormItem>
                 )}
               />
+              {canViewStations ? (
               <FormField
                 control={form.control}
                 name="station_id"
                 render={({ field }) => (
                   <FormItem>
                     <StationPicker
+                      canManageStations={canManageStations}
                       restaurantId={restaurantId}
                       value={field.value ?? null}
                       onChange={(stationId) =>
@@ -132,6 +143,11 @@ export function CategoryDialog({
                   </FormItem>
                 )}
               />
+              ) : (
+                <p className="mt-4 text-xs text-muted-foreground">
+                  {initialData ? "Station assignment stays unchanged. Station access is required to change it." : "Station access is required to select a preparation station and create a category."}
+                </p>
+              )}
             </div>
             <DialogFooter>
               <Button
@@ -141,7 +157,7 @@ export function CategoryDialog({
               >
                 Cancel
               </Button>
-              <Button type="submit" disabled={form.formState.isSubmitting}>
+              <Button type="submit" disabled={form.formState.isSubmitting || (!initialData && !canViewStations)}>
                 {form.formState.isSubmitting && (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 )}

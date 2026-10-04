@@ -2,7 +2,11 @@
 
 import { useMemo } from "react";
 import { useAuth } from "@/hooks/use-auth";
-import { hasPermission, type PermissionKey } from "@/lib/role-permissions";
+import {
+  canRedeemOrderLoyalty,
+  hasPermission,
+  type PermissionKey,
+} from "@/lib/role-permissions";
 
 /** Mirrors backend `settings.CASHIER_REFUND_WINDOW_DAYS` default. */
 export const CASHIER_REFUND_WINDOW_DAYS = 7;
@@ -32,10 +36,15 @@ export function usePosBillingPermissions() {
     const can = (permission: PermissionKey) => hasPermission(user, permission);
 
     const canApplyDiscount = can("pos.order.discount.apply");
+    const canCreateOrder = can("pos.order.create");
+    const canEditOrder = can("pos.order.edit");
     const canVoidOrder = can("pos.order.void");
     const canVoidItem = can("pos.order.void_item");
     const canTransferOrder = can("pos.order.transfer");
     const canProcessPayment = can("billing.payment.process");
+    const canSplitPayment = can("billing.bill.split");
+    const canViewBilling = can("billing.view");
+    const canViewReceipt = can("billing.receipt.view");
     const canEditPayment = can("billing.payment.edit");
     const canDeletePayment = can("billing.payment.delete");
     const canProcessRefund = can("billing.refund.process");
@@ -55,16 +64,22 @@ export function usePosBillingPermissions() {
 
     return {
       canApplyDiscount,
+      canCreateOrder,
+      canEditOrder,
       canVoidOrder,
       canVoidItem,
       canTransferOrder,
       canProcessPayment,
+      canSplitPayment,
+      canViewBilling,
+      canViewReceipt,
       canEditPayment,
       canDeletePayment,
       canProcessRefund,
       canApproveHistoricalRefund,
       canRefundOrder,
       canMarkNc,
+      canRedeemLoyalty: canRedeemOrderLoyalty(user),
     };
   }, [user]);
 }

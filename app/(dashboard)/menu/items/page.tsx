@@ -42,6 +42,7 @@ import {
 import { useEffect, useState, useMemo, useCallback } from "react";
 import apiClient from "@/lib/api-client";
 import { useAuth } from "@/hooks/use-auth";
+import { hasPermission } from "@/lib/role-permissions";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import { useFiscalProfile } from "@/hooks/use-fiscal-profile";
 import { MenuApis, ModifierApis, ItemCategoryApis } from "@/lib/api/endpoints";
@@ -131,7 +132,11 @@ export default function MenuItemsPage() {
   const [selectedCategoryIds, setSelectedCategoryIds] = useState<
     number[] | null
   >(null);
-  const restaurantId = useAuth((s) => s.user?.restaurant_id);
+  const user = useAuth((s) => s.user);
+  const restaurantId = user?.restaurant_id;
+  const canManageMenuItems = hasPermission(user, "menu.items.manage");
+  const canManageRecipes = hasPermission(user, "inventory.recipes.manage");
+  const canManagePricing = hasPermission(user, "menu.pricing.manage");
   const restaurant = useRestaurant((s) => s.restaurant);
   const { profile: fiscalProfile, loading: fiscalProfileLoading } =
     useFiscalProfile(Boolean(restaurantId));
@@ -389,12 +394,10 @@ export default function MenuItemsPage() {
         setIsUploading(false);
       }
 
-      const payload = {
+      const payload: Record<string, unknown> = {
         name: form.name.trim(),
-        price: Number(form.price),
         item_category_id: Number(form.item_category_id),
         description: form.description.trim() || null,
-        is_price_tax_inclusive: form.is_price_tax_inclusive,
         image: imageUrl || null,
         modifier_group_ids: form.modifier_group_ids,
         fiscal_code: form.fiscal_code.trim() || null,
@@ -403,12 +406,18 @@ export default function MenuItemsPage() {
       };
 
       if (editingItem) {
+        if (canManagePricing) {
+          payload.price = Number(form.price);
+          payload.is_price_tax_inclusive = form.is_price_tax_inclusive;
+        }
         await apiClient.put(MenuApis.updateMenu(editingItem.id), payload);
         setMessage({
           text: `"${form.name}" updated successfully`,
           type: "success",
         });
       } else {
+        payload.price = Number(form.price);
+        payload.is_price_tax_inclusive = form.is_price_tax_inclusive;
         await apiClient.post(MenuApis.createMenu(restaurantId), payload);
         setMessage({
           text: `"${form.name}" created successfully`,
@@ -494,12 +503,12 @@ export default function MenuItemsPage() {
               >
                 <Link href="/menu/modifiers">Options &amp; add-ons</Link>
               </Button>
-              <Button
+              {canManageMenuItems ? <Button
                 onClick={openAddDialog}
                 className="h-11 shrink-0 rounded-xl"
               >
                 <Plus className="mr-2 h-4 w-4" /> Add Item
-              </Button>
+              </Button> : null}
             </div>
           }
         />
@@ -645,7 +654,7 @@ export default function MenuItemsPage() {
           actionLabel={
             searchQuery || selectedCategoryIds !== null
               ? "Clear filters"
-              : "Add item"
+              : canManageMenuItems ? "Add item" : undefined
           }
           onAction={
             searchQuery || selectedCategoryIds !== null
@@ -653,7 +662,7 @@ export default function MenuItemsPage() {
                   setSearchQuery("");
                   setSelectedCategoryIds(null);
                 }
-              : openAddDialog
+              : canManageMenuItems ? openAddDialog : undefined
           }
         />
       ) : (
@@ -674,22 +683,22 @@ export default function MenuItemsPage() {
                 key={item.id}
                 item={item}
                 currency={currency}
-                onEdit={() => openEditDialog(item)}
-                onDelete={() => setDeleteItem(item)}
-                onLinkInventory={() => {
+                onEdit={canManageMenuItems ? () => openEditDialog(item) : undefined}
+                onDelete={canManageMenuItems ? () => setDeleteItem(item) : undefined}
+                onLinkInventory={canManageRecipes ? () => {
                   setInventoryLinkItem(item);
                   setInventoryLinkOpen(true);
-                }}
+                } : undefined}
               />
             ))}
           </div>
         </>
       )}
 
-      <MobileCreateFab label="Add menu item" onClick={openAddDialog} />
+      {canManageMenuItems ? <MobileCreateFab label="Add menu item" onClick={openAddDialog} /> : null}
 
       {/* Add/Edit Dialog */}
-      <Dialog open={formOpen} onOpenChange={setFormOpen}>
+      {canManageMenuItems ? <Dialog open={formOpen} onOpenChange={setFormOpen}>
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>
@@ -734,8 +743,14 @@ export default function MenuItemsPage() {
                   step="0.01"
                   placeholder="0.00"
                   value={form.price}
+                  disabled={Boolean(editingItem) && !canManagePricing}
                   onChange={(e) => setForm({ ...form, price: e.target.value })}
                 />
+                {editingItem && !canManagePricing ? (
+                  <p className="text-xs text-muted-foreground">
+                    Price changes require menu pricing permission.
+                  </p>
+                ) : null}
               </div>
               <div className="space-y-2">
                 <Label>Category *</Label>
@@ -745,7 +760,7 @@ export default function MenuItemsPage() {
                     setForm({ ...form, item_category_id: val })
                   }
                 >
-                  <SelectTrigger>
+                    <SelectTrigger>
                     <SelectValue placeholder="Select category" />
                   </SelectTrigger>
                   <SelectContent>
@@ -929,7 +944,7 @@ export default function MenuItemsPage() {
                     key={group.id}
                     className="flex min-h-11 items-center gap-2 rounded-lg px-2 text-sm cursor-pointer hover:bg-muted"
                   >
-                    <input
+                <input
                       type="checkbox"
                       checked={form.modifier_group_ids.includes(group.id)}
                       onChange={(e) => {
@@ -961,6 +976,7 @@ export default function MenuItemsPage() {
                 type="checkbox"
                 id="tax_inclusive"
                 checked={form.is_price_tax_inclusive}
+                disabled={Boolean(editingItem) && !canManagePricing}
                 onChange={(e) =>
                   setForm({ ...form, is_price_tax_inclusive: e.target.checked })
                 }
@@ -1000,10 +1016,10 @@ export default function MenuItemsPage() {
             </Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog>
+      </Dialog> : null}
 
       {/* Delete Confirmation Dialog */}
-      <Dialog
+      {canManageMenuItems ? <Dialog
         open={!!deleteItem}
         onOpenChange={(open) => {
           if (!open) setDeleteItem(null);
@@ -1036,7 +1052,7 @@ export default function MenuItemsPage() {
             </Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog>
+      </Dialog> : null}
       <MenuGalleryDialog
         open={galleryOpen}
         onOpenChange={setGalleryOpen}
@@ -1044,14 +1060,14 @@ export default function MenuItemsPage() {
       />
 
       {/* Inventory Link Dialog */}
-      <InventoryLinkDialog
+      {canManageRecipes ? <InventoryLinkDialog
         open={inventoryLinkOpen}
         onOpenChange={(open) => {
           setInventoryLinkOpen(open);
           if (!open) setInventoryLinkItem(null);
         }}
         menuItem={inventoryLinkItem}
-      />
+      /> : null}
     </AppPage>
   );
 }
@@ -1065,9 +1081,9 @@ function MenuItemCard({
 }: {
   item: MenuItem;
   currency?: string | null;
-  onEdit: () => void;
-  onDelete: () => void;
-  onLinkInventory: () => void;
+  onEdit?: () => void;
+  onDelete?: () => void;
+  onLinkInventory?: () => void;
 }) {
   const [imgError, setImgError] = useState(false);
   const hasImage = item.image && !imgError;
@@ -1103,7 +1119,7 @@ function MenuItemCard({
             {item.category_name}
           </Badge>
         )}
-        <div className="absolute right-1.5 top-1.5 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100">
+        {(onEdit || onDelete || onLinkInventory) ? <div className="absolute right-1.5 top-1.5 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
@@ -1115,19 +1131,19 @@ function MenuItemCard({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={onLinkInventory}>
+              {onLinkInventory ? <DropdownMenuItem onClick={onLinkInventory}>
                 <UtensilsCrossed className="mr-2 h-4 w-4" /> Link Inventory
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={onEdit}>
+              </DropdownMenuItem> : null}
+              {onEdit ? <DropdownMenuItem onClick={onEdit}>
                 <Edit className="mr-2 h-4 w-4" /> Edit
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={onDelete} className="text-destructive">
+              </DropdownMenuItem> : null}
+              {(onEdit || onDelete) ? <DropdownMenuSeparator /> : null}
+              {onDelete ? <DropdownMenuItem onClick={onDelete} className="text-destructive">
                 <Trash2 className="mr-2 h-4 w-4" /> Delete
-              </DropdownMenuItem>
+              </DropdownMenuItem> : null}
             </DropdownMenuContent>
           </DropdownMenu>
-        </div>
+        </div> : null}
       </div>
 
       {/* Content */}

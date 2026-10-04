@@ -632,6 +632,10 @@ export default function CheckoutPage() {
     canProcessRefund,
     canVoidItem,
     canMarkNc,
+    canEditOrder,
+    canSplitPayment,
+    canViewReceipt,
+    canRedeemLoyalty,
   } = usePosBillingPermissions();
 
   const {
@@ -2803,7 +2807,7 @@ export default function CheckoutPage() {
                     &apos;s bill. Mark it delivered when service is complete.
                   </p>
                 </div>
-                <Button
+                {canSplitPayment && <Button
                   className="w-full"
                   onClick={handleComplete}
                   disabled={completing || !roomOrderCanPost}
@@ -2814,7 +2818,7 @@ export default function CheckoutPage() {
                     <CheckCircle className="mr-2 h-4 w-4" />
                   )}
                   Mark delivered
-                </Button>
+                </Button>}
                 {kotFulfillmentRequired && !allKotsServed ? (
                   <p className="text-xs text-amber-700">
                     Mark all kitchen items as served before completing this
@@ -3158,7 +3162,7 @@ export default function CheckoutPage() {
                 <Button variant="outline" onClick={handleCloseItemEdit}>
                   Cancel
                 </Button>
-                <Button
+                {canEditOrder && <Button
                   onClick={handleSaveItemEdit}
                   disabled={!editingItem || itemUpdating}
                   className="gap-2"
@@ -3167,7 +3171,7 @@ export default function CheckoutPage() {
                     <Loader2 className="h-4 w-4 animate-spin" />
                   ) : null}
                   Save Note
-                </Button>
+                </Button>}
               </DialogFooter>
             </DialogContent>
           </Dialog>
@@ -3499,7 +3503,7 @@ export default function CheckoutPage() {
                         </div>
                       </div>
 
-                      {canApplyDiscount && (
+                      {canRedeemLoyalty && (
                         <Button
                           type="button"
                           variant="outline"
@@ -3691,7 +3695,7 @@ export default function CheckoutPage() {
                   </Button>
                 )}
                 {/* Split Bill Button */}
-                <Button
+                {canSplitPayment && <Button
                   variant="outline"
                   className="gap-2 text-xs sm:text-sm text-orange-600 hover:text-orange-700 hover:bg-orange-50 dark:hover:bg-orange-950/20 border-orange-200"
                   onClick={() => {
@@ -3712,19 +3716,19 @@ export default function CheckoutPage() {
                 >
                   <RefreshCw className="h-4 w-4" />
                   Split Bill
-                </Button>
+                </Button>}
               </div>
 
               <div className="grid grid-cols-2 gap-3 mt-3">
-                <Button
+                {canEditOrder && <Button
                   variant="outline"
                   className="gap-2 text-xs sm:text-sm"
                   onClick={() => router.push(`/orders/${orderId}/add-items`)}
                 >
                   <Receipt className="h-4 w-4" />
                   Edit Order
-                </Button>
-                <Button
+                </Button>}
+                {canViewReceipt && <Button
                   variant="outline"
                   className="gap-2 text-xs sm:text-sm"
                   onClick={() =>
@@ -3739,7 +3743,7 @@ export default function CheckoutPage() {
                 >
                   <Printer className="h-4 w-4" />
                   Pre-Bill
-                </Button>
+                </Button>}
               </div>
             </div>
           )}
@@ -4878,7 +4882,7 @@ export default function CheckoutPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={loyaltyOpen} onOpenChange={setLoyaltyOpen}>
+      {canRedeemLoyalty ? <Dialog open={loyaltyOpen} onOpenChange={setLoyaltyOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Redeem Loyalty Points</DialogTitle>
@@ -4922,9 +4926,9 @@ export default function CheckoutPage() {
               type="button"
               disabled={loyaltySubmitting || !checkoutCustomerId}
               onClick={async () => {
-                if (!canApplyDiscount) {
+                if (!canRedeemLoyalty) {
                   setLoyaltyError(
-                    "You do not have permission to apply discounts.",
+                    "Loyalty redemption requires customer loyalty management and order edit access.",
                   );
                   return;
                 }
@@ -5033,7 +5037,7 @@ export default function CheckoutPage() {
             </Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog>
+      </Dialog> : null}
 
       <Dialog open={fonepayDialogOpen} onOpenChange={setFonepayDialogOpen}>
         <DialogContent className="w-[96vw] sm:w-[92vw] sm:max-w-xl max-h-[90vh] overflow-y-auto">

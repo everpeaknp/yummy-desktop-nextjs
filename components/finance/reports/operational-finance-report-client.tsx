@@ -97,6 +97,14 @@ type OperationalFinanceReportClientProps = {
   showHeader?: boolean;
 };
 
+const reportPermissions: Record<ReportMode, Parameters<typeof hasPermission>[1]> = {
+  "sales-book": "finance.reports.sales.view",
+  invoices: "finance.reports.invoices.view",
+  payments: "finance.reports.payments.view",
+  refunds: "finance.reports.payments.view",
+  "vat-sales": "finance.reports.tax.view",
+};
+
 const reportMeta: Record<ReportMode, { title: string; description: string }> = {
   "sales-book": {
     title: "Sales report",
@@ -640,7 +648,8 @@ export function OperationalFinanceReportClient({
     null,
   );
 
-  const canView = hasPermission(user, "finance.income.view");
+  const canView = hasPermission(user, reportPermissions[mode]);
+  const canExport = hasPermission(user, "reports.export");
   const restaurantId = user?.restaurant_id;
   const meta = reportMeta[mode];
 
@@ -924,7 +933,7 @@ export function OperationalFinanceReportClient({
               size="sm"
               className="h-9 gap-2"
               onClick={exportReport}
-              disabled={!report || report.rows.length === 0}
+                disabled={!canExport || !report || report.rows.length === 0}
             >
               <Download className="h-4 w-4" />
               <span className="hidden sm:inline">Export</span>

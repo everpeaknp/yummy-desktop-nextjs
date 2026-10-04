@@ -10,6 +10,7 @@ import { FigmaExecutiveDashboard } from "@/components/dashboard/figma-executive-
 import { MobileDashboardHome } from "@/components/dashboard/mobile-dashboard-home"
 import { DATE_PRESETS, DateRangeDropdown, DateRangePreset } from "@/components/ui/date-range-dropdown"
 import { useAuth } from "@/hooks/use-auth"
+import { hasPermission, isPathAccessible } from "@/lib/role-permissions"
 import { useDashboardData } from "@/hooks/use-dashboard-data"
 import { mapAnalyticsTrends, mapBreakdownToPie, preferHourlyTrends } from "@/lib/analytics-dashboard-mapper"
 import {
@@ -21,6 +22,7 @@ import { cn } from "@/lib/utils"
 
 export default function DashboardPage() {
   const user = useAuth((state) => state.user)
+  const canManageMenuItems = hasPermission(user, "menu.items.manage")
   const [activeRange, setActiveRange] = useState<DateRangePreset>("today")
   const [date, setDate] = useState<DateRange | undefined>()
   const [chartRange, setChartRange] = useState<"hourly" | "daily" | "weekly">("hourly")
@@ -131,6 +133,7 @@ export default function DashboardPage() {
     || "Custom date range"
 
   const handleExport = async () => {
+    if (!hasPermission(user, "reports.export") || !hasPermission(user, "reports.analytics.view")) return
     const XLSX = await import("xlsx")
     const sheet = XLSX.utils.json_to_sheet([
       { Metric: "Date From", Value: dateFrom },
@@ -205,8 +208,15 @@ export default function DashboardPage() {
           averageOrderValueDelta,
         }}
         trends={trends}
-        attention={attentionItems.length ? attentionItems : alerts}
-        quickActions={quickActions}
+        attention={(attentionItems.length ? attentionItems : alerts).filter((item: any) => {
+          const route = item.route || item.href || item.action_url
+          return typeof route === "string" && isPathAccessible(route, user)
+        })}
+        quickActions={quickActions.filter((action: any) => {
+          const route = action.route || action.href || action.key
+          const mappedRoute = ({ create_order: "/orders/new", running_orders: "/orders/active", kot: "/kitchen", tables: "/tables", reservations: "/reservations", day_close: "/day-close", "/orders/create": "/orders/new", "/running-orders": "/orders/active", "/kot-management": "/kitchen" } as Record<string, string>)[route] || route
+          return typeof mappedRoute === "string" && isPathAccessible(mappedRoute, user)
+        })}
         orderStatuses={orderStatuses}
         cashWatch={cashWatch}
         activeOrders={home?.active_orders_preview?.items || []}
@@ -216,7 +226,11 @@ export default function DashboardPage() {
         staff={staff}
         occupancy={occupancy}
         dayCloseStatus={home?.day_close_status}
-        canViewAnalytics={!analyticsUnavailable}
+        canViewAnalytics={hasPermission(user, "reports.analytics.view")}
+        canManageMenuItems={canManageMenuItems}
+        canViewStaff={hasPermission(user, "admin.staff.view") || hasPermission(user, "platform.staff.view") || hasPermission(user, "platform.staff.manage")}
+        canViewDayClose={isPathAccessible("/day-close", user)}
+        canExport={hasPermission(user, "reports.export")}
         onExport={handleExport}
       />
     </>

@@ -35,6 +35,7 @@ import { Label } from "@/components/ui/label";
 import { RepayCreditDialog } from "./repay-credit-dialog";
 import { useEffect } from "react";
 import { useAuth } from "@/hooks/use-auth";
+import { hasPermission } from "@/lib/role-permissions";
 import apiClient from "@/lib/api-client";
 import { CustomerApis, OrderApis } from "@/lib/api/endpoints";
 import { ReceiptDetailSheet } from "@/components/receipts/receipt-detail-sheet";
@@ -73,6 +74,8 @@ export function CustomerDetailsSheet({ customer: customerProp, open, onOpenChang
         billing_address: "",
     });
     const user = useAuth((state) => state.user);
+    const canManageCustomers = hasPermission(user, "customers.manage");
+    const canManageCredit = hasPermission(user, "customers.credit.manage");
 
     useEffect(() => {
         setCustomer(customerProp);
@@ -279,9 +282,9 @@ export function CustomerDetailsSheet({ customer: customerProp, open, onOpenChang
                                         <p className="text-2xl font-bold text-red-700 dark:text-red-400">Rs. {(customer.credit || 0).toLocaleString()}</p>
                                     </div>
                                 </div>
-                                <Button size="sm" variant="destructive" onClick={() => setIsRepayDialogOpen(true)}>
+                                {canManageCredit ? <Button size="sm" variant="destructive" onClick={() => setIsRepayDialogOpen(true)}>
                                     Repay Credit
-                                </Button>
+                                </Button> : null}
                             </div>
                         )}
 
@@ -500,10 +503,10 @@ export function CustomerDetailsSheet({ customer: customerProp, open, onOpenChang
                     </div>
 
                     <div className="mt-8 flex justify-end gap-2">
-                        <Button variant="outline" onClick={openEditDialog}>
+                        {canManageCustomers ? <Button variant="outline" onClick={openEditDialog}>
                             <Pencil className="mr-2 h-4 w-4" />
                             Edit Profile
-                        </Button>
+                        </Button> : null}
                         <Button>New Order</Button>
                     </div>
                 </SheetContent>
@@ -637,14 +640,14 @@ export function CustomerDetailsSheet({ customer: customerProp, open, onOpenChang
                 </DialogContent>
             </Dialog>
 
-            <RepayCreditDialog
+            {canManageCredit ? <RepayCreditDialog
                 customer={customer}
                 open={isRepayDialogOpen}
                 onOpenChange={setIsRepayDialogOpen}
                 onSuccess={() => {
                     if (onUpdate) onUpdate();
                 }}
-            />
+            /> : null}
 
             <ReceiptDetailSheet 
                 orderId={selectedOrderId}

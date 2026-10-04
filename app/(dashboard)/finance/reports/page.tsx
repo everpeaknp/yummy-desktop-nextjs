@@ -1,3 +1,7 @@
+"use client";
+
+import { useAuth } from "@/hooks/use-auth";
+import { isPathAccessible } from "@/lib/role-permissions";
 import Link from "next/link";
 import {
   BarChart3,
@@ -15,6 +19,7 @@ import { Card, CardContent } from "@/components/ui/card";
 const groupIcons = [BarChart3, Landmark, BookOpen, ReceiptText];
 
 export default function FinanceReportsPage() {
+  const user = useAuth((state) => state.user);
   return (
     <AppPage width="report" density="compact">
       <PageHeader
@@ -25,6 +30,8 @@ export default function FinanceReportsPage() {
       <div className="grid gap-5 lg:grid-cols-2">
         {reportGroups.map((group, groupIndex) => {
           const Icon = groupIcons[groupIndex];
+          const reports = group.reports.filter((report) => isPathAccessible(report.href, user));
+          if (!reports.length) return null;
           return (
             <section key={group.label} className="space-y-2">
               <div className="flex items-center gap-2">
@@ -33,7 +40,7 @@ export default function FinanceReportsPage() {
               </div>
               <Card className="overflow-hidden rounded-2xl border-border shadow-none">
                 <CardContent className="divide-y p-0">
-                  {group.reports.map((report) => (
+                  {reports.map((report) => (
                     <Link
                       key={report.href}
                       href={report.href}

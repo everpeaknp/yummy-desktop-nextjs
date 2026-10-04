@@ -147,6 +147,13 @@ export const attendanceApi = {
         : `attendance-${dateFrom}-to-${dateTo}.csv`,
     };
   },
+  async exportApprovedPayroll(dateFrom: string, dateTo: string) {
+    return unwrap<Array<Record<string, string | number | null>>>(
+      await apiClient.get(
+        AttendanceApis.payrollExport + query({ date_from: dateFrom, date_to: dateTo }),
+      ),
+    );
+  },
   async createQrSession(payload: { station_label?: string; ttl_seconds: number }) {
     return unwrap<AttendanceQrSession>(await apiClient.post(AttendanceApis.createQrSession, payload));
   },
@@ -180,4 +187,3 @@ export const attendanceApi = {
 };
 
 export type AttendanceApi = typeof attendanceApi;
-

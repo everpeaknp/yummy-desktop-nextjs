@@ -46,6 +46,7 @@ interface ReservationDetailsSheetProps {
   onOpenChange: (open: boolean) => void;
   onRefresh?: () => void;
   onEdit?: () => void;
+  canManage?: boolean;
 }
 
 export function ReservationDetailsSheet({ 
@@ -53,7 +54,8 @@ export function ReservationDetailsSheet({
   open, 
   onOpenChange,
   onRefresh,
-  onEdit
+  onEdit,
+  canManage = false,
 }: ReservationDetailsSheetProps) {
   const [isActivating, setIsActivating] = useState(false);
   const [isCanceling, setIsCanceling] = useState(false);
@@ -208,7 +210,7 @@ export function ReservationDetailsSheet({
           </div>
         </div>
 
-        <SheetFooter className="p-6 border-t bg-slate-50 dark:bg-slate-900/50 flex flex-col gap-3">
+        {canManage ? <SheetFooter className="p-6 border-t bg-slate-50 dark:bg-slate-900/50 flex flex-col gap-3">
           <div className="grid grid-cols-2 gap-3 w-full">
              {/* Edit Button - only show if status is pending/confirmed/scheduled */}
              {['pending', 'confirmed', 'scheduled'].includes(reservation.status?.toLowerCase()) && (
@@ -251,10 +253,10 @@ export function ReservationDetailsSheet({
           >
             Close Details
           </Button>
-        </SheetFooter>
+        </SheetFooter> : null}
       </SheetContent>
 
-      <AlertDialog open={cancelDialogOpen} onOpenChange={setCancelDialogOpen}>
+      {canManage ? <AlertDialog open={cancelDialogOpen} onOpenChange={setCancelDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Cancel Reservation?</AlertDialogTitle>
@@ -282,7 +284,7 @@ export function ReservationDetailsSheet({
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
-      </AlertDialog>
+      </AlertDialog> : null}
     </Sheet>
   );
 }

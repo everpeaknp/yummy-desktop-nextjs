@@ -44,6 +44,7 @@ import {
 import apiClient from "@/lib/api-client";
 import { InventoryApis, MenuApis, ModifierApis } from "@/lib/api/endpoints";
 import { useAuth } from "@/hooks/use-auth";
+import { hasPermission } from "@/lib/role-permissions";
 import { cn, formatCurrency } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -55,6 +56,9 @@ interface InventoryItemDetailsSheetProps {
   onAddStock: (item: any) => void;
   onReduceStock: (item: any) => void;
   onCountStock: (item: any) => void;
+  canAddStock: boolean;
+  canReduceStock: boolean;
+  canCountStock: boolean;
   onViewLedger: (item: any) => void;
   onRecipeLinksChanged?: () => void;
 }
@@ -119,6 +123,9 @@ export function InventoryItemDetailsSheet({
   onAddStock,
   onReduceStock,
   onCountStock,
+  canAddStock,
+  canReduceStock,
+  canCountStock,
   onViewLedger,
   onRecipeLinksChanged,
 }: InventoryItemDetailsSheetProps) {
@@ -160,13 +167,7 @@ export function InventoryItemDetailsSheet({
   >(null);
 
   const restaurantId = Number(user?.restaurant_id || 0);
-  const role = String(user?.role || user?.primary_role || "").toLowerCase();
-  const permissionKeys = new Set(user?.permissions || []);
-  const canManageRecipes =
-    role === "admin" ||
-    role === "superadmin" ||
-    permissionKeys.has("inventory.recipes.manage") ||
-    permissionKeys.has("inventory.manage");
+  const canManageRecipes = hasPermission(user, "inventory.recipes.manage");
 
   const availableMenuItems = useMemo(() => {
     const linkedIds = new Set(
@@ -522,30 +523,30 @@ export function InventoryItemDetailsSheet({
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-2">
-            <Button
+          {(canAddStock || canReduceStock || canCountStock) ? <div className="grid grid-cols-3 gap-2">
+            {canAddStock ? <Button
               size="sm"
               className="bg-emerald-600 text-white hover:bg-emerald-700"
               onClick={() => onAddStock(item)}
             >
               <PlusCircle className="mr-1.5 h-4 w-4" /> Add
-            </Button>
-            <Button
+            </Button> : null}
+            {canReduceStock ? <Button
               size="sm"
               variant="outline"
               className="border-rose-300 text-rose-600 hover:bg-rose-50 hover:text-rose-700 dark:border-rose-900 dark:hover:bg-rose-950/30"
               onClick={() => onReduceStock(item)}
             >
               <MinusCircle className="mr-1.5 h-4 w-4" /> Reduce
-            </Button>
-            <Button
+            </Button> : null}
+            {canCountStock ? <Button
               size="sm"
               variant="outline"
               onClick={() => onCountStock(item)}
             >
               <Scale className="mr-1.5 h-4 w-4" /> Count
-            </Button>
-          </div>
+            </Button> : null}
+          </div> : null}
         </DialogHeader>
 
         <div className="space-y-5 px-5 py-5">

@@ -15,6 +15,7 @@ import { ProductTourHost } from "@/components/onboarding/product-tour-host";
 import { canAccessOnboarding } from "@/lib/onboarding";
 import { MobileBottomNav } from "@/components/layout/mobile-bottom-nav";
 import { isMobileSecondaryModuleRoute } from "@/lib/mobile-module-navigation";
+import { getHomeRouteForUser, isPathAccessible } from "@/lib/role-permissions";
 import { cn } from "@/lib/utils";
 
 export default function DashboardLayout({
@@ -88,7 +89,7 @@ export default function DashboardLayout({
     // Hotel-only properties land in PMS. Dual properties keep one shared shell.
     if (hotelEnabled && !restEnabled) {
       if (["/dashboard", "/gateway"].includes(pathname)) {
-        router.replace("/hotel");
+        router.replace(isPathAccessible("/hotel", user) ? "/hotel" : getHomeRouteForUser(user));
       }
       return;
     }
@@ -103,9 +104,9 @@ export default function DashboardLayout({
         pathname.startsWith("/rooms/") ||
         pathname === "/gateway")
     ) {
-      router.replace("/dashboard");
+      router.replace(getHomeRouteForUser(user));
     }
-  }, [restaurant, pathname, router, loading, mounted, storeHydrated]);
+  }, [restaurant, pathname, router, loading, mounted, storeHydrated, user]);
 
   const showShell = mounted && !waitingForAuth && (restaurant || !loading);
 

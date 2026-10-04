@@ -65,6 +65,7 @@ import {
 } from "@/components/finance/cash-bank-account-select";
 import { ReasonCodeSelect } from "@/components/inventory/reason-code-select";
 import { InventoryItemDetailsSheet } from "@/components/inventory/inventory-item-details-sheet";
+import { hasPermission } from "@/lib/role-permissions";
 import { StationPicker } from "@/components/stations/station-picker";
 
 function inventoryMovementLabel(movement: any): string {
@@ -218,22 +219,17 @@ export default function InventoryPage() {
   const user = useAuth((state) => state.user);
   const me = useAuth((state) => state.me);
   const router = useRouter();
-  const permissionKeys = new Set(user?.permissions || []);
-  const normalizedRole = String(
-    user?.role || user?.primary_role || "",
-  ).toLowerCase();
-  const isInventoryAdmin =
-    normalizedRole === "admin" || normalizedRole === "superadmin";
-  const canConsumeInventory =
-    isInventoryAdmin ||
-    permissionKeys.has("inventory.consume") ||
-    permissionKeys.has("inventory.manage");
-  const canOverrideNegativeStock =
-    isInventoryAdmin || permissionKeys.has("inventory.negative_stock.override");
-  const canManageInventory =
-    isInventoryAdmin ||
-    permissionKeys.has("inventory.manage") ||
-    permissionKeys.has("inventory.stock.manage");
+  const canManageItems = hasPermission(user, "inventory.items.manage");
+  const canAddStock = hasPermission(user, "inventory.stock.add");
+  const canReduceStock = hasPermission(user, "inventory.stock.reduce");
+  const canCountStock = canAddStock || canReduceStock;
+  const canConsumeInventory = hasPermission(user, "inventory.consume");
+  const canOverrideNegativeStock = hasPermission(user, "inventory.negative_stock.override");
+  const canVoidPurchases = hasPermission(user, "inventory.purchases.void");
+  const canCreatePurchaseReturns = hasPermission(
+    user,
+    "inventory.purchase_returns.create",
+  );
 
   // 1. Session Restoration & Auth Guard
   useEffect(() => {
@@ -825,7 +821,7 @@ export default function InventoryPage() {
                   <Utensils className="mr-2 h-4 w-4" /> Consume
                 </Button>
               ) : null}
-              {inventoryView === "items" ? (
+              {inventoryView === "items" && canManageItems ? (
                 <Button className="h-11 rounded-xl" onClick={openAdd}>
                   <Plus className="mr-2 h-4 w-4" /> Add Item
                 </Button>
@@ -846,9 +842,9 @@ export default function InventoryPage() {
               <Utensils className="mr-2 h-4 w-4" /> Consume
             </Button>
           ) : null}
-          <Button className="h-11 flex-1 rounded-xl" onClick={openAdd}>
+          {canManageItems ? <Button className="h-11 flex-1 rounded-xl" onClick={openAdd}>
             <Plus className="mr-2 h-4 w-4" /> Add item
-          </Button>
+          </Button> : null}
         </div>
       ) : null}
 
@@ -961,8 +957,8 @@ export default function InventoryPage() {
               icon={<Package className="h-5 w-5" />}
               title="No inventory items found"
               description="Add the first stock item to start tracking quantity and value."
-              actionLabel="Add item"
-              onAction={openAdd}
+              actionLabel={canManageItems ? "Add item" : undefined}
+              onAction={canManageItems ? openAdd : undefined}
             />
           ) : visibleItems.length === 0 ? (
             <EmptyState
@@ -1095,15 +1091,15 @@ export default function InventoryPage() {
                             <History className="w-4 h-4 mr-1.5" />
                             History
                           </Button>
-                          <Button
+                          {canManageItems ? <Button
                             variant="ghost"
                             size="sm"
                             className="h-8 text-muted-foreground hover:text-foreground"
                             onClick={() => openEdit(item)}
                           >
                             Edit
-                          </Button>
-                          <DropdownMenu>
+                          </Button> : null}
+                          {(canAddStock || canReduceStock || canCountStock) ? <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <Button
                                 variant="ghost"
@@ -1114,23 +1110,23 @@ export default function InventoryPage() {
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
-                              <DropdownMenuItem
+                              {canAddStock ? <DropdownMenuItem
                                 onClick={() => openAddStock(item)}
                               >
                                 Add Stock
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
+                              </DropdownMenuItem> : null}
+                              {canReduceStock ? <DropdownMenuItem
                                 onClick={() => openReduceStock(item)}
                               >
                                 Reduce Stock
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
+                              </DropdownMenuItem> : null}
+                              {canCountStock ? <DropdownMenuItem
                                 onClick={() => openCountStock(item)}
                               >
                                 Count Stock
-                              </DropdownMenuItem>
+                              </DropdownMenuItem> : null}
                             </DropdownMenuContent>
-                          </DropdownMenu>
+                          </DropdownMenu> : null}
                         </td>
                       </tr>
                     ))}
@@ -1143,7 +1139,8 @@ export default function InventoryPage() {
       ) : user?.restaurant_id ? (
         <InventoryActivityPanel
           restaurantId={user.restaurant_id}
-          canManage={canManageInventory}
+          canVoidPurchases={canVoidPurchases}
+          canCreatePurchaseReturns={canCreatePurchaseReturns}
           focusAdjustmentId={focusAdjustmentId}
           cashDrawerControlsEnabled={cashDrawerControlsEnabled}
           cashDrawerSessions={cashDrawerSessions}
@@ -1855,6 +1852,9 @@ export default function InventoryPage() {
           setDetailsOpen(open);
           if (!open) setDetailsItem(null);
         }}
+        canAddStock={canAddStock}
+        canReduceStock={canReduceStock}
+        canCountStock={canCountStock}
         onAddStock={(target) => {
           setDetailsOpen(false);
           openAddStock(target);

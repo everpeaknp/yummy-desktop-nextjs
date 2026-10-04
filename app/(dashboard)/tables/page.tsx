@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import Image from "next/image";
 import { useAuth } from "@/hooks/use-auth";
+import { hasPermission } from "@/lib/role-permissions";
 import { useRouter } from "next/navigation";
 import apiClient from "@/lib/api-client";
 import { TableApis, TableTypeApis } from "@/lib/api/endpoints";
@@ -537,12 +538,9 @@ export default function TablesPage() {
     }
   };
 
-  const currentPermissions = user?.permissions || [];
-  const isAdmin = user?.role?.toLowerCase() === "admin" || 
-                  user?.primary_role?.toLowerCase() === "admin" || 
-                  user?.roles?.some(r => r.toLowerCase() === "admin");
-  const canManageQr = isAdmin || currentPermissions.includes("qr.manage");
-  const canPrintQr = isAdmin || currentPermissions.includes("qr.print");
+  const canManageTables = hasPermission(user, "tables.manage");
+  const canManageQr = hasPermission(user, "qr.manage");
+  const canPrintQr = hasPermission(user, "qr.print");
 
   // ═══════════════════════════════════════════════
   // RENDER
@@ -580,7 +578,7 @@ export default function TablesPage() {
                   Save
                 </Button>
               </>
-            ) : (
+            ) : canManageTables ? (
               <>
                 <Button variant="outline" className="h-11 rounded-xl" onClick={enterLayoutMode}>
                   <MapPinned className="w-4 h-4 mr-1" /> Edit Layout
@@ -593,7 +591,7 @@ export default function TablesPage() {
                   <Plus className="w-4 h-4 mr-1" /> Add Table
                 </Button>
               </>
-            )}
+            ) : null}
             </>
           }
         />
@@ -618,7 +616,7 @@ export default function TablesPage() {
               Save layout
             </Button>
           </>
-        ) : (
+        ) : canManageTables ? (
           <>
             <Button
               variant="outline"
@@ -633,7 +631,7 @@ export default function TablesPage() {
               <Plus className="mr-1.5 h-4 w-4" /> Add table
             </Button>
           </>
-        )}
+        ) : null}
       </div>
 
       {/* Area Filter Chips — matching Flutter RoomSelectorBar */}
@@ -652,7 +650,7 @@ export default function TablesPage() {
                 {area}
               </FilterChip>
               {/* Context menu for real areas (not "All Areas") */}
-              {tt && !isLayoutMode && (
+              {tt && canManageTables && !isLayoutMode && (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <button className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full border border-border bg-card opacity-100 shadow-sm transition-opacity md:opacity-0 md:group-hover:opacity-100">
@@ -675,7 +673,7 @@ export default function TablesPage() {
             </div>
           );
         })}
-        {!isLayoutMode && (
+        {!isLayoutMode && canManageTables && (
           <FilterChip
             onClick={openAddArea}
           >
@@ -701,8 +699,8 @@ export default function TablesPage() {
           icon={<Armchair className="h-5 w-5" />}
           title="No tables configured"
           description="Add the first table to start building this layout."
-          actionLabel="Add table"
-          onAction={openAddTable}
+          actionLabel={canManageTables ? "Add table" : undefined}
+          onAction={canManageTables ? openAddTable : undefined}
         />
       ) : selectedArea !== "All Areas" ? (
         <RoomContainer
@@ -710,7 +708,7 @@ export default function TablesPage() {
           tables={filteredTables}
           layoutHeight={getLayoutHeight(selectedArea)}
           isLayoutMode={isLayoutMode}
-          onTableClick={isLayoutMode ? undefined : openEditTable}
+          onTableClick={isLayoutMode || !canManageTables ? undefined : openEditTable}
           onTableDrop={isLayoutMode ? handleTableDrop : undefined}
           onTableResize={isLayoutMode ? handleTableResize : undefined}
           onHeightChanged={isLayoutMode ? (h) => handleHeightChanged(selectedArea, h) : undefined}
@@ -725,7 +723,7 @@ export default function TablesPage() {
               tables={groupedTables[roomName]}
               layoutHeight={getLayoutHeight(roomName)}
               isLayoutMode={isLayoutMode}
-              onTableClick={isLayoutMode ? undefined : openEditTable}
+              onTableClick={isLayoutMode || !canManageTables ? undefined : openEditTable}
               onTableDrop={isLayoutMode ? handleTableDrop : undefined}
               onTableResize={isLayoutMode ? handleTableResize : undefined}
               onHeightChanged={isLayoutMode ? (h) => handleHeightChanged(roomName, h) : undefined}
@@ -736,7 +734,7 @@ export default function TablesPage() {
       )}
 
       {/* ═══ TABLE FORM DIALOG ═══ */}
-      <Dialog open={tableDialogOpen} onOpenChange={setTableDialogOpen}>
+      {canManageTables ? <Dialog open={tableDialogOpen} onOpenChange={setTableDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>{editingTable ? "Edit Table" : "Add Table"}</DialogTitle>
@@ -832,10 +830,10 @@ export default function TablesPage() {
             </Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog>
+      </Dialog> : null}
 
       {/* ═══ AREA DIALOG ═══ */}
-      <Dialog open={areaDialogOpen} onOpenChange={setAreaDialogOpen}>
+      {canManageTables ? <Dialog open={areaDialogOpen} onOpenChange={setAreaDialogOpen}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>
@@ -871,7 +869,7 @@ export default function TablesPage() {
             </Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog>
+      </Dialog> : null}
 
       {/* ═══ RESERVATION DETAILS SHEET ═══ */}
       <ReservationDetailsSheet
@@ -879,6 +877,7 @@ export default function TablesPage() {
         onOpenChange={setReservationSheetOpen}
         reservation={selectedReservation}
         onRefresh={() => fetchData(true)}
+        canManage={hasPermission(user, "tables.reservation.manage")}
       />
 
       {loadingReservation && (

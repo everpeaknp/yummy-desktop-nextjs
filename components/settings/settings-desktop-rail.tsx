@@ -45,7 +45,7 @@ export function SettingsDesktopRail({
   }, [query, user]);
 
   return (
-    <aside className="sticky top-24 hidden h-[calc(100vh-7rem)] w-64 shrink-0 overflow-y-auto border-r border-border pr-5 lg:block">
+    <aside className="sticky top-24 hidden h-[calc(100vh-7rem)] w-64 shrink-0 overflow-y-auto border-r border-border pr-5 2xl:block">
       <SearchField
         placeholder="Search settings"
         value={query}

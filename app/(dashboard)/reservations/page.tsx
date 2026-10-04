@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { useAuth } from "@/hooks/use-auth";
+import { hasPermission } from "@/lib/role-permissions";
 import { useRouter } from "next/navigation";
 import apiClient from "@/lib/api-client";
 import { ReservationApis } from "@/lib/api/endpoints";
@@ -36,6 +37,7 @@ export default function ReservationsPage() {
   const [authChecked, setAuthChecked] = useState(false);
 
   const user = useAuth((state) => state.user);
+  const canManageReservations = hasPermission(user, "tables.reservation.manage");
   const me = useAuth((state) => state.me);
   const router = useRouter();
 
@@ -158,7 +160,7 @@ export default function ReservationsPage() {
         <PageHeader
           title="Reservations"
           description="Manage guest bookings and table assignments."
-          actions={
+          actions={canManageReservations ? (
             <Button
               onClick={() => {
                 setSelectedReservation(null);
@@ -168,7 +170,7 @@ export default function ReservationsPage() {
             >
               <Plus className="mr-1.5 h-4 w-4" /> New reservation
             </Button>
-          }
+          ) : null}
         />
       </div>
 
@@ -237,11 +239,11 @@ export default function ReservationsPage() {
           icon={<Calendar className="h-5 w-5" />}
           title="No reservations found"
           description="Try another status or create a reservation."
-          actionLabel="New reservation"
-          onAction={() => {
+          actionLabel={canManageReservations ? "New reservation" : undefined}
+          onAction={canManageReservations ? () => {
             setSelectedReservation(null);
             setFormOpen(true);
-          }}
+          } : undefined}
         />
       ) : (
         <>
@@ -300,27 +302,28 @@ export default function ReservationsPage() {
         </>
       )}
 
-      <MobileCreateFab
+      {canManageReservations ? <MobileCreateFab
         label="New reservation"
         onClick={() => {
           setSelectedReservation(null);
           setFormOpen(true);
         }}
-      />
+      /> : null}
 
       {/* Reservation Form Modal */}
-      <ReservationForm
+      {canManageReservations ? <ReservationForm
         open={formOpen}
         onOpenChange={setFormOpen}
         reservation={selectedReservation}
         onSuccess={fetchReservations}
-      />
+      /> : null}
 
       <ReservationDetailsSheet
         open={detailsOpen}
         onOpenChange={setDetailsOpen}
         reservation={selectedReservation}
         onRefresh={fetchReservations}
+        canManage={canManageReservations}
         onEdit={() => {
           setDetailsOpen(false);
           setFormOpen(true);

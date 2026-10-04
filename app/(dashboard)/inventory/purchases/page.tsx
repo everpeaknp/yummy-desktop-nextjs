@@ -66,6 +66,7 @@ import { AppPage } from "@/components/patterns/page/app-page";
 import { PageHeader } from "@/components/patterns/page/page-header";
 import { PageSection } from "@/components/patterns/page/page-section";
 import { SearchField } from "@/components/patterns/controls/search-field";
+import { hasPermission } from "@/lib/role-permissions";
 
 function statusBadge(status: string) {
   switch (status) {
@@ -90,6 +91,12 @@ export default function InventoryPurchasesPage() {
   const user = useAuth((state) => state.user);
   const router = useRouter();
   const searchParams = useSearchParams();
+  const canPostPurchase = hasPermission(user, "inventory.purchases.post");
+  const canVoidPurchase = hasPermission(user, "inventory.purchases.void");
+  const canCreatePurchaseReturn = hasPermission(
+    user,
+    "inventory.purchase_returns.create",
+  );
 
   const [purchases, setPurchases] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -351,17 +358,17 @@ export default function InventoryPurchasesPage() {
         title="Purchases"
         description="Receive supplier stock and keep inventory quantities accurate."
         actions={
-          <div className="grid w-full grid-cols-2 gap-2 md:flex md:w-auto">
-            <Button
+    <div className="grid w-full grid-cols-2 gap-2 md:flex md:w-auto">
+            {canCreatePurchaseReturn ? <Button
               variant="outline"
               className="h-11 rounded-xl"
               onClick={() => router.push("/inventory/purchases/returns")}
             >
               <Undo2 className="mr-2 h-4 w-4" /> Returns
-            </Button>
-            <Button className="h-11 rounded-xl" onClick={openCreate}>
+            </Button> : null}
+            {canPostPurchase ? <Button className="h-11 rounded-xl" onClick={openCreate}>
               <Plus className="mr-2 h-4 w-4" /> Record purchase
-            </Button>
+            </Button> : null}
           </div>
         }
       />
@@ -428,7 +435,7 @@ export default function InventoryPurchasesPage() {
                 </button>
                 <div className="mt-2 flex min-h-9 items-center justify-between gap-2 border-t border-border/60 pt-2">
                   {statusBadge(purchase.status)}
-                  {purchase.status === "posted" ? (
+                  {purchase.status === "posted" && (canVoidPurchase || canCreatePurchaseReturn) ? (
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button
@@ -441,7 +448,7 @@ export default function InventoryPurchasesPage() {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem
+                        {canCreatePurchaseReturn ? <DropdownMenuItem
                           onClick={() =>
                             router.push(
                               `/inventory/purchases/returns?purchase_id=${purchase.id}`,
@@ -449,8 +456,8 @@ export default function InventoryPurchasesPage() {
                           }
                         >
                           <Undo2 className="mr-2 h-4 w-4" /> Return items
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
+                        </DropdownMenuItem> : null}
+                        {canVoidPurchase ? <DropdownMenuItem
                           onClick={() => {
                             setVoidPurchase(purchase);
                             setVoidReason("");
@@ -458,7 +465,7 @@ export default function InventoryPurchasesPage() {
                           className="text-destructive focus:text-destructive"
                         >
                           <Ban className="mr-2 h-4 w-4" /> Void
-                        </DropdownMenuItem>
+                        </DropdownMenuItem> : null}
                       </DropdownMenuContent>
                     </DropdownMenu>
                   ) : null}
@@ -563,9 +570,9 @@ export default function InventoryPurchasesPage() {
                           >
                             View details
                           </DropdownMenuItem>
-                          {purchase.status === "posted" && (
+                          {purchase.status === "posted" && (canVoidPurchase || canCreatePurchaseReturn) && (
                             <>
-                              <DropdownMenuItem
+                              {canCreatePurchaseReturn ? <DropdownMenuItem
                                 onClick={() =>
                                   router.push(
                                     `/inventory/purchases/returns?purchase_id=${purchase.id}`,
@@ -573,8 +580,8 @@ export default function InventoryPurchasesPage() {
                                 }
                               >
                                 <Undo2 className="w-4 h-4 mr-2" /> Return items
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
+                              </DropdownMenuItem> : null}
+                              {canVoidPurchase ? <DropdownMenuItem
                                 onClick={() => {
                                   setVoidPurchase(purchase);
                                   setVoidReason("");
@@ -582,7 +589,7 @@ export default function InventoryPurchasesPage() {
                                 className="text-red-600"
                               >
                                 <Ban className="w-4 h-4 mr-2" /> Void
-                              </DropdownMenuItem>
+                              </DropdownMenuItem> : null}
                             </>
                           )}
                         </DropdownMenuContent>
@@ -597,7 +604,7 @@ export default function InventoryPurchasesPage() {
       </PageSection>
 
       {/* Create Purchase Dialog */}
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+      {canPostPurchase ? <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent className="flex h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] max-w-[720px] flex-col gap-0 overflow-hidden p-0 sm:h-auto sm:max-h-[92vh] sm:w-full">
           <form
             onSubmit={handleCreate}
@@ -753,7 +760,7 @@ export default function InventoryPurchasesPage() {
             </DialogFooter>
           </form>
         </DialogContent>
-      </Dialog>
+      </Dialog> : null}
 
       <TransactionDetailSheet
         open={detailPurchase != null}
@@ -769,7 +776,7 @@ export default function InventoryPurchasesPage() {
         footer={
           detailPurchase ? (
             <>
-              {detailPurchase.status === "posted" ? (
+              {detailPurchase.status === "posted" && canVoidPurchase ? (
                 <Button
                   variant="destructive"
                   onClick={() => {
@@ -786,7 +793,7 @@ export default function InventoryPurchasesPage() {
       />
 
       {/* Void Dialog */}
-      <Dialog
+      {canVoidPurchase ? <Dialog
         open={!!voidPurchase}
         onOpenChange={(open) => !open && setVoidPurchase(null)}
       >
@@ -828,7 +835,7 @@ export default function InventoryPurchasesPage() {
             </Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog>
+      </Dialog> : null}
     </AppPage>
   );
 }

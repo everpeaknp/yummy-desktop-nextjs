@@ -2281,6 +2281,7 @@ export const AttendanceApis = {
   correctEntry: (id: number) => "/attendance/entries/" + id + "/correction",
   audit: (id: number) => "/attendance/entries/" + id + "/audit",
   exportCsv: "/attendance/export.csv",
+  payrollExport: "/attendance/payroll-export",
   shiftTemplates: "/attendance/shift-templates",
   shiftTemplate: (id: number) => "/attendance/shift-templates/" + id,
   schedules: (staffId?: number) =>

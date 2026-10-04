@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { useRouter, useParams } from "next/navigation";
 import apiClient from "@/lib/api-client";
 import { useAuth } from "@/hooks/use-auth";
+import { hasPermission } from "@/lib/role-permissions";
 import { toast } from "sonner";
 import { ReceiptApis, OrderApis, PrinterApis } from "@/lib/api/endpoints";
 import { useOrderFull } from "@/hooks/use-order-full";
@@ -286,6 +287,7 @@ export default function ReceiptPage() {
   }, []);
 
   const user = useAuth((s) => s.user);
+  const canPrintReceipt = hasPermission(user, "billing.receipt.print");
   const me = useAuth((s) => s.me);
   const { canProcessRefund, canApproveHistoricalRefund, canRefundOrder } =
     usePosBillingPermissions();
@@ -704,7 +706,7 @@ export default function ReceiptPage() {
   // Active VAT e-billing waits for an immutable fiscal document and a
   // server-issued print authorization. Other tenants keep legacy auto-print.
   useEffect(() => {
-    if (!receipt || !template) return;
+    if (!canPrintReceipt || !receipt || !template) return;
     // Viewing a fiscal receipt must never reserve another legal copy number.
     // Auto-print is allowed only for an explicit, one-shot checkout request.
     if (!autoPrintRequested) return;
@@ -757,6 +759,7 @@ export default function ReceiptPage() {
     runFiscalPrint,
     template,
     autoPrintRequested,
+    canPrintReceipt,
     receiptTerminals.length,
     selectedTerminalId,
     selectedTerminal?.printer,
@@ -1303,7 +1306,7 @@ export default function ReceiptPage() {
               : "Back to Orders"}
           </Button>
           <div className="flex gap-2 w-full sm:w-auto">
-            <Button
+            {canPrintReceipt ? <Button
               variant="outline"
               className="flex-1 h-12 gap-2 rounded-xl font-bold"
               onClick={() => void handlePrint()}
@@ -1319,7 +1322,7 @@ export default function ReceiptPage() {
                 : isActiveVatEbilling
                   ? "Print Tax Invoice"
                   : "Print Receipt"}
-            </Button>
+            </Button> : null}
             <Button
               variant="outline"
               className="flex-1 h-12 gap-2 rounded-xl font-bold"

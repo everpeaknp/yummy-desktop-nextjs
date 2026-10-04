@@ -80,7 +80,8 @@ type CashDrawer = {
 
 type Props = {
   restaurantId: number;
-  canManage: boolean;
+  canVoidPurchases: boolean;
+  canCreatePurchaseReturns: boolean;
   focusAdjustmentId?: number | null;
   cashDrawerControlsEnabled: boolean;
   cashDrawerSessions: CashDrawer[];
@@ -102,7 +103,8 @@ const humanize = (value?: string | null) =>
 
 export function InventoryActivityPanel({
   restaurantId,
-  canManage,
+  canVoidPurchases,
+  canCreatePurchaseReturns,
   focusAdjustmentId,
   cashDrawerControlsEnabled,
   cashDrawerSessions,
@@ -290,6 +292,11 @@ export function InventoryActivityPanel({
     : null;
 
   const openAction = (row: InventoryActivity, nextAction: ActivityAction) => {
+    if (
+      (nextAction === "return" && !canCreatePurchaseReturns) ||
+      ((nextAction === "correct" || nextAction === "cancel") &&
+        !canVoidPurchases)
+    ) return;
     setSelected(row);
     setAction(nextAction);
     setForm({
@@ -592,13 +599,12 @@ export function InventoryActivityPanel({
                           onClick={(event) => event.stopPropagation()}
                           onKeyDown={(event) => event.stopPropagation()}
                         >
-                          {canManage &&
-                          row.adjustment_id &&
-                          (row.can_correct ||
-                            row.can_cancel ||
-                            row.can_return) ? (
+                          {row.adjustment_id &&
+                          ((row.can_correct && canVoidPurchases) ||
+                            (row.can_cancel && canVoidPurchases) ||
+                            (row.can_return && canCreatePurchaseReturns)) ? (
                             <div className="flex justify-end gap-1">
-                              {row.can_correct ? (
+                              {row.can_correct && canVoidPurchases ? (
                                 <Button
                                   size="sm"
                                   variant="ghost"
@@ -608,7 +614,7 @@ export function InventoryActivityPanel({
                                   <PencilLine className="h-4 w-4" />
                                 </Button>
                               ) : null}
-                              {row.can_return ? (
+                              {row.can_return && canCreatePurchaseReturns ? (
                                 <Button
                                   size="sm"
                                   variant="ghost"
@@ -618,7 +624,7 @@ export function InventoryActivityPanel({
                                   <RotateCcw className="h-4 w-4" />
                                 </Button>
                               ) : null}
-                              {row.can_cancel ? (
+                              {row.can_cancel && canVoidPurchases ? (
                                 <Button
                                   size="sm"
                                   variant="ghost"

@@ -174,6 +174,13 @@ const sections: Array<{ title: string; items: ManageItem[] }> = [
         sidebarHref: "/workforce",
       },
       {
+        title: "Roles & permissions",
+        description: "Manage staff roles and screen access",
+        href: "/manage/roles",
+        icon: Users,
+        accessHref: "/manage/roles",
+      },
+      {
         title: "Settings",
         description: "Business, finance and access setup",
         href: "/settings",
@@ -280,7 +287,11 @@ export default function ManagePage() {
       const firstWorkspace = sidebarItems.find(
         (item) => item.href !== "/manage" && !item.isNestedChild,
       );
-      router.replace(firstWorkspace?.href ?? "/dashboard");
+      if (firstWorkspace) {
+        router.replace(firstWorkspace.href);
+      } else {
+        setRouteResolved(true);
+      }
       return;
     }
 

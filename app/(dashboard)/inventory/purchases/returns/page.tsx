@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
+import { hasPermission } from "@/lib/role-permissions";
 import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { Plus, Loader2, MoreVertical, Ban } from "lucide-react";
@@ -213,6 +214,8 @@ function newReturnLine(): ReturnLineDraft {
 
 export default function InventoryPurchaseReturnsPage() {
   const user = useAuth((state) => state.user);
+  const canCreateReturn = hasPermission(user, "inventory.purchase_returns.create");
+  const canVoidReturn = hasPermission(user, "inventory.purchases.void");
   const searchParams = useSearchParams();
   const requestedPurchaseId = searchParams.get("purchase_id");
   const requestedSupplierId = searchParams.get("supplier_id");
@@ -421,6 +424,7 @@ export default function InventoryPurchaseReturnsPage() {
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canCreateReturn) return;
     if (!user?.restaurant_id || !createForm.supplier_id) {
       toast.error("Select a supplier before saving.");
       return;
@@ -482,6 +486,7 @@ export default function InventoryPurchaseReturnsPage() {
   };
 
   const handleVoid = async () => {
+    if (!canVoidReturn) return;
     if (!voidReturn || !user?.restaurant_id) return;
     if (voidReason.trim().length < 3) {
       toast.error("Reason must be at least 3 characters.");
@@ -511,7 +516,7 @@ export default function InventoryPurchaseReturnsPage() {
       <PageHeader
         title="Purchase returns"
         description="Send received goods back to a supplier and preserve the linked supplier credit or refund."
-        actions={
+        actions={canCreateReturn ? (
           <Button
             className="h-11 w-full rounded-xl sm:w-auto"
             onClick={openCreate}
@@ -519,7 +524,7 @@ export default function InventoryPurchaseReturnsPage() {
             <Plus className="mr-2 h-4 w-4" />
             Record return
           </Button>
-        }
+        ) : null}
       />
 
       <PageSection surface className="overflow-hidden p-0">
@@ -557,7 +562,7 @@ export default function InventoryPurchaseReturnsPage() {
                 </button>
                 <div className="mt-2 flex min-h-9 items-center justify-between gap-2 border-t border-border/60 pt-2">
                   {statusBadge(r.status)}
-                  {r.status === "posted" ? (
+                  {r.status === "posted" && canVoidReturn ? (
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button
@@ -664,7 +669,7 @@ export default function InventoryPurchaseReturnsPage() {
                       className="whitespace-nowrap text-right"
                       onClick={(event) => event.stopPropagation()}
                     >
-                      {r.status === "posted" && (
+                      {r.status === "posted" && canVoidReturn && (
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <Button
@@ -699,7 +704,7 @@ export default function InventoryPurchaseReturnsPage() {
       </PageSection>
 
       {/* Create Return Dialog */}
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+      {canCreateReturn ? <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent className="flex h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] max-w-[640px] flex-col gap-0 overflow-hidden p-0 sm:h-auto sm:max-h-[92vh] sm:w-full">
           <form
             onSubmit={handleCreate}
@@ -933,10 +938,10 @@ export default function InventoryPurchaseReturnsPage() {
             </DialogFooter>
           </form>
         </DialogContent>
-      </Dialog>
+      </Dialog> : null}
 
       {/* Void Dialog */}
-      <Dialog
+      {canVoidReturn ? <Dialog
         open={!!voidReturn}
         onOpenChange={(open) => !open && setVoidReturn(null)}
       >
@@ -974,7 +979,7 @@ export default function InventoryPurchaseReturnsPage() {
             </Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog>
+      </Dialog> : null}
       <TransactionDetailSheet
         open={detailReturn != null}
         onOpenChange={(open) => !open && setDetailReturn(null)}
