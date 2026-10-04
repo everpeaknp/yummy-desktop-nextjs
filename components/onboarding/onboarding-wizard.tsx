@@ -1118,6 +1118,19 @@ export function OnboardingWizard({
                           placeholder="Verified account email"
                         />
                       </div>
+                      <div className="space-y-2.5">
+                        <div className="flex items-center gap-1.5">
+                          <Label htmlFor="promoCode" className="text-sm font-medium">Promo Code</Label>
+                        </div>
+                        <Input
+                          id="promoCode"
+                          type="text"
+                          value={draft.promoCode}
+                          onChange={(e) => patch("promoCode", e.target.value)}
+                          className="h-11 transition-all focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1 hover:border-primary/50"
+                          placeholder="Enter promo code"
+                        />
+                      </div>
                     </div>
 
                     <div className="space-y-2.5">

@@ -55,6 +55,7 @@ export type OnboardingDraft = {
   restaurantName: string;
   phone: string;
   email: string;
+  promoCode: string;
   taxNumber: string;
   address: string;
   description: string;
@@ -182,6 +183,7 @@ export function createEmptyDraft(email = ""): OnboardingDraft {
     restaurantName: "",
     phone: "",
     email,
+    promoCode: "",
     taxNumber: "",
     address: "",
     description: "",
