@@ -28,6 +28,7 @@ import { Button } from "@/components/ui/button";
 import { AppPage } from "@/components/patterns/page/app-page";
 import { PageHeader } from "@/components/patterns/page/page-header";
 import { formatCurrency } from "@/lib/utils";
+import { useEntitlement } from "@/hooks/use-subscription";
 import {
   WorkforceMetricStrip,
   WorkforceSection,
@@ -47,6 +48,7 @@ function money(value: number) {
 
 export default function WorkforcePage() {
   const today = useMemo(todayIso, []);
+  const attendanceAccess = useEntitlement("attendance.enabled", true);
   const [loading, setLoading] = useState(true);
   const [payAllPreviewOpen, setPayAllPreviewOpen] = useState(false);
   const [staff, setStaff] = useState<StaffUser[]>([]);
@@ -61,16 +63,21 @@ export default function WorkforcePage() {
   const [salaryBalancesAvailable, setSalaryBalancesAvailable] = useState(false);
 
   const load = useCallback(async () => {
+    if (attendanceAccess.loading) return;
     setLoading(true);
     const [staffResult, overviewResult, entriesResult, balancesResult] =
       await Promise.allSettled([
         apiClient.get(StaffApis.list()),
-        attendanceApi.overview(today, today),
-        attendanceApi.listEntries({
-          dateFrom: today,
-          dateTo: today,
-          limit: 300,
-        }),
+        attendanceAccess.allowed
+          ? attendanceApi.overview(today, today)
+          : Promise.resolve(null),
+        attendanceAccess.allowed
+          ? attendanceApi.listEntries({
+              dateFrom: today,
+              dateTo: today,
+              limit: 300,
+            })
+          : Promise.resolve([] as AttendanceEntry[]),
         staffCreditApi.balances(),
       ]);
 
@@ -78,13 +85,13 @@ export default function WorkforcePage() {
     if (staffResult.status === "fulfilled")
       setStaff((staffResult.value.data?.data || []) as StaffUser[]);
     else nextWarnings.push("Staff directory is unavailable.");
-    setAttendanceSummaryAvailable(overviewResult.status === "fulfilled");
-    if (overviewResult.status === "fulfilled")
+    setAttendanceSummaryAvailable(attendanceAccess.allowed && overviewResult.status === "fulfilled");
+    if (attendanceAccess.allowed && overviewResult.status === "fulfilled")
       setOverview(overviewResult.value);
-    else nextWarnings.push("Attendance summary is unavailable.");
-    setAttendanceEntriesAvailable(entriesResult.status === "fulfilled");
-    if (entriesResult.status === "fulfilled") setEntries(entriesResult.value);
-    else nextWarnings.push("Attendance entries are unavailable.");
+    else if (attendanceAccess.allowed) nextWarnings.push("Attendance summary is unavailable.");
+    setAttendanceEntriesAvailable(attendanceAccess.allowed && entriesResult.status === "fulfilled");
+    if (attendanceAccess.allowed && entriesResult.status === "fulfilled") setEntries(entriesResult.value);
+    else if (attendanceAccess.allowed) nextWarnings.push("Attendance entries are unavailable.");
     setSalaryBalancesAvailable(balancesResult.status === "fulfilled");
     if (balancesResult.status === "fulfilled")
       setBalances(balancesResult.value);
@@ -92,7 +99,7 @@ export default function WorkforcePage() {
 
     setWarnings(nextWarnings);
     setLoading(false);
-  }, [today]);
+  }, [attendanceAccess.allowed, attendanceAccess.loading, today]);
 
   useEffect(() => {
     void load();

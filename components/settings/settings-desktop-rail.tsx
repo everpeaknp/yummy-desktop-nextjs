@@ -74,7 +74,7 @@ export function SettingsDesktopRail({
                     item.id === activeItemId
                       ? "bg-primary/10 font-medium text-primary"
                       : "text-muted-foreground hover:bg-muted hover:text-foreground",
-                    restricted && "cursor-not-allowed opacity-60",
+                    restricted && "opacity-70",
                   )}
                 >
                   <Icon className="h-4 w-4 shrink-0" />
@@ -87,12 +87,13 @@ export function SettingsDesktopRail({
                 </span>
               );
 
-              return restricted ? (
-                <span key={item.id} aria-disabled="true" className="block">
-                  {content}
-                </span>
-              ) : (
-                <Link key={item.id} href={item.route} className="block">
+              return (
+                <Link
+                  key={item.id}
+                  href={item.route}
+                  aria-label={restricted ? `View upgrade options for ${item.title}` : undefined}
+                  className="block"
+                >
                   {content}
                 </Link>
               );

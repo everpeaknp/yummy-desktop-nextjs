@@ -52,6 +52,7 @@ import {
 } from "@/lib/staff/workforce";
 import { staffCreditApi } from "@/lib/staff/credit";
 import { useAuth } from "@/hooks/use-auth";
+import { useEntitlement } from "@/hooks/use-subscription";
 import { useMobileAppBarTitle } from "@/components/layout/mobile-app-bar-title";
 import { AppPage } from "@/components/patterns/page/app-page";
 import {
@@ -92,6 +93,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { StaffSalaryCard } from "@/components/staff/staff-salary-card";
 import { StaffCreditCard } from "@/components/staff/staff-credit-card";
 import { StaffPerformanceCard } from "@/components/staff/staff-performance-card";
+import { EntitlementGate } from "@/components/subscription/entitlement-gate";
 import {
   StaffEditDialog,
   type StaffEditRole,
@@ -396,8 +398,11 @@ export default function StaffWorkspacePage() {
       currentPermissions.has(permission),
     [currentPermissions, currentRole],
   );
-  const canViewAttendance = can("attendance.view") || can("attendance.manage");
-  const canManageAttendance = can("attendance.manage");
+  const attendanceAccess = useEntitlement("attendance.enabled", true);
+  const canViewAttendance =
+    attendanceAccess.allowed &&
+    (can("attendance.view") || can("attendance.manage"));
+  const canManageAttendance = attendanceAccess.allowed && can("attendance.manage");
   const canManagePayroll = can("admin.staff.credit.manage");
   const canViewPayroll =
     can("admin.staff.view") || can("admin.staff.credit.manage");
@@ -1512,7 +1517,9 @@ export default function StaffWorkspacePage() {
 
           {activeSection === "performance" ? (
             <section className="space-y-5" aria-label="Performance">
-              <StaffPerformanceCard userId={userId} />
+              <EntitlementGate entitlement="staff.performance.enabled" legacyFallback>
+                <StaffPerformanceCard userId={userId} />
+              </EntitlementGate>
             </section>
           ) : null}
 

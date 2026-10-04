@@ -33,6 +33,7 @@ export const SubscriptionApis = {
   usage: "/subscriptions/usage",
   invoices: "/subscriptions/invoices",
   upgradeRequests: "/subscriptions/upgrade-requests",
+  quotaCompliance: "/subscriptions/quota-compliance/resolve",
 };
 
 export const FiscalApis = {
@@ -889,6 +890,7 @@ export const AnalyticsApis = {
     page = 1,
     pageSize = 20,
     businessLine,
+    staffUserId,
   }: {
     restaurantId: number;
     dateFrom?: string;
@@ -899,6 +901,7 @@ export const AnalyticsApis = {
     page?: number;
     pageSize?: number;
     businessLine?: string;
+    staffUserId?: number;
   }) => {
     const params = new URLSearchParams({
       restaurant_id: restaurantId.toString(),
@@ -914,6 +917,7 @@ export const AnalyticsApis = {
     }
     if (timezone) params.append("timezone", timezone);
     if (businessLine) params.append("business_line", businessLine);
+    if (staffUserId) params.append("staff_user_id", staffUserId.toString());
     return `/analytics/staff/details?${params.toString()}`;
   },
   ncOrders: ({
@@ -2273,6 +2277,8 @@ export const StaffSalaryApis = {
 export const AttendanceApis = {
   settings: "/attendance/settings",
   overview: "/attendance/overview",
+  myStatus: "/attendance/me/status",
+  myEntries: "/attendance/me/entries",
   entries: "/attendance/entries",
   submitEntry: (id: number) => "/attendance/entries/" + id + "/submit",
   approveEntry: (id: number) => "/attendance/entries/" + id + "/approve",
@@ -2357,6 +2363,67 @@ export const TaxConfigApis = {
 
 export const FeedbackApis = {
   submit: "/feedbacks/",
+};
+
+export const HelpCenterApis = {
+  content: "/help-center",
+};
+
+export const GrowthApis = {
+  overview: "/growth/overview",
+  readiness: "/growth/readiness",
+  opportunities: "/growth/opportunities",
+  refreshOpportunities: "/growth/opportunities/refresh",
+  segmentPreview: (segmentCode: string) =>
+    `/growth/segments/${encodeURIComponent(segmentCode)}/preview`,
+  campaigns: "/growth/campaigns",
+  campaign: (campaignId: number | string) => `/growth/campaigns/${campaignId}`,
+  campaignAudiencePreview: (campaignId: number | string) =>
+    `/growth/campaigns/${campaignId}/preview-audience`,
+  campaignSubmitReview: (campaignId: number | string) =>
+    `/growth/campaigns/${campaignId}/submit-review`,
+  campaignReturnToDraft: (campaignId: number | string) =>
+    `/growth/campaigns/${campaignId}/return-to-draft`,
+  campaignPosterUpload: (campaignId: number | string) =>
+    `/growth/campaigns/${campaignId}/creative-assets/upload`,
+  campaignApprove: (campaignId: number | string) =>
+    `/growth/campaigns/${campaignId}/approve`,
+  campaignSchedule: (campaignId: number | string) =>
+    `/growth/campaigns/${campaignId}/schedule`,
+  campaignPause: (campaignId: number | string) =>
+    `/growth/campaigns/${campaignId}/pause`,
+  campaignCancel: (campaignId: number | string) =>
+    `/growth/campaigns/${campaignId}/cancel`,
+  campaignResults: (campaignId: number | string) =>
+    `/growth/campaigns/${campaignId}/results`,
+  campaignResultsCsv: (campaignId: number | string) =>
+    `/growth/campaigns/${campaignId}/results.csv`,
+  settings: "/growth/settings",
+  smsEstimate: "/growth/sms/estimate",
+  smsWallet: "/growth/sms/wallet",
+  smsPackages: "/growth/sms/packages",
+  smsPurchases: "/growth/sms/purchases",
+  smsPurchaseVerify: (id: number) => `/growth/sms/purchases/${id}/verify`,
+  brand: "/growth/brand",
+  messageTemplates: "/growth/message-templates",
+  suggestCopy: "/growth/content/suggest-copy",
+  validateOffer: "/growth/offers/validate",
+  sendTestEmail: "/growth/send-test-email",
+  subscribers: "/growth/subscribers",
+  redemptionByOrder: (orderId: number | string) =>
+    `/growth/redemptions/by-order/${orderId}`,
+  staffConsentCapture: "/growth/consent/staff-capture",
+};
+
+export const PublicGrowthApis = {
+  restaurant: (publicSlug: string) =>
+    `/public/growth/restaurants/${encodeURIComponent(publicSlug)}`,
+  join: (publicSlug: string) =>
+    `/public/growth/restaurants/${encodeURIComponent(publicSlug)}/join`,
+  preferences: (signedToken: string) =>
+    `/public/growth/preferences/${encodeURIComponent(signedToken)}`,
+  unsubscribe: (signedToken: string) =>
+    `/public/growth/preferences/${encodeURIComponent(signedToken)}/unsubscribe`,
 };
 
 export const TransactionsApis = {

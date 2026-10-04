@@ -7,6 +7,7 @@ import type {
   AttendanceDevice,
   AttendanceEntry,
   AttendanceMobileDevice,
+  MyAttendanceStatus,
   AttendanceHoliday,
   AttendanceLeave,
   AttendanceOverview,
@@ -36,6 +37,21 @@ function query(params: Record<string, string | number | undefined | null>) {
 }
 
 export const attendanceApi = {
+  async myStatus() {
+    return unwrap<MyAttendanceStatus>(await apiClient.get(AttendanceApis.myStatus));
+  },
+  async myEntries(params: { dateFrom?: string; dateTo?: string; limit?: number } = {}) {
+    return unwrap<AttendanceEntry[]>(
+      await apiClient.get(
+        AttendanceApis.myEntries +
+          query({
+            date_from: params.dateFrom,
+            date_to: params.dateTo,
+            limit: params.limit,
+          }),
+      ),
+    );
+  },
   async getSettings() {
     return unwrap<AttendanceSettings>(await apiClient.get(AttendanceApis.settings));
   },

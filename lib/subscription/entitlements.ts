@@ -14,7 +14,9 @@ const ENTITLEMENT_LABELS: Record<string, string> = {
   "menu_items.max": "menu items",
   "printers.max": "printers",
   "static_qrs.max": "static QR codes",
-  "attendance.devices.max": "biometric devices",
+  // A device count is a biometric-attendance capacity, not a separately
+  // marketable product. `planFeatures` folds it into Biometric attendance.
+  "attendance.devices.max": "biometric device limit",
   "orders.dine_in.enabled": "Dine-in ordering",
   "orders.takeaway.enabled": "Takeaway ordering",
   "orders.delivery.enabled": "Delivery ordering",
@@ -26,6 +28,9 @@ const ENTITLEMENT_LABELS: Record<string, string> = {
   "customers.crm.enabled": "Customer CRM",
   "customers.loyalty.enabled": "Customer loyalty",
   "customers.feedback.enabled": "Customer feedback",
+  "grow.enabled": "Yummy Grow",
+  "grow.whatsapp.enabled": "Yummy Grow WhatsApp campaigns",
+  "grow.messages.monthly": "Yummy Grow monthly messages",
   "inventory.enabled": "Inventory management",
   "inventory.suppliers.enabled": "Supplier management",
   "inventory.recipe_costing.enabled": "Recipe costing",
@@ -50,6 +55,86 @@ const ENTITLEMENT_LABELS: Record<string, string> = {
   "integrations.api.enabled": "API access",
   "integrations.webhooks.enabled": "Webhooks",
 };
+
+type FeaturePresentation = {
+  title: string;
+  description: string;
+};
+
+// Keep the commercial copy in one place. Entitlement keys stay granular so
+// the API can enforce each capability independently, while people see the
+// product they are actually unlocking.
+const FEATURE_PRESENTATION: Record<string, FeaturePresentation> = {
+  "attendance.enabled": {
+    title: "Attendance",
+    description: "Track shifts, timesheets, schedules, leave, and QR attendance in one workspace.",
+  },
+  "attendance.mobile.enabled": {
+    title: "Mobile attendance",
+    description: "Let approved staff clock in from their phone with your attendance policy applied.",
+  },
+  "attendance.biometric.enabled": {
+    title: "Biometric attendance",
+    description: "Connect biometric scanners and link device users to staff profiles.",
+  },
+  "inventory.enabled": {
+    title: "Inventory",
+    description: "Control stock, adjustments, purchases, and valuation from the same restaurant workspace.",
+  },
+  "inventory.suppliers.enabled": {
+    title: "Suppliers",
+    description: "Keep supplier records and purchasing workflows connected to your inventory.",
+  },
+  "customers.crm.enabled": {
+    title: "Customer CRM",
+    description: "Build a useful customer record from visits, orders, and service history.",
+  },
+  "customers.feedback.enabled": {
+    title: "Customer feedback",
+    description: "Collect and review customer feedback from your restaurant workspace.",
+  },
+  "staff.performance.enabled": {
+    title: "Staff performance",
+    description: "See role-aware performance built from approved attendance and verified order activity.",
+  },
+  "finance.live_insights.enabled": {
+    title: "Finance reports",
+    description: "Understand sales, cash, and operational finance with reporting built for restaurant decisions.",
+  },
+  "finance.period_close.enabled": {
+    title: "Period close",
+    description: "Review and close reporting periods with a complete finance trail.",
+  },
+  "designers.receipt.enabled": {
+    title: "Receipt designer",
+    description: "Create a receipt layout that matches your restaurant and printer workflow.",
+  },
+  "designers.kot.enabled": {
+    title: "KOT designer",
+    description: "Design kitchen tickets for the stations and details your team needs.",
+  },
+  "kitchen.kot.enabled": {
+    title: "Kitchen order tickets",
+    description: "Run a live kitchen queue and keep order preparation visible to the whole team.",
+  },
+  "reservations.enabled": {
+    title: "Reservations",
+    description: "Manage reservations alongside tables and live restaurant operations.",
+  },
+  "business.hotel.enabled": {
+    title: "Hotel module",
+    description: "Manage hotel operations and room-service orders from your Yummy workspace.",
+  },
+};
+
+export function featurePresentation(key: string): FeaturePresentation {
+  return (
+    FEATURE_PRESENTATION[key] ?? {
+      title: entitlementLabel(key),
+      description: `Upgrade your plan to unlock ${entitlementLabel(key).toLowerCase()} for this restaurant.`,
+    }
+  );
+}
 
 // Canonical V2 values always win. These aliases only keep restaurants that
 // have not yet been assigned a V2 subscription on their existing plan rules.
@@ -252,8 +337,27 @@ export function planFeatures(plan: SubscriptionPlan): MarketingFeature[] {
   const marketing = parseMarketingFeatures(plan.current_version?.marketing_content);
   if (marketing.length) return marketing;
 
-  const entries = Object.entries(plan.current_version?.entitlements ?? {});
-  return entries
+  const entitlements = plan.current_version?.entitlements ?? {};
+  const entries = Object.entries(entitlements);
+  const attendanceFeatures: MarketingFeature[] = [];
+  if (isEntitlementEnabled(entitlements, "attendance.enabled")) {
+    attendanceFeatures.push({ label: "Attendance workspace", included: true });
+  }
+  if (isEntitlementEnabled(entitlements, "attendance.mobile.enabled")) {
+    attendanceFeatures.push({ label: "Mobile attendance", included: true });
+  }
+  if (isEntitlementEnabled(entitlements, "attendance.biometric.enabled")) {
+    const deviceLimit = entitlementLimit(entitlements, "attendance.devices.max");
+    const deviceLabel =
+      deviceLimit === null
+        ? "Biometric attendance with unlimited devices"
+        : deviceLimit && deviceLimit > 0
+          ? `Biometric attendance with up to ${deviceLimit.toLocaleString()} devices`
+          : "Biometric attendance";
+    attendanceFeatures.push({ label: deviceLabel, included: true });
+  }
+  const standardFeatures = entries
+    .filter(([key]) => !key.startsWith("attendance."))
     .map(([key, value]): MarketingFeature | null => {
       const label = entitlementLabel(key);
       if (key.endsWith(".max")) {
@@ -280,6 +384,7 @@ export function planFeatures(plan: SubscriptionPlan): MarketingFeature[] {
       return null;
     })
     .filter((item): item is MarketingFeature => Boolean(item));
+  return [...attendanceFeatures, ...standardFeatures];
 }
 
 export function requiredPlanName(

@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 import { shouldMobileBottomNavBeVisible } from "@/lib/mobile-module-navigation";
 import { useAuth } from "@/hooks/use-auth";
 import { isPathAccessible } from "@/lib/role-permissions";
+import { mobileNavigationTourKey } from "@/lib/mobile-navigation-tour";
 
 const isActive = (pathname: string, href: string) =>
   pathname === href || pathname.startsWith(`${href}/`);
@@ -64,6 +65,7 @@ export function MobileBottomNav() {
             <Link
               key={item.href}
               href={item.href}
+              data-tour={mobileNavigationTourKey(item.href)}
               className={cn(
                 "flex min-h-14 flex-col items-center justify-center gap-1 rounded-xl px-1 text-[10px] font-medium transition-colors",
                 active ? "text-primary" : "text-muted-foreground",

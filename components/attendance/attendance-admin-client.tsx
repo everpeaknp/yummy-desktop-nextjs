@@ -28,6 +28,8 @@ import { attendanceApi } from "@/lib/attendance/api";
 import { payrollRowsToCsv } from "@/lib/attendance/payroll-export";
 import { useAuth } from "@/hooks/use-auth";
 import { getAttendanceUiAccess, hasPermission } from "@/lib/role-permissions";
+import { EntitlementGate } from "@/components/subscription/entitlement-gate";
+import { useEntitlement } from "@/hooks/use-subscription";
 import type {
   AttendanceDevice,
   AttendanceEntry,
@@ -282,6 +284,8 @@ function isBiometricAddonError(error: unknown) {
 
 export function AttendanceAdminClient() {
   const user = useAuth((state) => state.user);
+  const mobileAttendancePlan = useEntitlement("attendance.mobile.enabled", true);
+  const biometricAttendancePlan = useEntitlement("attendance.biometric.enabled", true);
   const attendanceAccess = getAttendanceUiAccess(user);
   const {
     canView: canViewAttendance,
@@ -496,7 +500,9 @@ export function AttendanceAdminClient() {
             attendanceApi.getSettings(),
             attendanceApi.listShiftTemplates(),
             attendanceApi.listSchedules(),
-            attendanceApi.listMobileDevices(),
+            mobileAttendancePlan.allowed
+              ? attendanceApi.listMobileDevices()
+              : Promise.resolve([] as AttendanceMobileDevice[]),
           ]).catch((error) => {
             reportLoadFailure(error);
             return [null, [], [], []] as [
@@ -517,7 +523,8 @@ export function AttendanceAdminClient() {
             AttendanceSchedule[],
             AttendanceMobileDevice[],
           ]);
-      const biometricDataPromise = canManageDevices
+      const biometricDataPromise =
+        canManageDevices && biometricAttendancePlan.allowed
         ? Promise.all([
             attendanceApi.listDevices(),
             attendanceApi.listDeviceMappings(),
@@ -585,7 +592,16 @@ export function AttendanceAdminClient() {
     } finally {
       setLoading(false);
     }
-  }, [canManageAttendance, canManageDevices, canManageStaff, canViewAttendance, dateFrom, dateTo]);
+  }, [
+    biometricAttendancePlan.allowed,
+    canManageAttendance,
+    canManageDevices,
+    canManageStaff,
+    canViewAttendance,
+    dateFrom,
+    dateTo,
+    mobileAttendancePlan.allowed,
+  ]);
 
   useEffect(() => {
     void loadAll();
@@ -2252,12 +2268,26 @@ export function AttendanceAdminClient() {
         </TabsContent>
 
         <TabsContent value="devices" className="space-y-5">
-          {canManageAttendance ? <MobileDeviceTable
-            devices={mobileDevices}
-            staffProfiles={staffProfiles}
-            usersById={usersById}
-            onDecide={decideMobile}
-          /> : null}
+          {canManageAttendance ? (
+            <EntitlementGate
+              entitlement="attendance.mobile.enabled"
+              title="Unlock mobile attendance"
+              description="Let approved staff use their phone to clock in while keeping every attendance record verified."
+            >
+              <MobileDeviceTable
+                devices={mobileDevices}
+                staffProfiles={staffProfiles}
+                usersById={usersById}
+                onDecide={decideMobile}
+              />
+            </EntitlementGate>
+          ) : null}
+          {canManageDevices ? (
+            <EntitlementGate
+              entitlement="attendance.biometric.enabled"
+              title="Unlock biometric attendance"
+              description="Connect biometric devices and keep staff-device mappings in the same attendance workspace."
+            >
           <div className="grid gap-5 xl:grid-cols-[420px_minmax(0,1fr)]">
             <div className="space-y-5">
               <Card>
@@ -2466,6 +2496,8 @@ export function AttendanceAdminClient() {
               />
             </div>
           </div>
+            </EntitlementGate>
+          ) : null}
         </TabsContent>
       </Tabs>
       <Dialog

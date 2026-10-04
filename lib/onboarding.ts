@@ -26,16 +26,10 @@ export function canAccessOnboarding(user: OnboardingUser): boolean {
   if (!user) return false;
   // First registration — any authenticated account without a restaurant can create or join.
   if (!user.restaurant_id) return true;
-  // Existing restaurant members: admin/owner/manager only (replay uses canReplayOnboarding).
+  // Existing restaurant members: admin/owner/manager only.
   return collectRoles(user).some(
     (r) => r === "admin" || r === "owner" || r === "manager",
   );
-}
-
-/** Replay from Help is admin-only after the restaurant already exists. */
-export function canReplayOnboarding(user: OnboardingUser): boolean {
-  if (!user) return false;
-  return collectRoles(user).some((r) => r === "admin");
 }
 
 /** True when the user still needs first registration (no restaurant yet). */
@@ -44,7 +38,7 @@ export function needsFirstOnboarding(user: OnboardingUser): boolean {
   return !user.restaurant_id;
 }
 
-export type BusinessType = "dine_in" | "cafe" | "cloud_kitchen";
+export type BusinessType = "fast_food" | "resort" | "hotel" | "bakery" | "cloud_kitchen" | "bar" | "cafe" | "restaurant";
 
 export type WorkspaceMode = "restaurant" | "hotel" | "both";
 
@@ -123,19 +117,44 @@ export const BUSINESS_TYPE_OPTIONS: Array<{
   description: string;
 }> = [
   {
-    value: "dine_in",
-    title: "Dine-in restaurant",
-    description: "Tables, waiters, kitchen tickets and billing.",
+    value: "fast_food",
+    title: "FastFood",
+    description: "Fast food restaurant",
   },
   {
-    value: "cafe",
-    title: "Cafe or bakery",
-    description: "Fast checkout, counters and takeaway orders.",
+    value: "resort",
+    title: "Resort",
+    description: "Resort with hotel and dining",
+  },
+  {
+    value: "hotel",
+    title: "Hotel",
+    description: "Hotel accommodation",
+  },
+  {
+    value: "bakery",
+    title: "Bakery",
+    description: "Bakery shop",
   },
   {
     value: "cloud_kitchen",
-    title: "Cloud kitchen",
-    description: "Delivery-first workflow with no dining tables.",
+    title: "Cloud Kitchen",
+    description: "Cloud kitchen or ghost kitchen",
+  },
+  {
+    value: "bar",
+    title: "Bar",
+    description: "Bar or pub",
+  },
+  {
+    value: "cafe",
+    title: "Cafe",
+    description: "Cafe or coffeehouse",
+  },
+  {
+    value: "restaurant",
+    title: "Restaurant",
+    description: "Full-service restaurant",
   },
 ];
 
@@ -172,7 +191,7 @@ export function createEmptyDraft(email = ""): OnboardingDraft {
     profilePicture: "",
     coverPhoto: "",
     workspace: "both",
-    businessType: "dine_in",
+    businessType: "restaurant",
     hours: defaultHours(),
     tables: 12,
     currency: "NPR",

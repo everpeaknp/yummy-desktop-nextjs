@@ -41,6 +41,7 @@ interface DateRangeDropdownProps {
   showLifetime?: boolean
   presetOptions?: ReadonlyArray<DateRangePresetOption>
   className?: string
+  dataTour?: string
 }
 
 export function DateRangeDropdown({
@@ -51,6 +52,7 @@ export function DateRangeDropdown({
   showLifetime = false,
   presetOptions,
   className,
+  dataTour,
 }: DateRangeDropdownProps) {
   const [open, setOpen] = React.useState(false)
   const [fromTime, setFromTime] = React.useState("00:00")
@@ -96,6 +98,7 @@ export function DateRangeDropdown({
       <PopoverTrigger asChild>
         <Button
           variant="ghost"
+          data-tour={dataTour}
           className={cn(
             "h-9 min-w-[108px] justify-between rounded-xl border border-border bg-background px-3 font-medium text-foreground shadow-none hover:bg-muted dark:border-white/15 dark:bg-card dark:hover:bg-muted",
             className,

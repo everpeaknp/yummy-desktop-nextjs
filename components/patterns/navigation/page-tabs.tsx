@@ -29,6 +29,7 @@ export interface PageTabsProps {
   activeVariant?: "default" | "accent";
   ariaLabel?: string;
   className?: string;
+  dataTour?: string;
 }
 
 function TabLabel({ item }: { item: PageTabItem }) {
@@ -54,6 +55,7 @@ export function PageTabs({
   activeVariant = "default",
   ariaLabel = "Page sections",
   className,
+  dataTour,
 }: PageTabsProps) {
   const scrollContainerRef = React.useRef<HTMLDivElement>(null);
   const equalStyle =
@@ -112,6 +114,7 @@ export function PageTabs({
         )}
       >
         <TabsList
+          data-tour={dataTour}
           aria-label={ariaLabel}
           style={equalStyle}
           className={cn(

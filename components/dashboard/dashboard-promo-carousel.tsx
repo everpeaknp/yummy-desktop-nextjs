@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import apiClient from "@/lib/api-client";
 
 type DashboardBanner = {
@@ -10,16 +11,14 @@ type DashboardBanner = {
   mobile_image_url?: string;
   desktop_image_url?: string;
   alt_text: string;
+  action_type?: "none" | "external_url" | "internal_path";
+  action_value?: string | null;
+  open_in_new_tab?: boolean;
 };
 
-const fallbackBanners: DashboardBanner[] = [
-  { id: 1, image_url: "/mobile-promos/burger.png", mobile_image_url: "/mobile-promos/burger.png", desktop_image_url: "/mobile-promos/burger.png", alt_text: "New burger promotion" },
-  { id: 2, image_url: "/mobile-promos/king-banner.png", mobile_image_url: "/mobile-promos/king-banner.png", desktop_image_url: "/mobile-promos/king-banner.png", alt_text: "Today's featured food promotion" },
-  { id: 3, image_url: "/mobile-promos/plant-banner.png", mobile_image_url: "/mobile-promos/plant-banner.png", desktop_image_url: "/mobile-promos/plant-banner.png", alt_text: "Delivery promotion" },
-];
-
 export function DashboardPromoCarousel({ variant = "mobile" }: { variant?: "mobile" | "desktop" }) {
-  const [banners, setBanners] = useState(fallbackBanners);
+  const router = useRouter();
+  const [banners, setBanners] = useState<DashboardBanner[]>([]);
   const [activeIndex, setActiveIndex] = useState(0);
 
   useEffect(() => {
@@ -31,7 +30,9 @@ export function DashboardPromoCarousel({ variant = "mobile" }: { variant?: "mobi
         setActiveIndex(0);
       })
       .catch(() => {
-        // Keep the checked-in starter banners available if the admin API is offline.
+        // Promotional content is platform-managed. Do not display an old local
+        // campaign when the platform cannot provide the current banner list.
+        if (mounted) setBanners([]);
       });
     return () => { mounted = false; };
   }, []);
@@ -51,6 +52,44 @@ export function DashboardPromoCarousel({ variant = "mobile" }: { variant?: "mobi
   const activeImage = variant === "desktop"
     ? activeBanner.desktop_image_url || activeBanner.image_url
     : activeBanner.mobile_image_url || activeBanner.image_url;
+  const actionType = activeBanner.action_type || "none";
+  const actionValue = activeBanner.action_value?.trim() || "";
+  const canOpen = actionType !== "none" && Boolean(actionValue);
+  const frameClassName = `relative isolate w-full overflow-hidden border border-border/80 bg-muted ${variant === "desktop" ? "h-40 rounded-2xl xl:h-44" : "aspect-[3.2/1] max-h-44 min-h-28 rounded-xl"}`;
+  const bannerArtwork = (
+    <>
+      <Image
+        src={activeImage}
+        alt=""
+        aria-hidden="true"
+        fill
+        sizes="100vw"
+        className="-z-10 scale-110 object-cover opacity-60 blur-xl"
+      />
+      <Image
+        key={activeBanner.id}
+        src={activeImage}
+        alt={activeBanner.alt_text}
+        fill
+        sizes="(max-width: 768px) 100vw, 1600px"
+        className="object-contain p-1 drop-shadow-md"
+        priority={activeIndex === 0}
+      />
+    </>
+  );
+
+  const openBanner = () => {
+    if (!canOpen) return;
+    if (actionType === "internal_path") {
+      router.push(actionValue);
+      return;
+    }
+    if (activeBanner.open_in_new_tab) {
+      window.open(actionValue, "_blank", "noopener,noreferrer");
+      return;
+    }
+    window.location.assign(actionValue);
+  };
 
   return (
     <div
@@ -58,25 +97,18 @@ export function DashboardPromoCarousel({ variant = "mobile" }: { variant?: "mobi
       aria-roledescription="carousel"
       className="w-full min-w-0 space-y-2"
     >
-      <div className={`relative isolate w-full overflow-hidden border border-border/80 bg-muted ${variant === "desktop" ? "h-40 rounded-2xl xl:h-44" : "aspect-[3.2/1] max-h-44 min-h-28 rounded-xl"}`}>
-        <Image
-          src={activeImage}
-          alt=""
-          aria-hidden="true"
-          fill
-          sizes="100vw"
-          className="-z-10 scale-110 object-cover opacity-60 blur-xl"
-        />
-        <Image
-          key={activeBanner.id}
-          src={activeImage}
-          alt={activeBanner.alt_text}
-          fill
-          sizes="(max-width: 768px) 100vw, 1600px"
-          className="object-contain p-1 drop-shadow-md"
-          priority={activeIndex === 0}
-        />
-      </div>
+      {canOpen ? (
+        <button
+          type="button"
+          onClick={openBanner}
+          className={`${frameClassName} cursor-pointer text-left outline-none transition focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2`}
+          aria-label={`Open ${activeBanner.alt_text || "promotion"}`}
+        >
+          {bannerArtwork}
+        </button>
+      ) : (
+        <div className={frameClassName}>{bannerArtwork}</div>
+      )}
       <div className="flex items-center justify-center gap-1.5">
         {banners.map((banner, index) => (
           <button

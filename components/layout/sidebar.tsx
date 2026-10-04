@@ -28,6 +28,7 @@ import {
   HelpCircle,
   Camera,
   Loader2,
+  Plus,
 } from "lucide-react";
 import { toast } from "sonner";
 import apiClient from "@/lib/api-client";
@@ -219,6 +220,30 @@ function SidebarNavLink({
             )}
           />
         </button>
+      </div>
+    );
+  }
+
+  if (!collapsed && item.quickCreateHref) {
+    return (
+      <div className={cn(classes, "gap-1 pr-1.5")}>
+        <Link
+          href={item.href}
+          onClick={() => sessionStorage.removeItem("fromManage")}
+          className="flex flex-1 min-w-0 items-center gap-3"
+          {...tourAttr}
+        >
+          {content}
+        </Link>
+        <Link
+          href={item.quickCreateHref}
+          title={item.quickCreateLabel || "Create new"}
+          aria-label={item.quickCreateLabel || "Create new"}
+          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-primary/15 hover:text-primary"
+          data-tour={`nav-${item.href.replace(/^\//, "").replace(/\//g, "-")}-quick-create`}
+        >
+          <Plus className="h-3.5 w-3.5" />
+        </Link>
       </div>
     );
   }
@@ -599,9 +624,23 @@ export function Sidebar() {
             {items.map((item, index) => {
               const active = isItemActive(item);
               const isOpen = openMenus[item.title];
+              const showSectionLabel =
+                !collapsed &&
+                item.section &&
+                (index === 0 || items[index - 1]?.section !== item.section);
 
               return (
                 <div key={index} className="flex flex-col">
+                  {showSectionLabel && (
+                    <div
+                      className={cn(
+                        "px-3 pb-1 text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground/70",
+                        index > 0 && "mt-5 border-t border-border/50 pt-4",
+                      )}
+                    >
+                      {item.section}
+                    </div>
+                  )}
                   {collapsed ? (
                     <Tooltip>
                       <TooltipTrigger asChild>
@@ -846,36 +885,6 @@ export function Sidebar() {
               </DropdownMenu>
             </div>
 
-            {/* Direct visible semi-red logout action */}
-            {collapsed ? (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    onClick={() => {
-                      logout();
-                      router.push("/");
-                    }}
-                    title="Log out"
-                    className="flex h-8 w-8 mx-auto items-center justify-center rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-500/25 transition-colors cursor-pointer"
-                  >
-                    <LogOut className="h-3.5 w-3.5" />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="right">Log out</TooltipContent>
-              </Tooltip>
-            ) : (
-              <button
-                onClick={() => {
-                  logout();
-                  router.push("/");
-                }}
-                title="Log out"
-                className="flex items-center justify-center h-8 px-2.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-500/25 transition-all text-xs font-semibold gap-1.5 shrink-0 cursor-pointer"
-              >
-                <LogOut className="h-3.5 w-3.5" />
-                <span className="hidden xl:inline text-[11px]">Log out</span>
-              </button>
-            )}
           </div>
 
           <input

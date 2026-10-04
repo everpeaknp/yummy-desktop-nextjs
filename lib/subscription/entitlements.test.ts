@@ -137,6 +137,21 @@ describe("subscription entitlement helpers", () => {
     expect(requiredPlanName(catalog, "payroll.enabled")).toBe("Basic");
   });
 
+  it("presents attendance as one workspace with distinct mobile and biometric methods", () => {
+    const premium = plan("premium", 4, {
+      "attendance.enabled": true,
+      "attendance.mobile.enabled": true,
+      "attendance.biometric.enabled": true,
+      "attendance.devices.max": 3,
+    });
+
+    expect(planFeatures(premium).map((feature) => feature.label)).toEqual([
+      "Attendance workspace",
+      "Mobile attendance",
+      "Biometric attendance with up to 3 devices",
+    ]);
+  });
+
   it("uses the structured current plan and adds trial status", () => {
     expect(currentPlanDisplayName({
       billing_mode: null,

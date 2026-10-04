@@ -496,6 +496,33 @@ export const Header = memo(function Header() {
           >
             <HelpCircle className="h-5 w-5" aria-hidden="true" />
           </Button>
+          {pathname === "/manage/profile" ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-11 w-11 rounded-xl lg:hidden"
+                  aria-label="Account actions"
+                >
+                  <MoreHorizontal className="h-5 w-5" aria-hidden="true" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" sideOffset={8}>
+                <DropdownMenuItem
+                  className="min-h-11 text-destructive focus:text-destructive"
+                  onSelect={() => {
+                    logout();
+                    router.push("/");
+                  }}
+                >
+                  <LogOut className="mr-2 h-4 w-4" />
+                  Log out
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : null}
           <div className="hidden sm:block" data-tour="navbar-theme">
             <ModeToggle />
           </div>

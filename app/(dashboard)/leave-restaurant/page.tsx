@@ -5,7 +5,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
-  ArrowLeft,
   Banknote,
   CheckCircle2,
   Clock3,
@@ -21,13 +20,6 @@ import { getApiErrorMessage } from "@/lib/api-error-message";
 import { useAuth } from "@/hooks/use-auth";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 
 type LeaveBlocker = {
   code: string;
@@ -131,147 +123,35 @@ export default function LeaveRestaurantPage() {
   };
 
   return (
-    <div className="mx-auto flex min-h-[75vh] max-w-3xl items-center p-4 sm:p-6">
-      <Card className="w-full overflow-hidden rounded-3xl shadow-sm">
-        <div className="border-b bg-gradient-to-br from-amber-500/10 via-background to-primary/10 p-6 sm:p-8">
-          <Button
-            variant="ghost"
-            className="mb-5 -ml-3"
-            onClick={() => router.back()}
-          >
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Back
-          </Button>
-          <div className="flex items-start gap-4">
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-amber-500/15 text-amber-700">
-              <LogOut className="h-6 w-6" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold tracking-tight">
-                Leave {restaurant?.name || "restaurant"}
-              </h1>
-              <p className="mt-2 max-w-xl text-sm text-muted-foreground">
-                This removes only your current restaurant access. Your Yummy
-                account and this restaurant&apos;s historical attendance,
-                payroll, and audit records remain intact.
-              </p>
-            </div>
-          </div>
+    <main className="mx-auto w-full max-w-xl px-5 pb-12 pt-8 sm:px-6 sm:pt-12">
+      <header className="max-w-lg">
+        <div className="flex items-center gap-2 text-sm font-medium text-destructive"><LogOut className="h-4 w-4" />Restaurant access</div>
+        <h1 className="mt-3 text-3xl font-semibold leading-tight tracking-tight sm:text-4xl">Leave {restaurant?.name || "this restaurant"}</h1>
+        <p className="mt-4 text-base leading-7 text-muted-foreground">You will no longer be able to work in this restaurant. Your Yummy account stays active, and this restaurant&apos;s existing attendance, payroll, and audit history remains intact.</p>
+      </header>
+
+      <section className="mt-10 border-y py-5" aria-label="Leave readiness">
+        <div className="flex items-start justify-between gap-4">
+          <div><h2 className="font-semibold tracking-tight">Ready to leave?</h2><p className="mt-1 text-sm leading-5 text-muted-foreground">We check your open responsibilities before access is removed.</p></div>
+          <Button type="button" size="icon" variant="ghost" className="shrink-0" disabled={loading} onClick={() => void loadPreflight()} aria-label="Refresh readiness check" title="Refresh readiness check">{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}</Button>
         </div>
-        <CardHeader>
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <CardTitle>Readiness check</CardTitle>
-              <CardDescription>
-                Complete every open responsibility before access is released.
-              </CardDescription>
-            </div>
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={loading}
-              onClick={() => void loadPreflight()}
-            >
-              {loading ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <RefreshCw className="mr-2 h-4 w-4" />
-              )}
-              <span className={loading ? "sr-only" : ""}>Refresh</span>
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-5">
-          {loading && !preflight ? (
-            <div className="flex items-center justify-center gap-2 rounded-2xl border border-dashed py-12 text-sm text-muted-foreground">
-              <Loader2 className="h-5 w-5 animate-spin" />
-              Checking ownership, drawers, and attendance...
-            </div>
-          ) : null}
-          {!loading && !preflight ? (
-            <div className="rounded-2xl border border-destructive/30 bg-destructive/5 p-4 text-sm">
-              <p className="font-semibold text-destructive">
-                Readiness could not be verified
-              </p>
-              <p className="mt-1 text-muted-foreground">
-                Refresh the check before attempting to leave.
-              </p>
-            </div>
-          ) : null}
-          {preflight?.can_leave ? (
-            <div className="flex items-start gap-3 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4">
-              <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" />
-              <div>
-                <p className="font-semibold text-emerald-800 dark:text-emerald-300">
-                  Ready to leave
-                </p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  No ownership, open-drawer, or clock-in responsibilities are
-                  blocking this change.
-                </p>
-              </div>
-            </div>
-          ) : null}
+
+        <div className="mt-5">
+          {loading && !preflight ? <div className="flex items-center gap-2 py-3 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />Checking ownership, drawer, and attendance</div> : null}
+          {!loading && !preflight ? <div className="border-l-2 border-destructive pl-4"><p className="font-medium text-destructive">We could not verify your readiness</p><p className="mt-1 text-sm leading-5 text-muted-foreground">Refresh the check before leaving this restaurant.</p></div> : null}
+          {preflight?.can_leave ? <div className="flex items-start gap-3"><CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" /><div><p className="font-semibold">Everything is clear</p><p className="mt-1 text-sm leading-5 text-muted-foreground">You have no ownership, open drawer, or active attendance responsibilities.</p></div></div> : null}
           {preflight?.blockers?.map((blocker) => {
             const presentation = blockerPresentation(blocker);
             const Icon = presentation.icon;
-            return (
-              <div
-                key={blocker.code}
-                className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4"
-              >
-                <div className="flex items-start gap-3">
-                  <div className="rounded-xl bg-amber-500/15 p-2 text-amber-700">
-                    <Icon className="h-5 w-5" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="font-semibold">{blocker.title}</p>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      {blocker.detail}
-                    </p>
-                    <p className="mt-2 text-xs font-medium text-amber-800 dark:text-amber-300">
-                      Next: {presentation.hint}
-                    </p>
-                    {presentation.path && (
-                      <Button
-                        asChild
-                        size="sm"
-                        variant="outline"
-                        className="mt-3"
-                      >
-                        <Link href={presentation.path}>
-                          {presentation.action}
-                        </Link>
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              </div>
-            );
+            return <div key={blocker.code} className="flex items-start gap-3 border-t py-4 first:border-t-0 first:pt-0"><Icon className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" /><div className="min-w-0 flex-1"><p className="font-medium">{blocker.title}</p><p className="mt-1 text-sm leading-5 text-muted-foreground">{blocker.detail}</p><p className="mt-2 text-sm leading-5 text-amber-800 dark:text-amber-300">{presentation.hint}</p>{presentation.path ? <Button asChild size="sm" variant="outline" className="mt-3"><Link href={presentation.path}>{presentation.action}</Link></Button> : null}</div></div>;
           })}
-          <div className="flex flex-col-reverse gap-3 border-t pt-5 sm:flex-row sm:justify-end">
-            <Button
-              variant="outline"
-              disabled={leaving}
-              onClick={() => router.back()}
-            >
-              Keep membership
-            </Button>
-            <Button
-              variant="destructive"
-              disabled={loading || leaving || !preflight?.can_leave}
-              onClick={() => void leave()}
-            >
-              {leaving ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <LogOut className="mr-2 h-4 w-4" />
-              )}
-              {leaving ? "Leaving..." : "Leave restaurant"}
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-    </div>
+        </div>
+      </section>
+
+      <footer className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <Button variant="ghost" disabled={leaving} onClick={() => router.back()} className="order-2 text-muted-foreground sm:order-1">Stay in restaurant</Button>
+        <Button variant="destructive" className="order-1 w-full sm:order-2 sm:w-auto" disabled={loading || leaving || !preflight?.can_leave} onClick={() => void leave()}>{leaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <LogOut className="mr-2 h-4 w-4" />}{leaving ? "Leaving..." : "Leave restaurant"}</Button>
+      </footer>
+    </main>
   );
 }

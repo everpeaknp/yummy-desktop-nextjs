@@ -6,7 +6,6 @@ import {
   Compass,
   Mail,
   MessageSquare,
-  Rocket,
   Settings,
   Store,
 } from "lucide-react";
@@ -19,7 +18,6 @@ import {
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
-import { canReplayOnboarding } from "@/lib/onboarding";
 import { isPathAccessible } from "@/lib/role-permissions";
 import { requestProductTour } from "@/lib/product-tour";
 
@@ -131,11 +129,8 @@ export function HelpCenterDialog({
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** @deprecated Replay is admin-only via canReplayOnboarding; prop ignored. */
-  includeOnboarding?: boolean;
 }) {
   const user = useAuth((s) => s.user);
-  const showOnboarding = canReplayOnboarding(user);
   const close = () => onOpenChange(false);
 
   const startingActions: HelpAction[] = [
@@ -145,16 +140,6 @@ export function HelpCenterDialog({
       icon: Compass,
       onClick: () => requestProductTour(),
     },
-    ...(showOnboarding
-      ? [
-          {
-            title: "Onboarding",
-            description: "Replay the workspace setup guide",
-            href: "/onboarding?replay=1",
-            icon: Rocket,
-          } satisfies HelpAction,
-        ]
-      : []),
   ];
 
   const shortcuts: HelpShortcut[] = [
@@ -166,24 +151,17 @@ export function HelpCenterDialog({
     { title: "Settings", href: "/settings", icon: Settings },
     {
       title: "Guides & tutorials",
-      href: "/settings",
+      href: "/help-center",
       icon: BookOpen,
     },
   ].filter((item) => {
     if (!item.href) return true;
-    if (item.href.startsWith("/onboarding")) return showOnboarding;
     return isPathAccessible(item.href, user);
   });
 
   const supportLinks: HelpShortcut[] = [
     { title: "Send feedback", href: "/feedback", icon: MessageSquare },
-    {
-      title: "Email support",
-      icon: Mail,
-      onClick: () => {
-        window.location.href = "mailto:support@yummy.com";
-      },
-    },
+    { title: "Customer support", href: "/help-center#support", icon: Mail },
   ].filter((item) => {
     if (!item.href) return true;
     return isPathAccessible(item.href, user);

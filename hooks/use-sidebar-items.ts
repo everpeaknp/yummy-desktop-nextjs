@@ -31,6 +31,8 @@ import {
   Truck,
   BookOpenCheck,
   BadgeDollarSign,
+  Sprout,
+  Megaphone,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import {
@@ -42,8 +44,8 @@ import {
 } from "@/lib/role-permissions";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import { useSubscriptionStore } from "@/hooks/use-subscription";
-import { isFinanceFeatureEnabled } from "@/lib/finance-feature-access";
 import { isSubscriptionEntitlementEnabled } from "@/lib/subscription/entitlements";
+import { isFinanceFeatureEnabled } from "@/lib/finance-feature-access";
 export interface SidebarItem {
   title: string;
   href: string;
@@ -52,6 +54,9 @@ export interface SidebarItem {
   externalUrl?: string;
   subItems?: SidebarItem[];
   isNestedChild?: boolean;
+  /** Inline quick-create link rendered to the right of this item's label. */
+  quickCreateHref?: string;
+  quickCreateLabel?: string;
 }
 
 const RESTAURANT_ICON_MAP: Record<string, LucideIcon> = {
@@ -81,6 +86,9 @@ const RESTAURANT_ICON_MAP: Record<string, LucideIcon> = {
   "/finance/setup": Settings,
   "/finance/operations": Banknote,
   "/customers": Users,
+  "/grow": Sprout,
+  "/grow/campaigns": Megaphone,
+  "/grow/subscribers": Users,
   "/attendance": Fingerprint,
   "/staff": Users,
   "/workforce": Briefcase,
@@ -177,18 +185,16 @@ export function useSidebarItems(): SidebarItem[] {
   const currentSubscription = useSubscriptionStore((state) => state.current);
 
   return useMemo(() => {
-    const isExplicitlyLocked = (key: string) =>
+    const isExplicitlyLocked = (key: string, legacyFallback = true) =>
       Boolean(currentSubscription) &&
-      !isSubscriptionEntitlementEnabled(currentSubscription, key, true);
+      !isSubscriptionEntitlementEnabled(currentSubscription, key, legacyFallback);
     const roles = normalizeRolesForUser(user);
     const isAdminOrManager = roles.some(
       (r) => r === "admin" || r === "manager",
     );
     const isCashier = roles.some((r) => r === "cashier");
 
-    const hotelAvailable =
-      Boolean(restaurant?.hotel_enabled) &&
-      !isExplicitlyLocked("business.hotel.enabled");
+    const hotelAvailable = Boolean(restaurant?.hotel_enabled);
     const restaurantAvailable = Boolean(restaurant?.restaurant_enabled);
 
     // Hotel-only properties keep hotel operations plus permitted shared tools.
@@ -224,20 +230,26 @@ export function useSidebarItems(): SidebarItem[] {
           return false;
         const entitlementByRoute: Record<string, string> = {
           "/inventory": "inventory.enabled",
-          "/suppliers": "inventory.suppliers.enabled",
           "/manage/suppliers": "inventory.suppliers.enabled",
           "/reservations": "reservations.enabled",
+          "/payroll": "payroll.enabled",
           "/finance/accounting": "finance.accounting.enabled",
+          "/menu/modifiers": "menu.modifiers.enabled",
           "/finance/income": "finance.income_expense.enabled",
           "/finance/expenses": "finance.income_expense.enabled",
           "/cash-drawers": "finance.cash_drawer.enabled",
           "/customers": "customers.crm.enabled",
+          "/grow": "grow.enabled",
           "/day-close": "finance.daybook.enabled",
+          "/period-reports": "finance.period_close.enabled",
           "/manage/receipt-designer": "designers.receipt.enabled",
           "/manage/kot-designer": "designers.kot.enabled",
         };
         const requiredEntitlement = entitlementByRoute[item.href];
-        if (requiredEntitlement && isExplicitlyLocked(requiredEntitlement))
+        if (
+          requiredEntitlement &&
+          isExplicitlyLocked(requiredEntitlement, item.href !== "/grow")
+        )
           return false;
         return true;
       })
@@ -307,6 +319,17 @@ export function useSidebarItems(): SidebarItem[] {
       } else if (item.href === "/orders") {
         result.push(item);
       } else if (item.href === "/orders/new") {
+        result.push({ ...item, isNestedChild: true });
+      } else if (item.href === "/grow") {
+        result.push({
+          ...item,
+          ...(hasPermission(user, "grow.campaigns.manage")
+            ? { quickCreateHref: "/grow/campaigns/new", quickCreateLabel: "New campaign" }
+            : {}),
+        });
+      } else if (item.href === "/grow/campaigns") {
+        result.push({ ...item, isNestedChild: true });
+      } else if (item.href === "/grow/subscribers") {
         result.push({ ...item, isNestedChild: true });
       } else if (
         ["/menu/items", "/menu/categories", "/menu/modifiers"].includes(
@@ -422,10 +445,7 @@ export function useSidebarItems(): SidebarItem[] {
       group.subItems = subItems;
     }
 
-    if (
-      hasPermission(user, "finance.income.view") &&
-      !isExplicitlyLocked("finance.income_expense.enabled")
-    ) {
+    if (hasPermission(user, "finance.income.view")) {
       const group = getGroup(
         "finance",
         "Finance",
@@ -441,10 +461,7 @@ export function useSidebarItems(): SidebarItem[] {
           isNestedChild: true,
         });
       }
-      if (
-        isFinanceFeatureEnabled(restaurant, "reports") &&
-        !subItems.some((item) => item.href === "/finance/reports")
-      ) {
+      if (!subItems.some((item) => item.href === "/finance/reports")) {
         subItems.push({
           title: "Reports",
           href: "/finance/reports",
@@ -541,10 +558,7 @@ export function useSidebarItems(): SidebarItem[] {
         });
       }
 
-      if (
-        hasPermission(user, "day_close.drawer.open") &&
-        !isExplicitlyLocked("finance.cash_drawer.enabled")
-      ) {
+      if (hasPermission(user, "day_close.drawer.open")) {
         const cashBanksIndex = financeItems.findIndex(
           (item) => item.href === "/finance/operations",
         );
@@ -560,10 +574,7 @@ export function useSidebarItems(): SidebarItem[] {
         );
       }
 
-      if (
-        hasPermission(user, "finance.daybook.view") &&
-        !isExplicitlyLocked("finance.daybook.enabled")
-      ) {
+      if (hasPermission(user, "finance.daybook.view")) {
         const cashDrawersIndex = financeItems.findIndex(
           (item) => item.href === "/cash-drawers",
         );
@@ -652,18 +663,33 @@ export function useSidebarItems(): SidebarItem[] {
       result.push({ title: "Manage", href: "/manage", icon: LayoutGrid });
     }
 
-    // Ensure Settings is always at the very end of navigation
-    const cleaned = result.map((r) => ({
+    // Keep the optional Grow product grouped after operational navigation.
+    const isGrow = (item: SidebarItem) => item.href === "/grow" || item.href.startsWith("/grow/");
+    const orderedResult = [
+      ...result.filter((item) => !isGrow(item)),
+      ...result.filter(isGrow),
+    ];
+
+    const cleaned = orderedResult.map((r) => ({
       ...r,
-      subItems: r.subItems?.length ? r.subItems : undefined,
+      section: isGrow(r) ? "Yummy Grow" : "Yummy Operations",
+      subItems: r.subItems?.length
+        ? r.subItems.map((subItem) => ({
+            ...subItem,
+            section: "Yummy Operations",
+          }))
+        : undefined,
     }));
 
     const settingsIndex = cleaned.findIndex(
       (item) => item.href === "/settings" || item.title.toLowerCase() === "settings",
     );
-    if (settingsIndex >= 0 && settingsIndex !== cleaned.length - 1) {
+    const growIndex = cleaned.findIndex((item) => item.href === "/grow");
+    const desiredSettingsIndex = growIndex >= 0 ? growIndex - 1 : cleaned.length - 1;
+    if (settingsIndex >= 0 && settingsIndex !== desiredSettingsIndex) {
       const [settingsItem] = cleaned.splice(settingsIndex, 1);
-      cleaned.push(settingsItem);
+      const nextGrowIndex = cleaned.findIndex((item) => item.href === "/grow");
+      cleaned.splice(nextGrowIndex >= 0 ? nextGrowIndex : cleaned.length, 0, settingsItem);
     }
 
     return filterSidebarLinksByAccess(cleaned, user);

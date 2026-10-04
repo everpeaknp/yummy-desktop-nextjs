@@ -5,6 +5,7 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
+  ArrowRight,
   Camera,
   Check,
   ChefHat,
@@ -92,9 +93,14 @@ const STEP_LABELS = [
 ] as const;
 
 const BUSINESS_ICONS = {
-  dine_in: UtensilsCrossed,
-  cafe: Coffee,
+  fast_food: Store,
+  resort: ConciergeBell,
+  hotel: ConciergeBell,
+  bakery: Coffee,
   cloud_kitchen: ChefHat,
+  bar: Wallet,
+  cafe: Coffee,
+  restaurant: UtensilsCrossed,
 } as const;
 
 const WORKSPACE_ICONS = {
@@ -131,19 +137,17 @@ function extractError(err: unknown): string {
 
 export function OnboardingWizard({
   initialEmail = "",
-  replay = false,
-  restaurantId = null,
-  initialRestaurant = null,
   onBackToOptions,
   embedded = false,
 }: {
   initialEmail?: string;
-  replay?: boolean;
-  restaurantId?: number | null;
-  initialRestaurant?: Record<string, unknown> | null;
   onBackToOptions?: () => void;
   embedded?: boolean;
 }) {
+  // The legacy multi-step replay path has been retired. This component now
+  // exclusively renders the one-time restaurant creation form.
+  const replay = false;
+  const initialRestaurant: Record<string, unknown> | null = null;
   const router = useRouter();
   const { theme, setTheme } = useTheme();
   const user = useAuth((s) => s.user);
@@ -168,10 +172,7 @@ export function OnboardingWizard({
   const prevStep = useOnboarding((s) => s.prevStep);
 
   const resolvedRestaurantId =
-    restaurantId ??
-    user?.restaurant_id ??
-    (initialRestaurant?.id as number | undefined) ??
-    null;
+    user?.restaurant_id ?? null;
   const {
     profile: fiscalProfile,
     isActiveVat,
@@ -533,10 +534,10 @@ export function OnboardingWizard({
       }
       if (
         draft.workspace !== "hotel" &&
-        draft.businessType === "dine_in" &&
+        draft.businessType !== "cloud_kitchen" &&
         draft.tables < 1
       ) {
-        errors.tables = "Add at least 1 table for dine-in.";
+        errors.tables = "Add at least 1 table for this business type.";
       }
       if (!draft.payments.length) {
         errors.payments = "Select at least one payment method.";
@@ -933,6 +934,324 @@ export function OnboardingWizard({
     );
   }
 
+  // Simplified single-step form for regular onboarding (not replay)
+  if (!replay) {
+    const isFormComplete = draft.restaurantName.trim() && 
+                           draft.phone.trim() && 
+                           draft.businessType && 
+                           draft.address.trim();
+
+    const handleBackToOptions = () => {
+      if (onBackToOptions) onBackToOptions();
+    };
+
+    const handleSaveRestaurant = async () => {
+      if (!isFormComplete) return;
+      
+      // Validate required fields
+      const errors: Record<string, string> = {};
+      if (!draft.restaurantName.trim()) errors.restaurantName = "Business name is required";
+      if (!draft.phone.trim() || !isValidPhoneNumber(draft.phone)) errors.phone = "Valid phone is required";
+      if (!draft.businessType) errors.businessType = "Business type is required";
+      if (!draft.address.trim()) errors.address = "Address is required";
+      
+      if (Object.keys(errors).length > 0) {
+        setFieldErrors(errors);
+        return;
+      }
+
+      setSubmitting(true);
+      try {
+        const profile = buildProfilePayload();
+        
+        const createRes = await apiClient.post(
+          RestaurantApis.create,
+          {
+            ...profile,
+            business_type: draft.businessType,
+            restaurant_enabled: true,
+            hotel_enabled: false,
+            payment_cards: [],
+          },
+          { timeout: 120_000 }
+        );
+
+        const body = createRes?.data;
+        let created =
+          body?.data && typeof body.data === "object" && !Array.isArray(body.data)
+            ? body.data
+            : body && typeof body === "object" && !Array.isArray(body) && body.id
+              ? body
+              : null;
+
+        if (!created?.id) {
+          await fetchRestaurant(true);
+          created = useRestaurant.getState().restaurant;
+        }
+
+        if (!created?.id) {
+          throw new Error("Restaurant setup did not return a profile.");
+        }
+
+        // The simplified flow always creates a restaurant workspace.
+        setRestaurant({
+          ...(created as any),
+          restaurant_enabled: true,
+          hotel_enabled: false,
+        });
+
+        if (user && token) {
+          setAuth(
+            {
+              ...user,
+              restaurant_id: created.id,
+              role: "admin",
+              roles: ["admin"],
+              primary_role: "admin",
+            },
+            token,
+            refreshToken
+          );
+        }
+
+        try {
+          await useAuth.getState().refreshSession();
+          await useAuth.getState().syncUserProfile();
+        } catch (err) {
+          console.warn("[onboarding] post-create session refresh skipped", err);
+        }
+
+        await fetchRestaurant(true);
+        resetOnboarding(initialEmail || user?.email || "");
+        toast.success("Restaurant created successfully");
+        markPendingTour();
+        router.replace("/dashboard?tour=1");
+      } catch (err) {
+        toast.error(extractError(err));
+      } finally {
+        setSubmitting(false);
+      }
+    };
+
+    return (
+      <div className="relative w-full min-h-screen bg-gradient-to-br from-background via-background to-muted/20">
+        <div className="relative z-10 mx-auto w-full max-w-3xl px-4 py-12 sm:px-6 md:px-8">
+          {/* Logo */}
+          <div className="mb-8 flex justify-center">
+            <div className="flex items-center gap-3">
+              <div className="grid h-12 w-12 place-items-center overflow-hidden rounded-xl bg-gradient-to-br from-primary to-orange-600 shadow-lg">
+                <Image
+                  src="/logos/yummy_logo.png"
+                  alt="Yummy"
+                  width={40}
+                  height={40}
+                  className="object-contain brightness-0 invert"
+                  unoptimized
+                />
+              </div>
+              <span className="text-2xl font-bold tracking-tight text-foreground">Yummy</span>
+            </div>
+          </div>
+
+          <div className="w-full overflow-hidden rounded-3xl bg-card shadow-2xl shadow-primary/5 ring-1 ring-border/50">
+            {/* Orange accent bar */}
+            <div className="h-1 bg-gradient-to-r from-primary via-orange-500 to-primary" />
+            
+            <div className="px-6 py-8 sm:px-10 sm:py-10">
+              <div className="pb-6">
+                <section>
+                  <p className="mb-3 text-center text-xs font-semibold uppercase tracking-[0.14em] text-primary">
+                    Business details
+                  </p>
+                  <h2 className="text-center font-onboarding text-2xl font-medium tracking-[-0.03em] sm:text-3xl">
+                    Tell us about your business
+                  </h2>
+                  <p className="mt-3 mb-8 text-center text-sm leading-relaxed text-muted-foreground">
+                    Business name, contact, and address — these appear on receipts and your public profile.
+                  </p>
+
+                  <div className="space-y-7 overflow-visible rounded-2xl border border-border bg-card/40 p-6 shadow-sm">
+                    <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                      <Store className="h-4 w-4 text-primary" />
+                      General information
+                    </div>
+
+                    <div className="grid gap-5 sm:grid-cols-2">
+                      <div className="space-y-2.5">
+                        <Label htmlFor="restaurantName" className="text-sm font-medium">Business Name*</Label>
+                        <Input
+                          id="restaurantName"
+                          value={draft.restaurantName}
+                          onChange={(e) => patch("restaurantName", e.target.value)}
+                          placeholder="e.g. Himalayan Grill"
+                          className={cn(
+                            "h-11 transition-all focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1 hover:border-primary/50",
+                            fieldErrorClass("restaurantName")
+                          )}
+                          aria-invalid={Boolean(fieldErrors.restaurantName)}
+                        />
+                        <FieldError name="restaurantName" />
+                      </div>
+                      <div className="space-y-2.5">
+                        <Label htmlFor="phone" className="text-sm font-medium">Phone Number*</Label>
+                        <AppPhoneInput
+                          id="phone"
+                          value={draft.phone}
+                          onChange={(value) => patch("phone", value)}
+                          defaultCountry="NP"
+                          placeholder="Enter phone number"
+                          className={cn(
+                            "[&_.PhoneInputInput]:h-11 [&_.PhoneInput]:transition-all [&_.PhoneInput:hover]:border-primary/50 [&_.PhoneInput:focus-within]:ring-2 [&_.PhoneInput:focus-within]:ring-primary [&_.PhoneInput:focus-within]:ring-offset-1",
+                            fieldErrors.phone ? "[&_.PhoneInput]:border-destructive" : undefined
+                          )}
+                        />
+                        <FieldError name="phone" />
+                      </div>
+                      <div className="space-y-2.5">
+                        <div className="flex items-center gap-1.5">
+                          <Label htmlFor="email" className="text-sm font-medium">Email address</Label>
+                          {(draft.email || user?.email) ? (
+                            <span
+                              className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
+                              title="Verified"
+                              aria-label="Verified"
+                            >
+                              <Check className="h-3 w-3" strokeWidth={2.5} />
+                            </span>
+                          ) : null}
+                        </div>
+                        <Input
+                          id="email"
+                          type="email"
+                          value={draft.email || user?.email || ""}
+                          readOnly
+                          disabled
+                          className="h-11 cursor-not-allowed bg-muted/50 opacity-100"
+                          placeholder="Verified account email"
+                        />
+                      </div>
+                      <div className="space-y-2.5">
+                        <Label htmlFor="businessType" className="text-sm font-medium">Business Type*</Label>
+                        <Select
+                          value={draft.businessType}
+                          onValueChange={(value) => patch("businessType", value as typeof draft.businessType)}
+                        >
+                          <SelectTrigger
+                            id="businessType"
+                            className={cn(
+                              "h-11 transition-all focus:ring-2 focus:ring-primary focus:ring-offset-1 hover:border-primary/50",
+                              fieldErrorClass("businessType")
+                            )}
+                            aria-invalid={Boolean(fieldErrors.businessType)}
+                          >
+                            <SelectValue placeholder="Select business type" />
+                          </SelectTrigger>
+                          <SelectContent position="popper" side="bottom" align="start" sideOffset={4} className="w-[var(--radix-select-trigger-width)]">
+                            {BUSINESS_TYPE_OPTIONS.map((option) => (
+                              <SelectItem key={option.value} value={option.value}>
+                                {option.title}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FieldError name="businessType" />
+                      </div>
+                    </div>
+
+                    <div className="space-y-2.5">
+                      <div className="flex items-center gap-1.5">
+                        <Label htmlFor="address" className="text-sm font-medium">Physical Address*</Label>
+                        <FieldInfo>
+                          Type an address or open the map — both stay in sync. Format: street, area,
+                          city, state, country.
+                        </FieldInfo>
+                      </div>
+                      <div className="relative">
+                        <Input
+                          id="address"
+                          value={draft.address}
+                          onChange={(e) => handleAddressChange(e.target.value)}
+                          placeholder="Street, area, city, state, country"
+                          className={cn(
+                            "h-11 pr-11 transition-all focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1 hover:border-primary/50",
+                            fieldErrorClass("address")
+                          )}
+                          aria-invalid={Boolean(fieldErrors.address)}
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="absolute right-1 top-1/2 h-9 w-9 -translate-y-1/2 text-primary hover:bg-primary/10 hover:text-primary"
+                          onClick={() => setLocationMapOpen(true)}
+                          title="Set location on map"
+                          aria-label="Open map to set location"
+                        >
+                          <Map className="h-4 w-4" />
+                        </Button>
+                      </div>
+                      <FieldError name="address" />
+                      <FieldError name="location" />
+                      {resolvingAddress ? (
+                        <p className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          Syncing address and map…
+                        </p>
+                      ) : null}
+                    </div>
+                  </div>
+                </section>
+              </div>
+
+              {/* Navigation buttons */}
+              <div className="mt-6 space-y-5">
+                <div className="border-t border-border/60" />
+                
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={handleBackToOptions}
+                    disabled={submitting}
+                    size="lg"
+                    className="h-11 border-2 transition-all hover:border-primary/50 hover:bg-background sm:w-auto w-full"
+                  >
+                    <ArrowLeft className="mr-2 h-4 w-4" />
+                    Back
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={handleSaveRestaurant}
+                    disabled={!isFormComplete || submitting}
+                    size="lg"
+                    className="h-11 bg-primary shadow-lg shadow-primary/25 transition-all hover:shadow-xl hover:shadow-primary/30 sm:w-auto w-full"
+                  >
+                    {submitting ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Finishing…
+                      </>
+                    ) : (
+                      <>
+                        Finish Setup
+                        <ArrowRight className="ml-2 h-4 w-4" />
+                      </>
+                    )}
+                  </Button>
+                </div>
+
+                <p className="text-center text-xs text-muted-foreground">
+                  You can change these details later from Settings.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Original multi-step wizard (for embedded and replay modes)
   return (
     <div className="relative w-full bg-transparent">
       <div className="relative z-10 mx-auto w-full max-w-[1100px] px-4 pb-16 pt-4 sm:px-6 md:px-8">

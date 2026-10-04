@@ -124,6 +124,7 @@ export function OrdersNewOrderSheet() {
       >
         <button
           type="button"
+          data-tour="mobile-orders-new-order"
           aria-label={open ? "Close new order" : isScrolled && hasPinnedPrimary ? `Start a ${primaryOrderLabels[primaryOrderType!]} order` : "Start a new order"}
           aria-expanded={open}
           onClick={open ? () => setOpen(false) : openPrimary}

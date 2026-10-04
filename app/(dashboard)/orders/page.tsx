@@ -1295,6 +1295,7 @@ export default function OrdersPage() {
               containerClassName="min-w-0 flex-1 lg:w-[320px]"
             />
             <FilterBar
+              data-tour="mobile-orders-filters"
               className="shrink-0 lg:hidden"
               title={
                 activeTab === "active"
@@ -1349,6 +1350,7 @@ export default function OrdersPage() {
       {/* Tabs & Filters */}
       <div className="flex flex-col gap-4 lg:gap-5">
         <PageTabs
+          dataTour="mobile-orders-sections"
           value={activeTab}
           onValueChange={(value) =>
             setOrdersTab(value as "active" | "kot" | "history")

@@ -20,6 +20,7 @@ import {
   DrawerSessionApis,
   AccountingApis,
   StaffProfileApis,
+  GrowthApis,
 } from "@/lib/api/endpoints";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -76,6 +77,8 @@ import {
   Pencil,
   Plus,
   Minus,
+  Mail,
+  MessageCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { usePosBillingPermissions } from "@/hooks/use-pos-billing-permissions";
@@ -790,6 +793,10 @@ export default function CheckoutPage() {
     business_name: "",
     pan_number: "",
     billing_address: "",
+  });
+  const [quickAddMarketingConsent, setQuickAddMarketingConsent] = useState({
+    email: false,
+    whatsapp: false,
   });
 
   // Discount dialog
@@ -1584,6 +1591,27 @@ export default function CheckoutPage() {
       const created = res.data?.data;
       await fetchCustomers();
       if (created?.id) setSelectedCustomerId(String(created.id));
+      if (
+        created?.id &&
+        (quickAddMarketingConsent.email || quickAddMarketingConsent.whatsapp)
+      ) {
+        try {
+          await apiClient.post(
+            GrowthApis.staffConsentCapture,
+            {},
+            {
+              params: {
+                customer_id: created.id,
+                restaurant_id: user.restaurant_id,
+                email_opted_in: quickAddMarketingConsent.email,
+                whatsapp_opted_in: quickAddMarketingConsent.whatsapp,
+              },
+            },
+          );
+        } catch (consentError) {
+          console.warn("Customer created, but consent capture failed", consentError);
+        }
+      }
 
       setQuickAddForm({
         name: "",
@@ -1593,6 +1621,7 @@ export default function CheckoutPage() {
         pan_number: "",
         billing_address: "",
       });
+      setQuickAddMarketingConsent({ email: false, whatsapp: false });
       setQuickAddOpen(false);
     } catch (err: any) {
       const backendDetail =
@@ -2568,9 +2597,85 @@ export default function CheckoutPage() {
           setDiscountSubmitting(false);
           return;
         }
-        await apiClient.patch(OrderApis.updateOrder(orderId), {
-          discount_code: discountCode.trim(),
-        });
+        // Try Growth offer validation first
+        try {
+          // First, attach customer if one is selected but not yet assigned to order
+          let currentCustomerId = orderMeta?.customer_id;
+          if (selectedCustomerId && String(currentCustomerId || "") !== selectedCustomerId) {
+            await apiClient.patch(OrderApis.updateOrder(orderId), {
+              customer_id: parseInt(selectedCustomerId, 10),
+            });
+            currentCustomerId = parseInt(selectedCustomerId, 10);
+            setOrderMeta((prev) => (
+              prev ? { ...prev, customer_id: currentCustomerId } : prev
+            ));
+          }
+
+          const validateRes = await apiClient.post(GrowthApis.validateOffer, {
+            order_id: orderId,
+            offer_code: discountCode.trim(),
+            customer_id: currentCustomerId || null,
+          });
+          
+          if (validateRes.data?.data?.valid) {
+            // Apply as Growth offer
+            await apiClient.patch(OrderApis.updateOrder(orderId), {
+              growth_offer_code: discountCode.trim(),
+            });
+            toast.success(
+              `Growth offer applied: ${validateRes.data.data.offer_name || "Discount"}`,
+            );
+          } else {
+            const errorMsg = validateRes.data?.data?.message || "Invalid offer code";
+            // Enhance customer mismatch error with helpful instruction
+            if (validateRes.data?.data?.reason === "customer_mismatch") {
+              setDiscountError(
+                `${errorMsg} Please select the correct customer from the "Loyalty & Customer" section above before applying this coupon.`,
+              );
+            } else {
+              setDiscountError(errorMsg);
+            }
+            setDiscountSubmitting(false);
+            return;
+          }
+        } catch (growthErr: any) {
+          // If Growth validation fails, try as legacy discount code
+          const growthStatus = growthErr?.response?.status;
+          const errorData = growthErr?.response?.data?.data;
+          
+          // Enhanced error message for customer mismatch
+          if (errorData?.reason === "customer_mismatch") {
+            setDiscountError(
+              `${errorData.message || "This offer belongs to a different customer."} Please select the correct customer from the "Loyalty & Customer" section above before applying this coupon.`,
+            );
+            setDiscountSubmitting(false);
+            return;
+          }
+          
+          if (growthStatus === 403 || growthStatus === 404) {
+            // Grow might not be enabled, try legacy discount
+            try {
+              await apiClient.patch(OrderApis.updateOrder(orderId), {
+                discount_code: discountCode.trim(),
+              });
+            } catch (legacyErr: any) {
+              setDiscountError(
+                extractApiErrorMessage(legacyErr, "Invalid discount code"),
+              );
+              setDiscountSubmitting(false);
+              return;
+            }
+          } else {
+            setDiscountError(
+              extractApiErrorMessage(
+                growthErr,
+                "Failed to validate offer code",
+              ),
+            );
+            setDiscountSubmitting(false);
+            return;
+          }
+        }
       } else if (discountType === "staff") {
         const staffId = parseInt(selectedStaffId, 10);
         if (!staffId) {
@@ -2631,7 +2736,7 @@ export default function CheckoutPage() {
         OrderApis.updateOrder(orderId),
         orderMeta?.staff_order_for_id
           ? { staff_order_for_id: 0 }
-          : { discount_code: "" },
+          : { discount_code: "", growth_offer_code: "" },
       );
       await fetchBill();
     } catch (err: any) {
@@ -5191,6 +5296,44 @@ export default function CheckoutPage() {
                 }
                 placeholder="customer@example.com"
               />
+            </div>
+            <div className="rounded-lg border bg-muted/40 p-3">
+              <p className="text-sm font-semibold">Marketing offers (optional)</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Record only the channels the customer explicitly agrees to.
+              </p>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <label className="flex cursor-pointer items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={quickAddMarketingConsent.email}
+                    onChange={(event) =>
+                      setQuickAddMarketingConsent((current) => ({
+                        ...current,
+                        email: event.target.checked,
+                      }))
+                    }
+                    className="h-4 w-4 rounded border-input accent-primary"
+                  />
+                  <Mail className="h-4 w-4 text-muted-foreground" />
+                  Email
+                </label>
+                <label className="flex cursor-pointer items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={quickAddMarketingConsent.whatsapp}
+                    onChange={(event) =>
+                      setQuickAddMarketingConsent((current) => ({
+                        ...current,
+                        whatsapp: event.target.checked,
+                      }))
+                    }
+                    className="h-4 w-4 rounded border-input accent-primary"
+                  />
+                  <MessageCircle className="h-4 w-4 text-muted-foreground" />
+                  WhatsApp
+                </label>
+              </div>
             </div>
             <div className="rounded-lg border p-3 space-y-3">
               <p className="text-sm font-semibold">
