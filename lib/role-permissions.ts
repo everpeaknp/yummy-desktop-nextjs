@@ -420,6 +420,7 @@ const KNOWN_PERMISSION_KEYS = new Set<PermissionKey>([
   "platform.leads.manage", "platform.staff.view", "platform.staff.manage", "platform.roles.manage",
   "platform.billing.manage", "platform.billing.view", "platform.billing.catalog.manage", "platform.billing.publish",
   "platform.billing.subscriptions.manage", "platform.billing.overrides.manage", "platform.billing.payments.manage",
+  "grow.view", "grow.campaigns.manage", "grow.campaigns.approve", "grow.campaigns.send",
   "platform.billing.audit.view",
 ]);
 

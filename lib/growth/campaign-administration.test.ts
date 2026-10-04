@@ -41,6 +41,7 @@ describe("Growth campaign administration", () => {
       playbook_code: "win_back",
       segment_code: "lapsed",
       status: "review",
+      channel: "sms",
       audience_count: 0,
       offer: { id: 3 },
       approved_message_snapshot: "We miss you",
@@ -73,7 +74,7 @@ describe("Growth campaign administration", () => {
     expect(isCampaignApprovalReady(campaignApprovalChecks(campaign, templates, audience))).toBe(true);
     expect(
       isCampaignApprovalReady(
-        campaignApprovalChecks({ ...campaign, creative_asset_id: null }, templates, audience),
+        campaignApprovalChecks({ ...campaign, offer: null }, templates, audience),
       ),
     ).toBe(false);
     expect(
