@@ -34,6 +34,7 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AppPage } from "@/components/patterns/page/app-page";
 import { PageHeader } from "@/components/patterns/page/page-header";
+import { SettingsDesktopRail } from "@/components/settings/settings-desktop-rail";
 import { LoadingState } from "@/components/patterns/feedback/feedback-state";
 import {
   Select,
@@ -422,11 +423,14 @@ export default function RestaurantSettingsPage() {
   }
 
   return (
-    <AppPage className="pb-24" width="standard">
-      <PageHeader
-        title="Restaurant operations"
-        description="Configure POS behavior and payment integrations."
-      />
+    <AppPage className="pb-24" width="workspace">
+      <div className="2xl:flex 2xl:items-start 2xl:gap-8">
+        <SettingsDesktopRail activeItemId="restaurant_operations" />
+        <main className="min-w-0 flex-1">
+          <PageHeader
+            title="Restaurant operations"
+            description="Configure POS behavior and payment integrations."
+          />
 
       <Tabs
         value={activeTab}
@@ -946,7 +950,9 @@ export default function RestaurantSettingsPage() {
             </CardContent>
           </Card>
         </TabsContent>
-      </Tabs>
+        </Tabs>
+        </main>
+      </div>
 
       {/* QR Dialog */}
       <Dialog
