@@ -19,6 +19,7 @@ import {
   Search,
   Check,
   ChevronDown,
+  ArrowRight,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -402,16 +403,15 @@ export default function RolesPage() {
                       {Object.keys(builtInPresets).map((presetName) => (
                         <ListRow
                           key={presetName}
-                          leading={
+                          action={
                             <Button
                               type="button"
-                              variant="outline"
-                              size="sm"
+                              variant="link"
                               aria-label={`Use ${readableRoleName(presetName)} template`}
-                              className="h-7 w-8 p-0 text-[10px]"
+                              className="h-auto gap-1.5 px-2 py-2 text-sm font-semibold text-primary"
                               onClick={() => createFromPreset(presetName)}
                             >
-                              Use
+                              Use template <ArrowRight className="h-4 w-4" />
                             </Button>
                           }
                           title={readableRoleName(presetName)}
