@@ -78,7 +78,7 @@ import {
   Plus,
   Minus,
   Mail,
-  MessageCircle,
+  MessageSquare,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { usePosBillingPermissions } from "@/hooks/use-pos-billing-permissions";
@@ -792,7 +792,7 @@ export default function CheckoutPage() {
   });
   const [quickAddMarketingConsent, setQuickAddMarketingConsent] = useState({
     email: false,
-    whatsapp: false,
+    sms: false,
   });
 
   // Discount dialog
@@ -1589,7 +1589,7 @@ export default function CheckoutPage() {
       if (created?.id) setSelectedCustomerId(String(created.id));
       if (
         created?.id &&
-        (quickAddMarketingConsent.email || quickAddMarketingConsent.whatsapp)
+        (quickAddMarketingConsent.email || quickAddMarketingConsent.sms)
       ) {
         try {
           await apiClient.post(
@@ -1600,7 +1600,7 @@ export default function CheckoutPage() {
                 customer_id: created.id,
                 restaurant_id: user.restaurant_id,
                 email_opted_in: quickAddMarketingConsent.email,
-                whatsapp_opted_in: quickAddMarketingConsent.whatsapp,
+                sms_opted_in: quickAddMarketingConsent.sms,
               },
             },
           );
@@ -1617,7 +1617,7 @@ export default function CheckoutPage() {
         pan_number: "",
         billing_address: "",
       });
-      setQuickAddMarketingConsent({ email: false, whatsapp: false });
+      setQuickAddMarketingConsent({ email: false, sms: false });
       setQuickAddOpen(false);
     } catch (err: any) {
       const backendDetail =
@@ -5317,17 +5317,17 @@ export default function CheckoutPage() {
                 <label className="flex cursor-pointer items-center gap-2 text-sm">
                   <input
                     type="checkbox"
-                    checked={quickAddMarketingConsent.whatsapp}
+                    checked={quickAddMarketingConsent.sms}
                     onChange={(event) =>
                       setQuickAddMarketingConsent((current) => ({
                         ...current,
-                        whatsapp: event.target.checked,
+                        sms: event.target.checked,
                       }))
                     }
                     className="h-4 w-4 rounded border-input accent-primary"
                   />
-                  <MessageCircle className="h-4 w-4 text-muted-foreground" />
-                  WhatsApp
+                  <MessageSquare className="h-4 w-4 text-muted-foreground" />
+                  SMS
                 </label>
               </div>
             </div>

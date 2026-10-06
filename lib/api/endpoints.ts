@@ -358,6 +358,8 @@ export const TableTypeApis = {
 
 export const RestaurantApis = {
   create: "/restaurants/",
+  requestPhoneVerification: "/restaurants/phone-verification/request",
+  confirmPhoneVerification: "/restaurants/phone-verification/confirm",
   getById: (id: number) => `/restaurants/${id}`,
   update: (id: number) => `/restaurants/${id}`,
   getByUser: "/restaurants/by-user",
