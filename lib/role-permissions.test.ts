@@ -138,6 +138,27 @@ describe("effective permission screen access", () => {
     ).toBe(false);
   });
 
+  it("keeps menu.view available to POS while denying menu-management routes", () => {
+    const orderTaker = {
+      role: "custom_order_taker",
+      permissions: ["pos.view", "pos.order.create", "menu.view"],
+    };
+
+    expect(isRouteAllowed("/orders/new", orderTaker)).toBe(true);
+    expect(isRouteAllowed("/menu/items", orderTaker)).toBe(false);
+    expect(isRouteAllowed("/menu/categories", orderTaker)).toBe(false);
+    expect(isRouteAllowed("/menu/modifiers", orderTaker)).toBe(false);
+  });
+
+  it("requires the matching management grant for each menu workspace", () => {
+    expect(isRouteAllowed("/menu/items", { role: "custom", permissions: ["menu.items.manage"] })).toBe(true);
+    expect(isRouteAllowed("/menu/items", { role: "custom", permissions: ["menu.pricing.manage"] })).toBe(true);
+    expect(isRouteAllowed("/menu/categories", { role: "custom", permissions: ["menu.categories.manage"] })).toBe(true);
+    expect(isRouteAllowed("/menu/modifiers", { role: "custom", permissions: ["menu.items.manage"] })).toBe(true);
+    expect(isRouteAllowed("/menu/categories", { role: "custom", permissions: ["menu.items.manage"] })).toBe(false);
+    expect(isRouteAllowed("/menu/items", { role: "custom", permissions: ["menu.categories.manage"] })).toBe(false);
+  });
+
   it("requires order view and edit access for an order edit route", () => {
     expect(
       isRouteAllowed("/orders/123/edit", {

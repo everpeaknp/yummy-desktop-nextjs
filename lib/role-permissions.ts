@@ -749,19 +749,19 @@ export const SIDEBAR_ROLE_MAP: SidebarItemDef[] = [
     title: "Menu",
     href: "/menu/items",
     allowedRoles: ALL_DASHBOARD_ROLES,
-    requiredPermissions: ["menu.view", "pos.view"],
+    requiredPermissions: ["menu.items.manage", "menu.pricing.manage"],
   },
   {
     title: "Categories",
     href: "/menu/categories",
     allowedRoles: ALL_DASHBOARD_ROLES,
-    requiredPermissions: ["menu.view", "pos.view"],
+    requiredPermission: "menu.categories.manage",
   },
   {
     title: "Options & add-ons",
     href: "/menu/modifiers",
     allowedRoles: ALL_DASHBOARD_ROLES,
-    requiredPermissions: ["menu.view", "pos.view"],
+    requiredPermission: "menu.items.manage",
   },
   {
     title: "Inventory",
@@ -883,9 +883,8 @@ export function getSidebarItemsForRoles(
     // ─── Key design principle ─────────────────────────────────────────────
     // If an item has a `requiredPermission`, that permission is the SOLE gate.
     // The `allowedRoles` list is IGNORED for permission-protected items.
-    // This means: if an admin grants "menu.view" to a cashier via a custom role,
-    // the cashier WILL see Menu in the sidebar — the ADMIN_MANAGER role restriction
-    // is overridden by the explicit permission grant.
+    // The explicit permission is the access rule for custom roles, independent
+    // of the role-name allowlist above.
     // ─────────────────────────────────────────────────────────────────────
     if (item.requiredPermission) {
       return hasPermission(user || null, item.requiredPermission);
@@ -920,9 +919,8 @@ export const ROUTE_PERMISSIONS: Record<string, PermissionKey> = {
   "/order-history": "pos.view",
   "/customers": "customers.view",
   // Management
-  "/menu/categories": "menu.view",
-  "/menu/items": "menu.view",
-  "/menu/modifiers": "menu.view",
+  "/menu/categories": "menu.categories.manage",
+  "/menu/modifiers": "menu.items.manage",
   "/inventory": "inventory.view",
   "/suppliers": "inventory.suppliers.manage",
   "/reservations": "tables.reservation.view",
@@ -1028,16 +1026,13 @@ export const ROUTE_ANY_PERMISSIONS: Record<string, PermissionKey[]> = {
     "finance.expenses.view",
     "finance.expenses.manage",
   ],
-  "/menu": ["menu.view", "pos.view"],
-  "/menu/categories": ["menu.view", "pos.view"],
-  "/menu/items": ["menu.view", "pos.view"],
-  "/menu/modifiers": ["menu.view", "pos.view"],
   "/tables": ["tables.view", "pos.view"],
   "/finance/operations": [
     "finance.daybook.view",
     "finance.drawer.transfer.to_safe",
     "finance.cash.transfer.to_bank",
   ],
+  "/menu/items": ["menu.items.manage", "menu.pricing.manage"],
   "/finance/reports": [
     "finance.income.view",
     "finance.reports.sales.view",

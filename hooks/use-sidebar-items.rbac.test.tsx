@@ -19,7 +19,7 @@ vi.mock("@/lib/subscription/entitlements", () => ({
   isSubscriptionEntitlementEnabled: () => false,
 }));
 
-import { useSidebarItems } from "@/hooks/use-sidebar-items";
+import { getDesktopSidebarItems, useSidebarItems } from "@/hooks/use-sidebar-items";
 
 describe("custom-role sidebar journey", () => {
   beforeEach(() => {
@@ -69,6 +69,46 @@ describe("custom-role sidebar journey", () => {
     expect(hrefs).not.toContain("/cash-drawers");
   });
 
+  it("keeps menu.view in POS but hides menu-management navigation", () => {
+    mockState.user = {
+      role: "custom_order_taker",
+      permissions: ["pos.view", "pos.order.create", "menu.view"],
+    };
+
+    const { result } = renderHook(() => useSidebarItems());
+    const hrefs = result.current.flatMap((item) => [item.href, ...(item.subItems?.map((child) => child.href) ?? [])]);
+
+    expect(hrefs).toContain("/orders/new");
+    expect(hrefs).not.toContain("/menu/items");
+    expect(hrefs).not.toContain("/menu/categories");
+    expect(hrefs).not.toContain("/menu/modifiers");
+  });
+
+  it("shows only menu workspaces granted by their management permissions", () => {
+    mockState.user = {
+      role: "custom_category_manager",
+      permissions: ["menu.categories.manage"],
+    };
+
+    const { result } = renderHook(() => useSidebarItems());
+    const menu = result.current.find((item) => item.title === "Menu");
+    const hrefs = result.current.flatMap((item) => [item.href, ...(item.subItems?.map((child) => child.href) ?? [])]);
+
+    expect(menu?.href).toBe("/menu/categories");
+    expect(hrefs).toContain("/menu/categories");
+    expect(hrefs).not.toContain("/menu/items");
+    expect(hrefs).not.toContain("/menu/modifiers");
+  });
+
+  it("keeps the item workspace available to a pricing-only manager", () => {
+    mockState.user = { role: "custom_pricing_manager", permissions: ["menu.pricing.manage"] };
+
+    const { result } = renderHook(() => useSidebarItems());
+    const menu = result.current.find((item) => item.title === "Menu");
+
+    expect(menu?.href).toBe("/menu/items");
+  });
+
   it("keeps Attendance visible for schedulers when attendance add-ons are locked", () => {
     mockState.user = {
       role: "staff_scheduler",
@@ -81,6 +121,38 @@ describe("custom-role sidebar journey", () => {
 
     expect(hrefs).toContain("/attendance");
   });
+
+  it("groups Yummy Grow pages under one parent navigation item", () => {
+    mockState.user = {
+      role: "manager",
+      permissions: ["grow.view", "grow.campaigns.manage"],
+    };
+
+    const { result } = renderHook(() => useSidebarItems());
+    const growGroup = result.current.find((item) => item.href === "/grow");
+
+    expect(growGroup?.title).toBe("Overview");
+    expect(growGroup?.section).toBe("Yummy Grow");
+    expect(growGroup?.quickCreateHref).toBe("/grow/campaigns/new");
+    expect(growGroup?.subItems?.map((item) => item.href)).toEqual([
+      "/grow/campaigns",
+      "/grow/subscribers",
+    ]);
+    expect(result.current.some((item) => item.href === "/grow/campaigns")).toBe(false);
+    expect(result.current.some((item) => item.href === "/grow/subscribers")).toBe(false);
+  });
+});
+
+it("hides Manage from desktop navigation without changing shared navigation", () => {
+  const sharedItems = [
+    { title: "Dashboard", href: "/dashboard", icon: (() => null) as any },
+    { title: "Manage", href: "/manage", icon: (() => null) as any },
+  ];
+
+  expect(getDesktopSidebarItems(sharedItems).map((item) => item.href)).toEqual([
+    "/dashboard",
+  ]);
+  expect(sharedItems.map((item) => item.href)).toContain("/manage");
 });
 
 it("does not build a Finance group from a waiter billing grant", () => {

@@ -59,6 +59,10 @@ export interface SidebarItem {
   quickCreateLabel?: string;
 }
 
+export function getDesktopSidebarItems(items: SidebarItem[]): SidebarItem[] {
+  return items.filter((item) => item.href !== "/manage");
+}
+
 const RESTAURANT_ICON_MAP: Record<string, LucideIcon> = {
   "/dashboard": LayoutDashboard,
   "/orders": ClipboardList,
@@ -321,23 +325,26 @@ export function useSidebarItems(): SidebarItem[] {
       } else if (item.href === "/orders/new") {
         result.push({ ...item, isNestedChild: true });
       } else if (item.href === "/grow") {
-        result.push({
-          ...item,
-          ...(hasPermission(user, "grow.campaigns.manage")
-            ? { quickCreateHref: "/grow/campaigns/new", quickCreateLabel: "New campaign" }
-            : {}),
-        });
+        const group = getGroup("grow", item.title, Sprout, "/grow");
+        if (hasPermission(user, "grow.campaigns.manage")) {
+          group.quickCreateHref = "/grow/campaigns/new";
+          group.quickCreateLabel = "New campaign";
+        }
       } else if (item.href === "/grow/campaigns") {
-        result.push({ ...item, isNestedChild: true });
+        const group = getGroup("grow", "Overview", Sprout, "/grow");
+        group.subItems!.push({ ...item, isNestedChild: true });
       } else if (item.href === "/grow/subscribers") {
-        result.push({ ...item, isNestedChild: true });
+        const group = getGroup("grow", "Overview", Sprout, "/grow");
+        group.subItems!.push({ ...item, isNestedChild: true });
       } else if (
         ["/menu/items", "/menu/categories", "/menu/modifiers"].includes(
           item.href,
         )
       ) {
-        const group = getGroup("menu", "Menu", UtensilsCrossed, "/menu/items");
-        if (item.href !== "/menu/items") group.subItems!.push(item);
+        const group = getGroup("menu", "Menu", UtensilsCrossed, item.href);
+        if (item.href !== "/menu/items" && item.href !== group.href) {
+          group.subItems!.push(item);
+        }
       } else if (["/tables", "/reservations"].includes(item.href)) {
         const group = getGroup("tables", "Table & Space", Armchair, "/tables");
         group.subItems!.push(item);

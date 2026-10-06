@@ -8,9 +8,9 @@ vi.mock("@/components/ui/use-toast", () => ({ useToast: () => ({ toast: mocks.to
 vi.mock("@/components/menu/category-dialog", () => ({ CategoryDialog: () => null }));
 import CategoriesPage from "./page";
 
-describe("menu category optional station lookup", () => {
+describe("menu category access and optional station lookup", () => {
   beforeEach(() => {
-    mocks.permissions = ["menu.view"];
+    mocks.permissions = ["menu.categories.manage"];
     mocks.get.mockReset();
     mocks.toast.mockReset();
     mocks.get.mockImplementation(async (url: string) => {
@@ -20,17 +20,17 @@ describe("menu category optional station lookup", () => {
   });
   afterEach(cleanup);
 
-  it("shows read-only categories without querying unauthorized stations", async () => {
+  it("shows categories to a category manager without querying unauthorized stations", async () => {
     render(<CategoriesPage />);
     await screen.findByText("Mocktails");
     expect(mocks.get.mock.calls.map(([url]) => url).some((url: string) => url.startsWith("/stations"))).toBe(false);
-    expect(screen.queryByRole("button", { name: "Edit Mocktails" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Edit Mocktails" })).toBeInTheDocument();
     expect(screen.queryByText("Station unavailable")).not.toBeInTheDocument();
     expect(mocks.toast).not.toHaveBeenCalled();
   });
 
   it("keeps category rows when an authorized optional station lookup fails", async () => {
-    mocks.permissions = ["menu.view", "inventory.stations.view"];
+    mocks.permissions = ["menu.categories.manage", "inventory.stations.view"];
     render(<CategoriesPage />);
     await screen.findByText("Mocktails");
     await waitFor(() => expect(mocks.get).toHaveBeenCalledTimes(2));
