@@ -125,7 +125,7 @@ export default function DayClosePage() {
 
   return (
     <AppPage width="wide" className="pb-6">
-      <div className="mx-auto w-full max-w-3xl">
+      <div className="w-full">
         <div className="mb-5 flex items-center justify-between gap-3">
           {cashControlMode === "combined" ? (
             <p className="text-sm font-medium text-muted-foreground">

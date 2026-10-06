@@ -707,7 +707,7 @@ export function DayCloseFlow({
   });
 
   return (
-    <div className="mx-auto w-full max-w-3xl pb-28 lg:pb-10">
+    <div className="w-full pb-28 lg:pb-10">
       <header className="space-y-3 pb-5">
         <div className="flex items-start justify-between gap-4">
           <div>
@@ -1147,7 +1147,7 @@ export function DayCloseFlow({
 
       {step !== "complete" ? (
         <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-background/95 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur lg:sticky lg:mt-8 lg:px-0">
-          <div className="mx-auto flex w-full max-w-3xl items-center gap-3">
+          <div className="flex w-full items-center gap-3">
             {step !== "review" ? (
               <Button
                 variant="outline"

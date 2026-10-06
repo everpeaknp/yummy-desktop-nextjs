@@ -12,6 +12,8 @@ test("day close route owns one canonical operational flow", () => {
   const history = read("components/analytics/day-close-history.tsx");
 
   assert.match(page, /<DayCloseFlow/);
+  assert.match(page, /<div className="w-full">/);
+  assert.doesNotMatch(page, /mx-auto w-full max-w-3xl/);
   assert.doesNotMatch(page, /DayCloseModal/);
   assert.match(analytics, /href=\{`\/day-close\?business_line=/);
   assert.doesNotMatch(analytics, /DayCloseModal|setIsDayCloseOpen/);
@@ -164,7 +166,9 @@ test("final review completion and permissions use plain operational language", (
     /permanently locked|finance event|journal|suspense|trial balance/i,
   );
   assert.match(flow, /pb-\[max\(1rem,env\(safe-area-inset-bottom\)\)\]/);
-  assert.match(flow, /max-w-3xl/);
+  assert.match(flow, /className="[^\"]*\bw-full\b[^\"]*pb-28 lg:pb-10"/);
+  assert.doesNotMatch(flow, /mx-auto w-full max-w-3xl pb-28/);
+  assert.doesNotMatch(flow, /mx-auto flex w-full max-w-3xl items-center/);
 });
 
 test("confirmation conflicts refresh readiness and cannot leave a stale close action", () => {
