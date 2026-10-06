@@ -296,7 +296,7 @@ export function OrderCard({ order, onClick }: OrderCardProps) {
           <span className="text-[10px] font-semibold text-muted-foreground sm:text-xs">
             {itemLineCount} item{itemLineCount === 1 ? "" : "s"}
           </span>
-          <span className="text-sm font-black tabular-nums text-foreground sm:text-base">
+          <span className="text-sm font-semibold tracking-tight tabular-nums text-foreground sm:text-base">
             {formatCurrency(order.grand_total, currency)}
           </span>
         </div>

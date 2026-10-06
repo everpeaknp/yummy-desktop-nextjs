@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("@/components/dashboard/dashboard-promo-carousel", () => ({ DashboardPromoCarousel: () => null }));
 import { FigmaExecutiveDashboard } from "./figma-executive-dashboard";
@@ -41,4 +41,17 @@ it("does not reveal financial panels with dashboard access alone", () => {
 it("export permission does not reveal a financial export without analytics access", () => {
  render(<FigmaExecutiveDashboard {...props} canExport />);
  expect(screen.queryByRole("button", {name: "Export summary"})).not.toBeInTheDocument();
+});
+
+it("gives operational panels the full dashboard width when analytics are unavailable", () => {
+ render(<FigmaExecutiveDashboard {...props} quickActions={[{ key: "create_order", title: "New order", subtitle: "Start an order" }]} />);
+
+ const overview = screen.getByRole("region", { name: "Dashboard operations" });
+ const shortcuts = screen.getByRole("region", { name: "Dashboard shortcuts" });
+ const shiftSummary = screen.getByRole("region", { name: "Dashboard shift summary" });
+ expect(overview).toHaveClass("grid-cols-1");
+ expect(shortcuts).toHaveClass("grid-cols-1");
+ expect(shiftSummary).toHaveClass("grid-cols-1");
+ expect(within(overview).getByText("Needs attention")).toBeInTheDocument();
+ expect(within(shortcuts).getByText("New order")).toBeInTheDocument();
 });
