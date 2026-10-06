@@ -40,12 +40,10 @@ import {
   getSidebarItemsForRoles,
   hasPermission,
   filterSidebarLinksByAccess,
-  isPathAccessible,
 } from "@/lib/role-permissions";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import { useSubscriptionStore } from "@/hooks/use-subscription";
 import { isSubscriptionEntitlementEnabled } from "@/lib/subscription/entitlements";
-import { isFinanceFeatureEnabled } from "@/lib/finance-feature-access";
 export interface SidebarItem {
   title: string;
   href: string;
@@ -59,6 +57,7 @@ export interface SidebarItem {
   quickCreateLabel?: string;
 }
 
+/** Keep the helper available to shared desktop navigation consumers. */
 export function getDesktopSidebarItems(items: SidebarItem[]): SidebarItem[] {
   return items.filter((item) => item.href !== "/manage");
 }
@@ -207,10 +206,7 @@ export function useSidebarItems(): SidebarItem[] {
       if (isCashier)
         return filterSidebarLinksByAccess(HOTEL_CASHIER_ITEMS, user);
       // Other hotel staff see the PMS entry point when their role permits it.
-      return filterSidebarLinksByAccess(
-        [{ title: "Hotel PMS", href: "/hotel", icon: BedDouble }],
-        user,
-      );
+      return [{ title: "Hotel PMS", href: "/hotel", icon: BedDouble }];
     }
 
     // Restaurant and shared navigation. Dual properties add Hotel PMS below;
@@ -264,7 +260,10 @@ export function useSidebarItems(): SidebarItem[] {
         externalUrl: item.externalUrl,
       }));
 
-    const secondaryItems: SidebarItem[] = [
+    // Include individually granted finance workspaces even when the user has
+    // no finance overview grant. Keep the navigation item list permission and
+    // entitlement filtered before grouping.
+    const secondaryFinanceItems: SidebarItem[] = [
       { title: "Expenses", href: "/finance/expenses", icon: CreditCard },
       { title: "Reports", href: "/finance/reports", icon: FileText },
       { title: "Chart of Accounts", href: "/finance/heads", icon: FileText },
@@ -279,7 +278,7 @@ export function useSidebarItems(): SidebarItem[] {
       { title: "Journal Vouchers", href: "/finance/journals", icon: BookOpenCheck },
       { title: "Setup", href: "/finance/setup", icon: Settings },
     ];
-    for (const item of filterSidebarLinksByAccess(secondaryItems, user)) {
+    for (const item of filterSidebarLinksByAccess(secondaryFinanceItems, user)) {
       const entitlementByRoute: Record<string, string> = {
         "/finance/expenses": "finance.income_expense.enabled",
         "/finance/reports": "finance.income_expense.enabled",
@@ -287,9 +286,9 @@ export function useSidebarItems(): SidebarItem[] {
         "/cash-drawers": "finance.cash_drawer.enabled",
         "/day-close": "finance.daybook.enabled",
       };
-      const requiredEntitlement = entitlementByRoute[item.href];
+      const entitlement = entitlementByRoute[item.href];
       if (
-        (!requiredEntitlement || !isExplicitlyLocked(requiredEntitlement)) &&
+        (!entitlement || !isExplicitlyLocked(entitlement)) &&
         !flatItems.some((existing) => existing.href === item.href)
       ) {
         flatItems.push({ ...item, isNestedChild: true });
@@ -325,26 +324,23 @@ export function useSidebarItems(): SidebarItem[] {
       } else if (item.href === "/orders/new") {
         result.push({ ...item, isNestedChild: true });
       } else if (item.href === "/grow") {
-        const group = getGroup("grow", item.title, Sprout, "/grow");
-        if (hasPermission(user, "grow.campaigns.manage")) {
-          group.quickCreateHref = "/grow/campaigns/new";
-          group.quickCreateLabel = "New campaign";
-        }
+        result.push({
+          ...item,
+          ...(hasPermission(user, "grow.campaigns.manage")
+            ? { quickCreateHref: "/grow/campaigns/new", quickCreateLabel: "New campaign" }
+            : {}),
+        });
       } else if (item.href === "/grow/campaigns") {
-        const group = getGroup("grow", "Overview", Sprout, "/grow");
-        group.subItems!.push({ ...item, isNestedChild: true });
+        result.push({ ...item, isNestedChild: true });
       } else if (item.href === "/grow/subscribers") {
-        const group = getGroup("grow", "Overview", Sprout, "/grow");
-        group.subItems!.push({ ...item, isNestedChild: true });
+        result.push({ ...item, isNestedChild: true });
       } else if (
         ["/menu/items", "/menu/categories", "/menu/modifiers"].includes(
           item.href,
         )
       ) {
         const group = getGroup("menu", "Menu", UtensilsCrossed, item.href);
-        if (item.href !== "/menu/items" && item.href !== group.href) {
-          group.subItems!.push(item);
-        }
+        if (item.href !== "/menu/items") group.subItems!.push(item);
       } else if (["/tables", "/reservations"].includes(item.href)) {
         const group = getGroup("tables", "Table & Space", Armchair, "/tables");
         group.subItems!.push(item);
@@ -371,9 +367,9 @@ export function useSidebarItems(): SidebarItem[] {
           "/finance/journals",
           "/finance/accounting",
           "/transactions",
-          "/day-close",
           "/finance/heads",
           "/inventory/purchases",
+          "/day-close",
         ].includes(item.href)
       ) {
         const group = getGroup(
@@ -408,10 +404,7 @@ export function useSidebarItems(): SidebarItem[] {
         isNestedChild: true,
       });
     }
-    if (
-      hasPermission(user, "attendance.view") ||
-      hasPermission(user, "attendance.manage")
-    ) {
+    if (hasPermission(user, "attendance.manage")) {
       workforceItems.push({
         title: "Attendance",
         href: "/attendance",
@@ -606,23 +599,12 @@ export function useSidebarItems(): SidebarItem[] {
         });
       }
 
-      if (hasPermission(user, "finance.accounting.view")) {
-        financeItems.push({
-          title: "Accounting",
-          href: "/finance/accounting",
-          icon: FileText,
-          isNestedChild: true,
-        });
-      }
-
-      if (isFinanceFeatureEnabled(restaurant, "reports")) {
-        financeItems.push({
-          title: "Reports",
-          href: "/finance/reports",
-          icon: FileText,
-          isNestedChild: true,
-        });
-      }
+      financeItems.push({
+        title: "Reports",
+        href: "/finance/reports",
+        icon: FileText,
+        isNestedChild: true,
+      });
       if (
         hasPermission(user, "finance.coa.view") ||
         hasPermission(user, "finance.payment_instruments.manage")
@@ -663,20 +645,16 @@ export function useSidebarItems(): SidebarItem[] {
       }
     }
 
-    if (
-      isPathAccessible("/manage", user) &&
-      !result.some((item) => item.href === "/manage")
-    ) {
-      result.push({ title: "Manage", href: "/manage", icon: LayoutGrid });
-    }
-
-    // Keep the optional Grow product grouped after operational navigation.
+    // Keep the optional Grow product grouped after the current operational,
+    // finance, and hotel navigation.
     const isGrow = (item: SidebarItem) => item.href === "/grow" || item.href.startsWith("/grow/");
     const orderedResult = [
       ...result.filter((item) => !isGrow(item)),
       ...result.filter(isGrow),
     ];
 
+    // Ensure Settings is always at the end of the operational navigation,
+    // immediately before the separately labelled Grow product.
     const cleaned = orderedResult.map((r) => ({
       ...r,
       section: isGrow(r) ? "Yummy Grow" : "Yummy Operations",

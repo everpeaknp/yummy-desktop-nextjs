@@ -124,6 +124,17 @@ describe("effective permission screen access", () => {
     ).toBe(false);
   });
 
+  it("requires Tables View instead of POS View to open the floor-plan screen", () => {
+    const barista = { role: "barista", permissions: ["pos.view"] };
+    const tableViewer = { role: "barista", permissions: ["tables.view"] };
+
+    expect(isRouteAllowed("/tables", barista)).toBe(false);
+    expect(isPathAccessible("/tables", barista)).toBe(false);
+    expect(getSidebarItemsForRoles(["barista"], barista).some((item) => item.href === "/tables")).toBe(false);
+    expect(isRouteAllowed("/tables", tableViewer)).toBe(true);
+    expect(getSidebarItemsForRoles(["barista"], tableViewer).some((item) => item.href === "/tables")).toBe(true);
+  });
+
   it("lands a waiter with order-create-only access on the screen they can use", () => {
     const user = {
       role: "waiter",

@@ -122,24 +122,21 @@ describe("custom-role sidebar journey", () => {
     expect(hrefs).toContain("/attendance");
   });
 
-  it("groups Yummy Grow pages under one parent navigation item", () => {
+  it("places each Yummy Grow destination in its product section", () => {
     mockState.user = {
       role: "manager",
       permissions: ["grow.view", "grow.campaigns.manage"],
     };
 
     const { result } = renderHook(() => useSidebarItems());
-    const growGroup = result.current.find((item) => item.href === "/grow");
+    const overview = result.current.find((item) => item.href === "/grow");
+    const campaigns = result.current.find((item) => item.href === "/grow/campaigns");
+    const subscribers = result.current.find((item) => item.href === "/grow/subscribers");
 
-    expect(growGroup?.title).toBe("Overview");
-    expect(growGroup?.section).toBe("Yummy Grow");
-    expect(growGroup?.quickCreateHref).toBe("/grow/campaigns/new");
-    expect(growGroup?.subItems?.map((item) => item.href)).toEqual([
-      "/grow/campaigns",
-      "/grow/subscribers",
-    ]);
-    expect(result.current.some((item) => item.href === "/grow/campaigns")).toBe(false);
-    expect(result.current.some((item) => item.href === "/grow/subscribers")).toBe(false);
+    expect(overview?.section).toBe("Yummy Grow");
+    expect(overview?.quickCreateHref).toBe("/grow/campaigns/new");
+    expect(campaigns?.section).toBe("Yummy Grow");
+    expect(subscribers?.section).toBe("Yummy Grow");
   });
 });
 

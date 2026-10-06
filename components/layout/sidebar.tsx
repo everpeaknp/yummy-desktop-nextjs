@@ -46,11 +46,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import {
-  getDesktopSidebarItems,
-  useSidebarItems,
-  type SidebarItem,
-} from "@/hooks/use-sidebar-items";
+import { useSidebarItems, type SidebarItem } from "@/hooks/use-sidebar-items";
 import { isPathAccessible } from "@/lib/role-permissions";
 import { GlobalSearch } from "./global-search";
 import {
@@ -292,7 +288,7 @@ export function Sidebar() {
   const { restaurant, fetchRestaurant } = useRestaurant();
   const currentSubscription = useSubscriptionStore((state) => state.current);
   const { collapsed, width, toggle, setWidth, setCollapsed } = useSidebar();
-  const items = getDesktopSidebarItems(useSidebarItems());
+  const items = useSidebarItems();
   const { theme, setTheme } = useTheme();
   const [searchOpen, setSearchOpen] = useState(false);
   const [openMenus, setOpenMenus] = useState<Record<string, boolean>>({});
@@ -828,12 +824,12 @@ export function Sidebar() {
                       <User className="h-4 w-4 text-muted-foreground" /> My profile
                     </DropdownMenuItem>
 
-                    {isPathAccessible("/settings/business-profile", user) && (<DropdownMenuItem
+                    <DropdownMenuItem
                       onClick={() => router.push("/settings/business-profile")}
                       className="cursor-pointer gap-2.5 py-2 px-2.5 text-xs font-medium text-foreground/90 hover:text-foreground rounded-lg"
                     >
                       <Pencil className="h-4 w-4 text-muted-foreground" /> Business Profile
-                    </DropdownMenuItem>)}
+                    </DropdownMenuItem>
 
                     <DropdownMenuItem
                       onClick={() => router.push("/feedback")}
@@ -866,36 +862,30 @@ export function Sidebar() {
 
                     <DropdownMenuSeparator className="my-1 bg-border/50" />
 
-                    {isPathAccessible("/settings", user) && (<DropdownMenuItem
+                    <DropdownMenuItem
                       onClick={() => router.push("/settings")}
                       className="cursor-pointer gap-2.5 py-2 px-2.5 text-xs font-medium text-foreground/90 hover:text-foreground rounded-lg"
                     >
                       <Settings className="h-4 w-4 text-muted-foreground" /> Settings
-                    </DropdownMenuItem>)}
+                    </DropdownMenuItem>
                   </div>
 
+                  <div className="pt-1.5 px-0.5 pb-0.5 border-t border-border/40 mt-1">
+                    <button
+                      onClick={() => {
+                        logout();
+                        router.push("/");
+                      }}
+                      className="w-full flex items-center justify-center gap-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 py-2 rounded-xl text-xs font-bold transition-colors border border-rose-500/20 cursor-pointer"
+                    >
+                      <LogOut className="h-3.5 w-3.5 text-rose-600 dark:text-rose-400" /> Log out
+                    </button>
+                  </div>
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
 
           </div>
-
-          <button
-            type="button"
-            aria-label="Log out"
-            title={collapsed ? "Log out" : undefined}
-            onClick={() => {
-              logout();
-              router.push("/");
-            }}
-            className={cn(
-              "flex h-9 w-full items-center rounded-lg px-2.5 text-xs font-semibold text-rose-600 transition-colors hover:bg-rose-500/10 dark:text-rose-400",
-              collapsed ? "justify-center" : "gap-2",
-            )}
-          >
-            <LogOut className="h-4 w-4 shrink-0" />
-            {!collapsed && <span>Log out</span>}
-          </button>
 
           <input
             ref={avatarInputRef}

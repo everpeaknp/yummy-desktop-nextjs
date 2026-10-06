@@ -157,17 +157,7 @@ export default function DashboardLayout({
   const isHotelWorkspace =
     pathname === "/hotel" || pathname.startsWith("/hotel/");
   const isSecondaryMobileModule = isMobileSecondaryModuleRoute(pathname);
-  if (isHotelWorkspace) {
-    return (
-      <div className="h-screen w-full overflow-hidden bg-background">
-        <main className="flex h-full min-h-0 flex-col overflow-hidden">
-          <RoleGuard>{children}</RoleGuard>
-        </main>
-        <GlobalKotPrinter />
-      </div>
-    );
-  }
-
+  const guardedPage = isHotelWorkspace ? children : <RoleGuard>{children}</RoleGuard>;
   return (
     <div className="flex h-screen w-full flex-col overflow-hidden bg-background lg:flex-row">
       <Sidebar />
@@ -182,7 +172,7 @@ export default function DashboardLayout({
               : "pb-24",
           )}
         >
-          <RoleGuard>{children}</RoleGuard>
+          {guardedPage}
         </main>
       </div>
       <MobileBottomNav />

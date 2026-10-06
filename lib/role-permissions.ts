@@ -803,7 +803,7 @@ export const SIDEBAR_ROLE_MAP: SidebarItemDef[] = [
     title: "Tables",
     href: "/tables",
     allowedRoles: ALL_DASHBOARD_ROLES,
-    requiredPermissions: ["tables.view", "pos.view"],
+    requiredPermission: "tables.view",
   },
   {
     title: "Reservations",
@@ -1026,7 +1026,7 @@ export const ROUTE_ANY_PERMISSIONS: Record<string, PermissionKey[]> = {
     "finance.expenses.view",
     "finance.expenses.manage",
   ],
-  "/tables": ["tables.view", "pos.view"],
+  "/tables": ["tables.view"],
   "/finance/operations": [
     "finance.daybook.view",
     "finance.drawer.transfer.to_safe",

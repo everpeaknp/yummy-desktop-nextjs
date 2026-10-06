@@ -1,4 +1,5 @@
 import { EntitlementGate } from "@/components/subscription/entitlement-gate";
+import { RoleGuard } from "@/components/auth/role-guard";
 
 export default function HotelPmsLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -7,7 +8,7 @@ export default function HotelPmsLayout({ children }: { children: React.ReactNode
       legacyFallback
       title="Hotel management is not included in your plan"
     >
-      {children}
+      <RoleGuard>{children}</RoleGuard>
     </EntitlementGate>
   );
 }
