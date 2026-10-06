@@ -2,6 +2,7 @@
 // Easy to switch to API calls later by replacing these functions
 
 import { getOfferCode, isOfferCodeExpired } from "./promo-codes.config";
+import { isLivePromoValid, incrementLivePromoUsage } from "./live-promo-service";
 
 export interface ReferralPromoCode {
   id: string;
@@ -105,23 +106,59 @@ export function hasRestaurantUsedCode(restaurantId: string, code: string): boole
   );
 }
 
-export function applyPromoCode(
+export async function applyPromoCode(
   code: string,
   usedByRestaurantId: string,
   usedByRestaurantName: string
-): {
+): Promise<{
   success: boolean;
   type?: "referral" | "offer";
   reason?: string;
   benefit?: string;
   generatedByRestaurantName?: string;
-} {
+}> {
   // Check if restaurant has already used this code
   if (hasRestaurantUsedCode(usedByRestaurantId, code)) {
     return { success: false, reason: "You have already used this promo code." };
   }
 
-  // First, check if it's a referral code
+  // First, check if it's a live promo code
+  const livePromoCheck = await isLivePromoValid(code);
+  if (livePromoCheck.promo) {
+    if (!livePromoCheck.valid) {
+      return { success: false, reason: livePromoCheck.reason };
+    }
+
+    // Valid live promo - record usage and increment
+    const promo = livePromoCheck.promo;
+    const usage: PromoUsage = {
+      id: `usage_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+      code: promo.code,
+      type: promo.type,
+      usedByRestaurantId,
+      usedByRestaurantName,
+      benefit: promo.benefit,
+      usedAt: new Date().toISOString(),
+    };
+
+    const allUsages = getStorageData<PromoUsage>(PROMO_USAGE_KEY);
+    allUsages.push(usage);
+    setStorageData(PROMO_USAGE_KEY, allUsages);
+
+    // Increment live promo usage
+    await incrementLivePromoUsage(promo.id);
+
+    // Apply offer to restaurant
+    applyOffer(usedByRestaurantId, promo.code, promo.benefit);
+
+    return {
+      success: true,
+      type: promo.type,
+      benefit: promo.benefit,
+    };
+  }
+
+  // Second, check if it's a referral code
   const referralCode = getReferralPromoByCode(code);
   if (referralCode) {
     // Check if restaurant is trying to use their own code
@@ -166,7 +203,7 @@ export function applyPromoCode(
     };
   }
 
-  // Check if it's an offer code
+  // Third, check if it's an offer code from config
   const offerCode = getOfferCode(code);
   if (offerCode) {
     // Check if offer is expired
