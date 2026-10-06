@@ -292,6 +292,23 @@ export default function RolesPage() {
     }));
   };
 
+  const togglePermissionGroup = (groupPermissions: Permission[]) => {
+    const keys = Array.from(
+      new Set(groupPermissions.map((permission) => permission.key)),
+    );
+    setFormData((previous) => {
+      const allSelected = keys.every((key) =>
+        previous.permissions.includes(key),
+      );
+      return {
+        ...previous,
+        permissions: allSelected
+          ? previous.permissions.filter((key) => !keys.includes(key))
+          : Array.from(new Set(previous.permissions.concat(keys))),
+      };
+    });
+  };
+
   const applyPreset = (presetName: string) => {
     const presetPermissions = builtInPresets[presetName];
     if (!presetPermissions) return;
@@ -698,11 +715,54 @@ export default function RolesPage() {
                         <div className="max-h-[360px] overflow-y-auto pr-2 custom-scrollbar">
                           <div className="space-y-5">
                             {Object.entries(groupedPermissions).map(
-                              ([module, perms]) => (
+                              ([module, perms]) => {
+                                const modulePermissions = permissions.filter(
+                                  (permission) =>
+                                    (permission.module || "General") === module,
+                                );
+                                const selectedCount = modulePermissions.filter((perm) =>
+                                  formData.permissions.includes(perm.key),
+                                ).length;
+                                const allSelected =
+                                  modulePermissions.length > 0 &&
+                                  selectedCount === modulePermissions.length;
+                                const partiallySelected =
+                                  selectedCount > 0 && !allSelected;
+
+                                return (
                                 <div key={module}>
-                                  <h3 className="mb-2 text-sm font-semibold">
-                                    {readableModuleName(module)}
-                                  </h3>
+                                  <div className="mb-2 flex items-center justify-between gap-3">
+                                    <h3 className="text-sm font-semibold">
+                                      {readableModuleName(module)}
+                                    </h3>
+                                    <label className="flex shrink-0 cursor-pointer items-center gap-2 text-xs font-medium text-muted-foreground hover:text-foreground">
+                                      <input
+                                        type="checkbox"
+                                        aria-label={
+                                          `${allSelected ? "Clear all" : "Select all"} ${readableModuleName(module)} permissions`
+                                        }
+                                        aria-checked={
+                                          partiallySelected
+                                            ? "mixed"
+                                            : allSelected
+                                        }
+                                        checked={allSelected}
+                                        ref={(checkbox) => {
+                                          if (checkbox) {
+                                            checkbox.indeterminate =
+                                              partiallySelected;
+                                          }
+                                        }}
+                                        onChange={() =>
+                                          togglePermissionGroup(modulePermissions)
+                                        }
+                                        className="h-4 w-4 accent-primary"
+                                      />
+                                      <span>
+                                        {allSelected ? "Clear section" : "Select all"}
+                                      </span>
+                                    </label>
+                                  </div>
                                   <div className="grid gap-2 sm:grid-cols-2">
                                     {perms.map((perm) => {
                                       const selected =
@@ -753,7 +813,8 @@ export default function RolesPage() {
                                     })}
                                   </div>
                                 </div>
-                              ),
+                                );
+                              },
                             )}
                           </div>
                         </div>
