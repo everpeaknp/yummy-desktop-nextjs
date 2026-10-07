@@ -1,11 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Pencil, Plus, User } from "lucide-react";
+import { BellRing, Pencil, Plus, User } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 import { AddCustomerDialog } from "@/components/customers/add-customer-dialog";
 import { EditCustomerDialog } from "@/components/customers/edit-customer-dialog";
+import { CreditReminderSettingsDialog } from "@/components/customers/credit-reminder-settings-dialog";
 import { MetricCard } from "@/components/cards/metric-card";
 import { SearchField } from "@/components/patterns/controls/search-field";
 import { FilterBar } from "@/components/patterns/controls/filter-bar";
@@ -53,6 +54,7 @@ export default function CustomersPage() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [addCustomerOpen, setAddCustomerOpen] = useState(false);
   const [editCustomer, setEditCustomer] = useState<CustomerRecord | null>(null);
+  const [reminderSettingsOpen, setReminderSettingsOpen] = useState(false);
 
   const user = useAuth((state) => state.user);
   const me = useAuth((state) => state.me);
@@ -179,14 +181,25 @@ export default function CustomersPage() {
           title="Customers"
           description="Manage customer relationships, sales history, and settlements."
           actions={
-            <Button
-              type="button"
-              className="h-11 rounded-xl"
-              onClick={() => setAddCustomerOpen(true)}
-            >
-              <Plus className="mr-2 h-4 w-4" />
-              Add customer
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                className="h-11 rounded-xl"
+                onClick={() => setReminderSettingsOpen(true)}
+              >
+                <BellRing className="mr-2 h-4 w-4" />
+                Credit notifications
+              </Button>
+              <Button
+                type="button"
+                className="h-11 rounded-xl"
+                onClick={() => setAddCustomerOpen(true)}
+              >
+                <Plus className="mr-2 h-4 w-4" />
+                Add customer
+              </Button>
+            </div>
           }
         />
       </div>
@@ -244,9 +257,21 @@ export default function CustomersPage() {
               : formatCurrency(totalReceivable, restaurant?.currency)}
           </p>
         </div>
-        <p className="text-xs text-muted-foreground">
-          {customers.length} customers
-        </p>
+        <div className="flex items-center gap-2">
+          <p className="text-xs text-muted-foreground">
+            {customers.length} customers
+          </p>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-9 w-9"
+            aria-label="Credit notification settings"
+            onClick={() => setReminderSettingsOpen(true)}
+          >
+            <BellRing className="h-4 w-4" />
+          </Button>
+        </div>
       </div>
 
       <div className="hidden max-w-2xl grid-cols-2 gap-3 lg:grid">
@@ -430,6 +455,11 @@ export default function CustomersPage() {
           setEditCustomer(null);
           void fetchCustomers();
         }}
+      />
+      <CreditReminderSettingsDialog
+        restaurantId={user?.restaurant_id}
+        open={reminderSettingsOpen}
+        onOpenChange={setReminderSettingsOpen}
       />
     </AppPage>
   );
