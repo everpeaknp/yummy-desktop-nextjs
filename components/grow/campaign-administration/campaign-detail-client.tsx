@@ -8,7 +8,6 @@ import {
   CalendarClock,
   Check,
   CheckCircle2,
-  CircleDashed,
   Clock3,
   DollarSign,
   Download,
@@ -20,7 +19,6 @@ import {
   Pause,
   RefreshCw,
   RotateCcw,
-  Send,
   ShieldAlert,
   ShieldCheck,
   Tag,
@@ -77,6 +75,7 @@ import {
   campaignStatusLabels,
   formatOffer,
   isCampaignApprovalReady,
+  scheduleOfferWindowConflict,
   segmentLabels,
 } from "@/lib/growth/campaign-administration";
 import { hasPermission } from "@/lib/role-permissions";
@@ -121,6 +120,21 @@ function formatCount(value: number | null | undefined): string {
   return typeof value === "number" && Number.isFinite(value)
     ? value.toLocaleString("en-NP")
     : "0";
+}
+
+function statusGuidance(status: GrowthCampaignStatus): { title: string; detail: string } {
+  const guidance: Record<GrowthCampaignStatus, { title: string; detail: string }> = {
+    draft: { title: "Finish this campaign", detail: "Review the customers, offer, and message, then send it for approval." },
+    review: { title: "Waiting for approval", detail: "A manager can approve it or return it for changes." },
+    approved: { title: "Ready to schedule", detail: "Choose when customers should receive this campaign." },
+    scheduled: { title: "Scheduled", detail: "Yummy will send it at the selected time after checking customer permissions again." },
+    sending: { title: "Sending now", detail: "Delivery results will update as messages are processed." },
+    completed: { title: "Campaign complete", detail: "Review delivery, offer use, and sales linked to this campaign." },
+    paused: { title: "Campaign paused", detail: "Review the reason before deciding what to do next." },
+    canceled: { title: "Campaign canceled", detail: "This campaign will not send. Its history remains available." },
+    failed: { title: "Delivery needs attention", detail: "Review the delivery issue before creating or scheduling another campaign." },
+  };
+  return guidance[status];
 }
 
 function localInputForZone(timeZone: string): string {
@@ -286,6 +300,21 @@ export function CampaignDetailClient({ campaignId }: { campaignId: string }) {
       };
     }
   }, [scheduleLocal, timeZone]);
+  const scheduleWindowError = useMemo(() => {
+    if (!schedulePayload.value || !campaign?.offer) return null;
+    const conflict = scheduleOfferWindowConflict(
+      schedulePayload.value.scheduled_at,
+      campaign.offer.valid_from,
+      campaign.offer.valid_until,
+    );
+    if (conflict === "before") {
+      return `Choose a send time on or after the offer starts: ${formatDate(campaign.offer.valid_from)}.`;
+    }
+    if (conflict === "after") {
+      return `Choose a send time before the offer expires: ${formatDate(campaign.offer.valid_until)}.`;
+    }
+    return null;
+  }, [campaign?.offer, schedulePayload.value]);
 
   if (loading) return <DetailSkeleton />;
 
@@ -313,6 +342,14 @@ export function CampaignDetailClient({ campaignId }: { campaignId: string }) {
   const reasonValid = reason.trim().length >= 8;
   const limitations = Array.from(
     new Set([...(campaign.offer?.limitations ?? []), ...(results?.limitations ?? [])]),
+  );
+  const guidance = statusGuidance(campaign.status);
+  const hasPerformance = Boolean(
+    results &&
+      (["sending", "completed", "failed"].includes(campaign.status) ||
+        results.sent_count > 0 ||
+        results.delivered_count > 0 ||
+        results.failed_count > 0),
   );
 
   async function transition(
@@ -428,40 +465,39 @@ export function CampaignDetailClient({ campaignId }: { campaignId: string }) {
   }
 
   return (
-    <div className="dashboard-ui relative flex flex-col gap-10 max-w-[1600px] mx-auto pb-20 px-4" data-tour="grow-campaign-detail">
+    <main className="mx-auto flex w-full max-w-[1500px] flex-col gap-6 px-4 pb-20" data-tour="grow-campaign-detail">
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <header className="flex flex-col gap-4 border-b border-border pb-6 md:flex-row md:items-end md:justify-between">
         <div className="space-y-1">
           <div className="flex items-center gap-3 mb-2">
-            <Link href="/grow/campaigns" className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-primary transition-colors">
-              <ArrowLeft className="h-4 w-4" />
-              Back to Campaigns
+            <Link href="/grow/campaigns" className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-primary focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+              <ArrowLeft aria-hidden="true" className="h-4 w-4" />
+              Campaigns
             </Link>
           </div>
           <div className="flex items-center gap-3 flex-wrap">
-            <h1 className="dc-page-title">{campaign.name}</h1>
+            <h1 className="text-pretty text-3xl font-black tracking-tight">{campaign.name}</h1>
             <Badge variant="outline" className={cn("text-xs font-semibold", statusStyles[campaign.status])}>{campaignStatusLabels[campaign.status]}</Badge>
           </div>
-          <p className="dc-page-subtitle">
-            {campaign.playbook_code.replaceAll("_", " ")} · {segmentLabels[campaign.segment_code] || campaign.segment_code} · Campaign #{campaign.id}
-            {campaign.scheduled_at && ` · Scheduled ${formatDate(campaign.scheduled_at)}`}
+          <p className="text-sm text-muted-foreground">
+            {campaign.channel === "email" ? "Email" : "SMS"} · {segmentLabels[campaign.segment_code] || "Selected customers"}
+            {campaign.scheduled_at && ` · ${formatDate(campaign.scheduled_at)}`}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          <Button 
-            variant="ghost" 
-            size="sm" 
-            onClick={() => void load()} 
-            disabled={Boolean(busyAction)} 
-            className="dc-filter-refresh h-9 gap-2 rounded-2xl px-4"
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void load()}
+            disabled={Boolean(busyAction)}
           >
-            <RefreshCw className="h-4 w-4" />
+            <RefreshCw aria-hidden="true" className="h-4 w-4" />
             Refresh
           </Button>
           {actions.submitReview && (
             <Button size="sm" onClick={() => void submitReview()} disabled={Boolean(busyAction)} className="dc-btn-close-day h-9 gap-2 rounded-2xl px-4 font-medium">
               {busyAction === "review" ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
-              Submit for review
+              Send for approval
             </Button>
           )}
           {actions.returnToDraft && (
@@ -490,7 +526,18 @@ export function CampaignDetailClient({ campaignId }: { campaignId: string }) {
             </Button>
           )}
         </div>
-      </div>
+      </header>
+
+      <section className={cn("flex flex-col gap-4 rounded-2xl border p-5 sm:flex-row sm:items-center sm:justify-between", campaign.status === "failed" ? "border-destructive/30 bg-destructive/5" : campaign.status === "paused" ? "border-amber-500/30 bg-amber-500/5" : "border-primary/20 bg-primary/[0.035]")} aria-labelledby="campaign-next-step">
+        <div>
+          <h2 id="campaign-next-step" className="text-lg font-bold">{guidance.title}</h2>
+          <p className="mt-1 text-sm text-muted-foreground">{guidance.detail}</p>
+        </div>
+        <div className="flex shrink-0 items-center gap-2 text-sm text-muted-foreground">
+          <Users aria-hidden="true" className="h-4 w-4" />
+          {formatCount(campaign.audience_count)} customers
+        </div>
+      </section>
 
       {secondaryWarnings.length > 0 && (
         <Alert className="dc-card border-amber-500/30 bg-amber-500/5">
@@ -515,7 +562,7 @@ export function CampaignDetailClient({ campaignId }: { campaignId: string }) {
       ) : null}
 
       {/* Compact 3-column grid */}
-      <section className="grid gap-6 xl:grid-cols-3">
+      <section className="grid gap-5 xl:grid-cols-3">
         {/* Offer Details */}
         <Card className="dc-card">
           <CardHeader className="pb-3 border-b border-black/[0.08] dark:border-white/10">
@@ -523,7 +570,7 @@ export function CampaignDetailClient({ campaignId }: { campaignId: string }) {
               <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-muted border border-black/[0.08] dark:border-white/15">
                 <Tag className="h-3.5 w-3.5 text-primary" />
               </div>
-              <CardTitle className="text-sm font-semibold">Offer Details</CardTitle>
+              <CardTitle className="text-sm font-semibold">What Customers Get</CardTitle>
             </div>
           </CardHeader>
           <CardContent className="pt-4 space-y-3">
@@ -532,7 +579,7 @@ export function CampaignDetailClient({ campaignId }: { campaignId: string }) {
             ) : (
               <>
                 <div className="rounded-lg bg-muted/50 p-3 border border-black/[0.08] dark:border-white/10">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Customer Gets</p>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Offer</p>
                   <p className="mt-1.5 text-base font-bold">{formatOffer(campaign.offer)}</p>
                   <p className="mt-1.5 text-[10px] text-muted-foreground">
                     Min order {formatMoney(Number(campaign.offer.minimum_order_value ?? 0))}
@@ -540,12 +587,12 @@ export function CampaignDetailClient({ campaignId }: { campaignId: string }) {
                 </div>
                 <div className="grid grid-cols-2 gap-2 text-xs">
                   <div className="rounded-lg border border-black/[0.08] dark:border-white/10 bg-card p-2">
-                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Max Cost</p>
+                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Maximum Discount Cost</p>
                     <p className="mt-1 font-bold text-xs">{campaign.offer.maximum_exposure == null ? "Not set" : formatMoney(Number(campaign.offer.maximum_exposure))}</p>
                   </div>
                   <div className="rounded-lg border border-black/[0.08] dark:border-white/10 bg-card p-2">
-                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Status</p>
-                    <p className="mt-1 font-bold text-xs">{campaign.offer.profitability_status === "verified" ? "Verified" : "Pending"}</p>
+                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Cost Check</p>
+                    <p className="mt-1 font-bold text-xs">{campaign.offer.profitability_status === "verified" ? "Ready" : "Needs review"}</p>
                   </div>
                 </div>
               </>
@@ -560,27 +607,27 @@ export function CampaignDetailClient({ campaignId }: { campaignId: string }) {
               <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-muted border border-black/[0.08] dark:border-white/15">
                 <Users className="h-3.5 w-3.5 text-blue-500" />
               </div>
-              <CardTitle className="text-sm font-semibold">Audience</CardTitle>
+              <CardTitle className="text-sm font-semibold">Who Will Receive It</CardTitle>
             </div>
           </CardHeader>
           <CardContent className="pt-4 space-y-3">
             <div className="grid grid-cols-3 gap-2 text-xs">
               <div className="rounded-lg border border-black/[0.08] dark:border-white/10 bg-card p-2">
-                <p className="text-[10px] uppercase tracking-wider text-muted-foreground">{frozen ? "Locked" : "Saved"}</p>
+                <p className="text-[10px] uppercase tracking-wider text-muted-foreground">{frozen ? "Approved List" : "Saved List"}</p>
                 <p className="mt-1 font-bold text-xs">{formatCount(campaign.audience_count)}</p>
               </div>
               <div className="rounded-lg border border-black/[0.08] dark:border-white/10 bg-card p-2">
-                <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Live</p>
+                <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Can Receive Now</p>
                 <p className="mt-1 font-bold text-xs">{audience ? formatCount(audience.included_count) : "—"}</p>
               </div>
               <div className="rounded-lg border border-black/[0.08] dark:border-white/10 bg-card p-2">
-                <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Blocked</p>
+                <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Cannot Receive</p>
                 <p className="mt-1 font-bold text-xs">{audience ? formatCount(audience.excluded_count) : "—"}</p>
               </div>
             </div>
             {audience && Object.keys(audience.exclusions).length > 0 && (
               <div className="rounded-lg bg-muted/30 p-2 border border-black/[0.08] dark:border-white/10">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-2">Why Excluded</p>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-2">Why Some Customers Are Left Out</p>
                 <div className="space-y-1">
                   {Object.entries(audience.exclusions).slice(0, 3).map(([reasonKey, count]) => {
                     // Channel-specific labels: SMS needs phone, Email needs email
@@ -643,7 +690,7 @@ export function CampaignDetailClient({ campaignId }: { campaignId: string }) {
               <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-muted border border-black/[0.08] dark:border-white/15">
                 <ShieldCheck className="h-3.5 w-3.5 text-green-500" />
               </div>
-              <CardTitle className="text-sm font-semibold">Ready to Send?</CardTitle>
+              <CardTitle className="text-sm font-semibold">Before Sending</CardTitle>
             </div>
           </CardHeader>
           <CardContent className="pt-4">
@@ -683,46 +730,22 @@ export function CampaignDetailClient({ campaignId }: { campaignId: string }) {
       )}
 
       {/* Campaign Performance Analytics */}
-      {results ? (
+      {hasPerformance && results && (
         <CampaignAnalyticsDashboard 
           campaign={campaign} 
           results={results} 
           onDownloadCSV={downloadCSV}
           isDownloading={busyAction === "csv"}
         />
-      ) : (
-        <Card className="dc-card">
-          <CardHeader className="pb-4 border-b border-black/[0.08] dark:border-white/10">
-            <div className="flex items-center gap-2 mb-2">
-              <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-muted border border-black/[0.08] dark:border-white/15">
-                <Send className="h-4 w-4 text-primary" />
-              </div>
-              <span className="dc-eyebrow">Performance</span>
-            </div>
-            <CardTitle className="dc-card-title">Campaign Performance</CardTitle>
-            <CardDescription className="text-xs text-muted-foreground mt-1">
-              Analytics will appear after campaign is sent
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="pt-6">
-            <div className="flex h-40 items-center justify-center rounded-xl border border-dashed border-border bg-muted/30">
-              <div className="text-center">
-                <CircleDashed className="mx-auto h-10 w-10 text-muted-foreground/60" />
-                <p className="mt-2 text-sm text-muted-foreground">No analytics data yet</p>
-                <p className="mt-1 text-xs text-muted-foreground">Send this campaign to see performance metrics</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
       )}
 
       {/* Important Attribution Notes */}
-      {limitations.length > 0 && (
+      {hasPerformance && limitations.length > 0 && (
         <Card className="dc-card border-dashed">
           <CardHeader className="pb-4">
             <CardTitle className="dc-card-title flex items-center gap-2">
               <AlertCircle className="h-4 w-4" />
-              Important Notes
+              About These Results
             </CardTitle>
             <CardDescription className="text-xs text-muted-foreground">
               What these numbers mean
@@ -808,7 +831,19 @@ export function CampaignDetailClient({ campaignId }: { campaignId: string }) {
                     {settings ? ` • Quiet hours: ${settings.quiet_hours_start}–${settings.quiet_hours_end}` : ""}
                   </p>
                 </div>
+                {campaign.offer ? (
+                  <p className="text-xs text-muted-foreground">
+                    Offer window: {formatDate(campaign.offer.valid_from)} to {formatDate(campaign.offer.valid_until)}
+                  </p>
+                ) : null}
                 {schedulePayload.error && <p className="text-sm text-destructive">{schedulePayload.error}</p>}
+                {scheduleWindowError && (
+                  <Alert variant="destructive">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertTitle>Send time is outside the offer window</AlertTitle>
+                    <AlertDescription>{scheduleWindowError}</AlertDescription>
+                  </Alert>
+                )}
                 <label className="flex items-start gap-3 rounded-lg border p-3 text-sm cursor-pointer hover:bg-muted/50">
                   <input 
                     type="checkbox" 
@@ -827,7 +862,7 @@ export function CampaignDetailClient({ campaignId }: { campaignId: string }) {
             </Button>
             <Button 
               onClick={() => void confirmSchedule()} 
-              disabled={!schedulePayload.value || !scheduleConfirmed || channelDisabled || Boolean(busyAction)}
+              disabled={!schedulePayload.value || Boolean(scheduleWindowError) || !scheduleConfirmed || channelDisabled || Boolean(busyAction)}
             >
               {busyAction === "schedule" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
               Schedule
@@ -835,6 +870,6 @@ export function CampaignDetailClient({ campaignId }: { campaignId: string }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </main>
   );
 }

@@ -29,7 +29,7 @@ function defaultOffer(): CampaignOfferDraft {
     value: 100,
     minimum_order_value: 600,
     percentage_cap: null,
-    valid_from: localDate(1),
+    valid_from: localDate(),
     valid_until: localDate(10),
     redemption_limit: 25,
   };
@@ -52,9 +52,12 @@ interface CampaignStudioDraft {
   emailPosterTemplate: CampaignEmailTemplate;
   useEmailPoster: boolean;
   selectedMessageTemplateId: string;
+  selectedSmsTemplateCode: string;
   emailSubject: string;
   emailBodyHtml: string;
   reviewAccepted: boolean;
+  customAudienceAll: boolean;
+  audienceCustomerIds: number[];
 }
 
 function createInitialDraft(): CampaignStudioDraft {
@@ -76,9 +79,12 @@ function createInitialDraft(): CampaignStudioDraft {
     emailPosterTemplate: "modern",
     useEmailPoster: false,
     selectedMessageTemplateId: "",
+    selectedSmsTemplateCode: "",
     emailSubject: "",
     emailBodyHtml: "",
     reviewAccepted: false,
+    customAudienceAll: true,
+    audienceCustomerIds: [],
   };
 }
 
@@ -128,20 +134,24 @@ export const useCampaignStudio = create<CampaignStudioState>()(
         emailPosterTemplate: state.emailPosterTemplate,
         useEmailPoster: state.useEmailPoster,
         selectedMessageTemplateId: state.selectedMessageTemplateId,
+        selectedSmsTemplateCode: state.selectedSmsTemplateCode,
         emailSubject: state.emailSubject,
         emailBodyHtml: state.emailBodyHtml,
         reviewAccepted: state.reviewAccepted,
+        customAudienceAll: state.customAudienceAll,
+        audienceCustomerIds: state.audienceCustomerIds,
       }),
       migrate: (persistedState) => {
+        const migrated = {
+          ...createInitialDraft(),
+          ...((persistedState as Partial<CampaignStudioDraft>) ?? {}),
+        };
         if (
-          persistedState &&
-          typeof persistedState === "object" &&
-          "channel" in persistedState &&
-          (persistedState as CampaignStudioDraft).channel === "whatsapp"
+          migrated.channel === "whatsapp"
         ) {
-          return { ...(persistedState as CampaignStudioDraft), channel: "email" };
+          return { ...migrated, channel: "email" };
         }
-        return persistedState as CampaignStudioDraft;
+        return migrated;
       },
     },
   ),

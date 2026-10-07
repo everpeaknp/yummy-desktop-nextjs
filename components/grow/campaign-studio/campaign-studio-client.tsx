@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
@@ -62,6 +63,7 @@ import type {
   GrowthPlaybookCode,
   GrowthSegmentPreview,
   GrowthSmsEstimate,
+  GrowthSmsTemplate,
   GrowthSmsWallet,
 } from "@/lib/api/growth-types";
 import { getApiErrorMessage } from "@/lib/api-error-message";
@@ -88,10 +90,10 @@ const studioSteps: Array<{
   shortTitle: string;
   icon: typeof Target;
 }> = [
-  { step: 1, title: "Choose the observed opportunity", shortTitle: "Audience", icon: Target },
-  { step: 2, title: "Bound the offer economics", shortTitle: "Offer", icon: WalletCards },
-  { step: 3, title: "Prepare approved content", shortTitle: "Creative", icon: ImageIcon },
-  { step: 4, title: "Review without sending", shortTitle: "Review", icon: FileCheck2 },
+  { step: 1, title: "Choose customers", shortTitle: "Customers", icon: Target },
+  { step: 2, title: "Create the offer", shortTitle: "Offer", icon: WalletCards },
+  { step: 3, title: "Prepare the message", shortTitle: "Message", icon: ImageIcon },
+  { step: 4, title: "Review and continue", shortTitle: "Review", icon: FileCheck2 },
 ];
 
 /**
@@ -128,12 +130,18 @@ function readableExclusion(value: string): string {
     .replace(/\b\w/g, (character) => character.toUpperCase());
 }
 
-function audienceBlockerGuidance(exclusions: Record<string, number>): string {
-  if (exclusions.missing_valid_email) {
+function audienceBlockerGuidance(
+  exclusions: Record<string, number>,
+  channel: GrowthChannelCode,
+): string {
+  if (channel === "sms" && (exclusions.missing_valid_e164 || exclusions.no_phone || exclusions.invalid_phone)) {
+    return "Add a valid customer phone number before sending a text offer.";
+  }
+  if (channel === "email" && (exclusions.missing_valid_email || exclusions.no_email || exclusions.invalid_email)) {
     return "Collect a valid customer email. Customers who sign in to Yummy Menu can add one to their restaurant profile.";
   }
   if (exclusions.marketing_consent_missing || exclusions.marketing_opted_out) {
-    return "Customers must enable Email offers in Yummy Menu before they can receive marketing.";
+    return `Customers must enable ${channel === "sms" ? "SMS" : "Email"} offers in Yummy Menu before they can receive marketing.`;
   }
   if (exclusions.frequency_capped) {
     return "These customers recently received a promotion. Wait for the window to end or change the restaurant limit in Grow settings.";
@@ -167,6 +175,7 @@ function languageLabel(language: GrowthLanguage): string {
 }
 
 export function CampaignStudioClient() {
+  const searchParams = useSearchParams();
   const restaurant = useRestaurant((state) => state.restaurant);
   const restaurantName = restaurant?.name || "Your restaurant";
   const hydrated = useCampaignStudioHydrated();
@@ -191,19 +200,39 @@ export function CampaignStudioClient() {
   const emailPosterTemplate = useCampaignStudio((state) => state.emailPosterTemplate);
   const useEmailPoster = useCampaignStudio((state) => state.useEmailPoster);
   const selectedMessageTemplateId = useCampaignStudio((state) => state.selectedMessageTemplateId);
+  const selectedSmsTemplateCode = useCampaignStudio((state) => state.selectedSmsTemplateCode);
   const emailSubject = useCampaignStudio((state) => state.emailSubject);
   const emailBodyHtml = useCampaignStudio((state) => state.emailBodyHtml);
   const reviewAccepted = useCampaignStudio((state) => state.reviewAccepted);
+  const customAudienceAll = useCampaignStudio((state) => state.customAudienceAll);
+  const audienceCustomerIds = useCampaignStudio((state) => state.audienceCustomerIds);
   const patchDraft = useCampaignStudio((state) => state.patch);
   const setStep = useCampaignStudio((state) => state.setStep);
   const setFurthestStep = useCampaignStudio((state) => state.setFurthestStep);
   const resetDraft = useCampaignStudio((state) => state.reset);
+  const appliedGoalRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    const requestedGoal = searchParams.get("goal") as GrowthPlaybookCode | null;
+    if (
+      !requestedGoal ||
+      appliedGoalRef.current === requestedGoal ||
+      !["second_visit", "win_back", "slow_day", "custom"].includes(requestedGoal)
+    ) return;
+    appliedGoalRef.current = requestedGoal;
+    patchDraft("playbookCode", requestedGoal);
+    setStep(1);
+    setFurthestStep(1);
+    if (!nameCustomized) patchDraft("campaignName", getCampaignPlaybook(requestedGoal).title);
+  }, [hydrated, nameCustomized, patchDraft, searchParams, setFurthestStep, setStep]);
 
   const setPlaybookCode = (value: GrowthPlaybookCode) => patchDraft("playbookCode", value);
   const setChannel = (value: GrowthChannelCode) => {
     const activeValue: GrowthChannelCode = value === "whatsapp" ? "email" : value;
     patchDraft("channel", activeValue);
     patchDraft("selectedMessageTemplateId", "");
+    patchDraft("selectedSmsTemplateCode", "");
     patchDraft("reviewAccepted", false);
     patchDraft("copyCustomized", false);  // Reset copy customization when channel changes
   };
@@ -222,18 +251,26 @@ export function CampaignStudioClient() {
   const setUseEmailPoster = (value: boolean) => patchDraft("useEmailPoster", value);
   const setSelectedMessageTemplateId = (value: string) =>
     patchDraft("selectedMessageTemplateId", value);
+  const setSelectedSmsTemplateCode = (value: string) =>
+    patchDraft("selectedSmsTemplateCode", value);
   const setEmailSubject = (value: string) => patchDraft("emailSubject", value);
   const setEmailBodyHtml = (value: string) => patchDraft("emailBodyHtml", value);
   const setReviewAccepted = (value: boolean) => patchDraft("reviewAccepted", value);
+  const setCustomAudienceAll = (value: boolean) => patchDraft("customAudienceAll", value);
+  const setAudienceCustomerIds = (value: number[]) => patchDraft("audienceCustomerIds", value);
 
   const [brand, setBrand] = useState<GrowthBrandProfile | null>(null);
   const [brandUnavailable, setBrandUnavailable] = useState(false);
   const [messageTemplates, setMessageTemplates] = useState<GrowthMessageTemplate[]>([]);
+  const [smsTemplates, setSmsTemplates] = useState<GrowthSmsTemplate[]>([]);
+  const [smsTemplatesLoading, setSmsTemplatesLoading] = useState(true);
+  const [smsTemplatesError, setSmsTemplatesError] = useState<string | null>(null);
   const [templatesLoading, setTemplatesLoading] = useState(true);
   const [templatesError, setTemplatesError] = useState<string | null>(null);
   const [audience, setAudience] = useState<GrowthSegmentPreview | null>(null);
   const [audienceLoading, setAudienceLoading] = useState(false);
   const [audienceError, setAudienceError] = useState<string | null>(null);
+  const [customCandidates, setCustomCandidates] = useState<NonNullable<GrowthSegmentPreview["customers"]>>([]);
   const [savedCampaign, setSavedCampaign] = useState<GrowthCampaign | null>(null);
   const [saving, setSaving] = useState(false);
   const [submittingReview, setSubmittingReview] = useState(false);
@@ -259,6 +296,11 @@ export function CampaignStudioClient() {
     () => validateCampaignOffer(offer),
     [offer],
   );
+  const smsCreditsNeeded = smsEstimate?.required_credits ?? 0;
+  const smsCreditsAvailable = smsWallet?.available_credits ?? null;
+  const smsCreditShortfall = smsCreditsAvailable === null
+    ? null
+    : Math.max(0, smsCreditsNeeded - smsCreditsAvailable);
   // EmailPreview/renderPosterStyleEmailHtml expect camelCase field names
   // (discountType/minimumOrderValue/percentageCap/validUntil); the draft
   // stores snake_case (type/minimum_order_value/percentage_cap/valid_until).
@@ -291,6 +333,10 @@ export function CampaignStudioClient() {
       ) ?? null,
     [approvedMessageTemplates, selectedMessageTemplateId],
   );
+  const selectedSmsTemplate = useMemo(
+    () => smsTemplates.find((template) => template.code === selectedSmsTemplateCode) ?? null,
+    [selectedSmsTemplateCode, smsTemplates],
+  );
 
   const starterCopy = useMemo(
     () =>
@@ -305,6 +351,7 @@ export function CampaignStudioClient() {
   );
 
   useEffect(() => {
+    if (channel === "sms") return;
     if (copyCustomized) return;
     if (channel === "email") {
       setEmailSubject(starterCopy.headline);
@@ -314,6 +361,11 @@ export function CampaignStudioClient() {
       setMessage(starterCopy.message);
     }
   }, [channel, copyCustomized, starterCopy]);
+
+  useEffect(() => {
+    if (channel !== "sms" || !selectedSmsTemplate) return;
+    setMessage(selectedSmsTemplate.message_body);
+  }, [channel, selectedSmsTemplate]);
 
   useEffect(() => {
     if (!nameCustomized) {
@@ -372,22 +424,51 @@ export function CampaignStudioClient() {
   }, [channel]);
 
   useEffect(() => {
+    let active = true;
+    setSmsTemplatesLoading(true);
+    setSmsTemplatesError(null);
+    growthApi
+      .listSmsTemplates()
+      .then((result) => {
+        if (active) setSmsTemplates(result);
+      })
+      .catch(() => {
+        if (!active) return;
+        setSmsTemplates([]);
+        setSmsTemplatesError("Yummy SMS templates could not be loaded.");
+      })
+      .finally(() => {
+        if (active) setSmsTemplatesLoading(false);
+      });
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    if (channel !== "sms" || smsTemplatesLoading) return;
+    const valid = smsTemplates.some((template) => template.code === selectedSmsTemplateCode);
+    if (!valid) setSelectedSmsTemplateCode(smsTemplates[0]?.code ?? "");
+  }, [channel, selectedSmsTemplateCode, smsTemplates, smsTemplatesLoading]);
+
+  useEffect(() => {
     if (channel !== "sms" || message.trim().length === 0) {
       setSmsEstimate(null);
       return;
     }
     let active = true;
     const timer = window.setTimeout(() => {
-      Promise.all([
+      Promise.allSettled([
         growthApi.estimateSms(message.trim(), audience?.included_count ?? 0),
         growthApi.getSmsWallet(),
-      ]).then(([estimate, wallet]) => {
+      ]).then(([estimateResult, walletResult]) => {
         if (active) {
-          setSmsEstimate(estimate);
-          setSmsWallet(wallet);
+          setSmsEstimate(estimateResult.status === "fulfilled" ? estimateResult.value : null);
+          setSmsWallet(walletResult.status === "fulfilled" ? walletResult.value : null);
         }
       }).catch(() => {
-        if (active) setSmsEstimate(null);
+        if (active) {
+          setSmsEstimate(null);
+          setSmsWallet(null);
+        }
       });
     }, 250);
     return () => { active = false; window.clearTimeout(timer); };
@@ -411,21 +492,36 @@ export function CampaignStudioClient() {
     setAudienceError(null);
     setAudience(null);
     try {
-      const result = await growthApi.previewSegment(playbook.segment, channel);
+      let result: GrowthSegmentPreview;
+      if (playbook.code === "custom") {
+        const pool = await growthApi.previewSegment("all", channel);
+        if (requestId === audienceRequestRef.current) setCustomCandidates(pool.customers ?? []);
+        const eligibleIds = new Set((pool.customers ?? []).map((customer) => Number(customer.id)));
+        const validSelectedIds = audienceCustomerIds.filter((id) => eligibleIds.has(id));
+        if (validSelectedIds.length !== audienceCustomerIds.length) {
+          patchDraft("audienceCustomerIds", validSelectedIds);
+        }
+        result = customAudienceAll
+          ? pool
+          : await growthApi.previewSegment("all", channel, validSelectedIds);
+      } else {
+        setCustomCandidates([]);
+        result = await growthApi.previewSegment(playbook.segment, channel);
+      }
       if (requestId === audienceRequestRef.current) setAudience(result);
     } catch (error) {
       if (requestId === audienceRequestRef.current) {
         setAudienceError(
           getApiErrorMessage(
             error,
-            "The live audience could not be calculated. You may continue drafting, but review submission stays blocked until Yummy can verify an eligible audience.",
+            "Customers could not be checked right now. You can continue editing, but must try again before requesting approval.",
           ),
         );
       }
     } finally {
       if (requestId === audienceRequestRef.current) setAudienceLoading(false);
     }
-  }, [channel, playbook.segment]);
+  }, [audienceCustomerIds, channel, customAudienceAll, patchDraft, playbook.code, playbook.segment]);
 
   const renderPosterPng = useCallback(async (): Promise<Blob> => {
     if (!posterRef.current) {
@@ -545,6 +641,10 @@ export function CampaignStudioClient() {
       setPageError("Give this campaign a clear internal name before continuing.");
       return;
     }
+    if (step === 1 && playbookCode === "custom" && !customAudienceAll && !audienceCustomerIds.length) {
+      setPageError("Select at least one eligible customer, or choose all eligible subscribers.");
+      return;
+    }
     if (step === 2 && !offerValidation.valid) {
       setPageError("Correct the offer rules before continuing. The client will not hide an unbounded offer.");
       return;
@@ -555,13 +655,13 @@ export function CampaignStudioClient() {
           setPageError("Add a clear email subject and body before review.");
           return;
         }
-      } else if (headline.trim().length < 3 || message.trim().length < 12) {
-        setPageError("WhatsApp Grow campaigns are deactivated. Use Email or SMS instead.");
+      } else if (!selectedSmsTemplate) {
+        setPageError("Choose a Yummy SMS template before review.");
         return;
       }
       if (channel !== "sms" && !selectedMessageTemplate) {
         setPageError(
-          `No provider-approved email template is available for ${languageLabel(language)}. Add or approve that template before review.`,
+          `No approved email style is available in ${languageLabel(language)}. Save the draft and contact Yummy support.`,
         );
         return;
       }
@@ -576,10 +676,11 @@ export function CampaignStudioClient() {
       channel,
       offer,
       language,
-      message,
+      smsTemplateCode: selectedSmsTemplateCode,
       emailSubject,
       emailBodyHtml,
       emailTemplate: emailPosterTemplate,
+      audienceCustomerIds: customAudienceAll ? [] : audienceCustomerIds,
     });
     return selectedMessageTemplate
       ? { ...input, message_template_id: Number(selectedMessageTemplate.id) }
@@ -591,7 +692,7 @@ export function CampaignStudioClient() {
     const contentReady =
       channel === "email"
         ? emailSubject.trim().length >= 3 && emailBodyHtml.trim().length >= 12
-        : message.trim().length >= 12;
+        : Boolean(selectedSmsTemplate);
     if (campaignName.trim().length < 3 || !offerValidation.valid || !contentReady) {
       setPageError("Complete the campaign name, bounded offer, and message before saving a draft.");
       return null;
@@ -604,10 +705,14 @@ export function CampaignStudioClient() {
             name: campaignName.trim(),
              offer: campaignInput().offer,
              language,
-             message_body: channel !== "email" ? message.trim() : undefined,
+             sms_template_code: channel === "sms" ? selectedSmsTemplateCode : undefined,
              email_subject: channel === "email" ? emailSubject.trim() : undefined,
              email_body_html: channel === "email" ? emailBodyHtml.trim() : undefined,
              email_template: channel === "email" ? emailPosterTemplate : undefined,
+             audience_customer_ids:
+               playbookCode === "custom"
+                 ? (customAudienceAll ? [] : audienceCustomerIds)
+                 : [],
              message_template_id: selectedMessageTemplate
                ? Number(selectedMessageTemplate.id)
                : undefined,
@@ -634,24 +739,24 @@ export function CampaignStudioClient() {
   const submitForReview = async () => {
     setPageError(null);
     if (!reviewAccepted) {
-      setPageError("Confirm the immutable economics, consent checks, and manual approval boundary first.");
+      setPageError("Confirm that the campaign details are ready for manager approval.");
       return;
     }
     if (!audience || audience.included_count <= 0) {
-      setPageError("A verified live audience with at least one eligible customer is required for review.");
+      setPageError("At least 1 customer must be able to receive this campaign before approval.");
       return;
     }
     const contentReady =
       channel === "email"
         ? emailSubject.trim().length >= 3 && emailBodyHtml.trim().length >= 12
-        : message.trim().length >= 12;
+        : Boolean(selectedSmsTemplate);
     if (!offerValidation.valid || !contentReady) {
       setPageError("Offer or message validation is incomplete.");
       return;
     }
     if (channel !== "sms" && !selectedMessageTemplate) {
       setPageError(
-        `A provider-approved email template matching ${languageLabel(language)} is required. The campaign remains a draft.`,
+        `No approved email style is available in ${languageLabel(language)}. The campaign remains a draft.`,
       );
       return;
     }
@@ -663,7 +768,7 @@ export function CampaignStudioClient() {
       const reviewed = await growthApi.submitCampaignForReview(draft.id);
       setSavedCampaign(reviewed);
       toast.success(
-        "Submitted for manual review. It has not been approved, scheduled, or sent.",
+        "Campaign sent for manager approval. No messages have been scheduled or sent.",
       );
     } catch (error) {
       setPageError(
@@ -678,6 +783,7 @@ export function CampaignStudioClient() {
   };
 
   const suggestCopy = async () => {
+    if (channel === "sms") return;
     setSuggestingCopy(true);
     setPageError(null);
     
@@ -789,19 +895,19 @@ export function CampaignStudioClient() {
   );
 
   return (
-    <div className="dashboard-ui relative flex flex-col gap-10 max-w-full xl:max-w-[1600px] mx-auto pb-32 px-4 overflow-x-hidden">
+    <main className="mx-auto flex w-full max-w-[1500px] flex-col gap-6 overflow-x-hidden px-4 pb-32">
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <header className="flex flex-col gap-4 border-b border-border pb-6 md:flex-row md:items-end md:justify-between">
         <div className="space-y-1">
           <div className="flex items-center gap-3 mb-2">
-            <Link href="/grow" className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-primary transition-colors">
-              <ArrowLeft className="h-4 w-4" />
-              Back to Yummy Grow
+            <Link href="/grow" className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-primary focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+              <ArrowLeft aria-hidden="true" className="h-4 w-4" />
+              Grow
             </Link>
           </div>
-          <h1 className="dc-page-title">Create Campaign</h1>
-          <p className="dc-page-subtitle">
-            Draft a playbook, inspect audience, bound offer, and prepare content for review
+          <h1 className="text-pretty text-3xl font-black tracking-tight">Create a Campaign</h1>
+          <p className="text-sm text-muted-foreground">
+            Choose customers, build an offer, prepare the message, and send it for approval.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
@@ -822,7 +928,7 @@ export function CampaignStudioClient() {
             )}
           </Badge>
         </div>
-      </div>
+      </header>
 
       <nav className="dc-card p-4" aria-label="Campaign steps">
         <div className="flex items-center justify-between gap-2">
@@ -839,7 +945,7 @@ export function CampaignStudioClient() {
                   disabled={!accessible || isReadOnly}
                   onClick={() => changeStep(item.step)}
                   className={cn(
-                    "flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left transition-all disabled:cursor-not-allowed disabled:opacity-45",
+                    "flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                     active 
                       ? "bg-primary text-primary-foreground" 
                       : "hover:bg-muted",
@@ -866,9 +972,7 @@ export function CampaignStudioClient() {
                   </span>
                   
                   <span className="hidden min-w-0 flex-1 sm:block">
-                    <span className={cn(
-                      "block text-[10px] font-medium uppercase tracking-wider opacity-70"
-                    )}>
+                    <span className="block text-[10px] font-medium opacity-70">
                       Step {item.step}
                     </span>
                     <span className={cn("block truncate text-xs font-semibold")}>
@@ -879,7 +983,8 @@ export function CampaignStudioClient() {
                 
                 {/* Arrow between steps */}
                 {index < studioSteps.length - 1 && (
-                  <ArrowRight 
+                  <ArrowRight
+                    aria-hidden="true"
                     className={cn(
                       "mx-1 h-4 w-4 shrink-0 transition-colors",
                       completed ? "text-primary" : "text-muted-foreground/30"
@@ -903,9 +1008,9 @@ export function CampaignStudioClient() {
       {isReadOnly && (
         <Alert className="rounded-xl border border-border bg-card">
           <CheckCircle2 className="h-4 w-4" />
-          <AlertTitle>Submitted for manual review</AlertTitle>
+          <AlertTitle>Sent for approval</AlertTitle>
           <AlertDescription>
-            This revision is read-only here. No delivery was scheduled or sent. An authorized approver must use the future approval workflow.
+            This campaign cannot be edited while it waits for a manager. No messages have been scheduled or sent.
           </AlertDescription>
         </Alert>
       )}
@@ -914,14 +1019,16 @@ export function CampaignStudioClient() {
         <div className="grid gap-8 xl:grid-cols-[1.05fr_0.95fr] overflow-x-hidden">
           <Card className="rounded-xl border border-border bg-card transition-all hover:shadow-md">
             <CardHeader className="space-y-3">
-              <CardTitle className="text-xl">Choose one V1 playbook</CardTitle>
-              <CardDescription className="text-sm">Observed rules only. Predictive churn and custom segments are outside V1.</CardDescription>
+              <CardTitle className="text-xl">What do you want this campaign to do?</CardTitle>
+              <CardDescription className="text-sm">Choose a goal and Yummy will find customers who match it.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-5">
               <div className="space-y-2">
-                <Label htmlFor="campaign-name">Internal campaign name</Label>
+                <Label htmlFor="campaign-name">Campaign name</Label>
                 <Input
                   id="campaign-name"
+                  name="campaign_name"
+                  autoComplete="off"
                   value={campaignName}
                   maxLength={120}
                   disabled={isReadOnly}
@@ -930,7 +1037,7 @@ export function CampaignStudioClient() {
                     setNameCustomized(true);
                   }}
                 />
-                <p className="text-xs text-muted-foreground">Customers do not see this internal name.</p>
+                <p className="text-xs text-muted-foreground">Only your team sees this name.</p>
               </div>
 
               <div className="space-y-2">
@@ -964,7 +1071,7 @@ export function CampaignStudioClient() {
                     <RadioGroupItem id="channel-email" value="email" />
                     <span>
                       <span className="block font-bold">Email</span>
-                      <span className="text-xs font-normal text-muted-foreground">Subject + HTML body</span>
+                      <span className="text-xs font-normal text-muted-foreground">Email subject and message</span>
                     </span>
                   </Label>
                 </RadioGroup>
@@ -997,6 +1104,70 @@ export function CampaignStudioClient() {
                   </Label>
                 ))}
               </RadioGroup>
+
+              {playbookCode === "custom" && (
+                <div className="space-y-3 border-t border-border pt-5">
+                  <div className="flex items-start gap-3">
+                    <Checkbox
+                      id="custom-audience-all"
+                      checked={customAudienceAll}
+                      disabled={isReadOnly}
+                      onCheckedChange={(checked) => {
+                        setCustomAudienceAll(checked === true);
+                        setReviewAccepted(false);
+                      }}
+                    />
+                    <Label htmlFor="custom-audience-all" className="cursor-pointer leading-5">
+                      <span className="block font-bold">Everyone Who Can Receive It</span>
+                      <span className="text-xs font-normal text-muted-foreground">
+                        Includes everyone who currently passes consent and contact checks.
+                      </span>
+                    </Label>
+                  </div>
+                  {!customAudienceAll && (
+                    <fieldset className="space-y-2" disabled={isReadOnly}>
+                      <legend className="text-sm font-bold">Select customers</legend>
+                      {customCandidates.length === 0 ? (
+                        <p className="text-sm text-muted-foreground">No customers can receive offers through this channel yet.</p>
+                      ) : (
+                        <div className="max-h-64 divide-y divide-border overflow-y-auto rounded-xl border border-border">
+                          {customCandidates.map((customer) => {
+                            const id = Number(customer.id);
+                            const checked = audienceCustomerIds.includes(id);
+                            return (
+                              <Label
+                                key={id}
+                                htmlFor={`audience-customer-${id}`}
+                                className="flex cursor-pointer items-center gap-3 px-3 py-3 [contain-intrinsic-size:0_48px] [content-visibility:auto]"
+                              >
+                                <Checkbox
+                                  id={`audience-customer-${id}`}
+                                  checked={checked}
+                                  onCheckedChange={(value) => {
+                                    setAudienceCustomerIds(
+                                      value === true
+                                        ? [...audienceCustomerIds, id]
+                                        : audienceCustomerIds.filter((customerId) => customerId !== id),
+                                    );
+                                    setReviewAccepted(false);
+                                  }}
+                                />
+                                <span className="min-w-0">
+                                  <span className="block truncate font-semibold">{customer.display_name || `Customer #${id}`}</span>
+                                  <span className="block text-xs text-muted-foreground">{customer.destination_masked || "Contact protected"}</span>
+                                </span>
+                              </Label>
+                            );
+                          })}
+                        </div>
+                      )}
+                      {!audienceCustomerIds.length && (
+                        <p className="text-xs text-amber-600">Select at least one customer to continue.</p>
+                      )}
+                    </fieldset>
+                  )}
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -1004,8 +1175,8 @@ export function CampaignStudioClient() {
             <CardHeader className="space-y-3">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <CardTitle className="text-xl">Live audience preview</CardTitle>
-                  <CardDescription className="mt-1 text-sm">Aggregate counts. Not frozen or approved.</CardDescription>
+                  <CardTitle className="text-xl">Customers who can receive it</CardTitle>
+                  <CardDescription className="mt-1 text-sm">This estimate updates as customer permissions and contact details change.</CardDescription>
                 </div>
                 <Button variant="outline" size="sm" onClick={() => void loadAudience()} disabled={audienceLoading} className="rounded-xl border border-border">
                   <RefreshCw className={cn("mr-2 h-4 w-4", audienceLoading && "animate-spin")} />Refresh
@@ -1028,7 +1199,7 @@ export function CampaignStudioClient() {
                       <TriangleAlert aria-hidden="true" className="h-4 w-4 text-amber-600" />
                       <AlertTitle>No customers can receive this campaign yet</AlertTitle>
                       <AlertDescription>
-                        {audienceBlockerGuidance(audience.exclusions || {})} Submission stays disabled until the live audience includes at least one eligible customer.
+                        {audienceBlockerGuidance(audience.exclusions || {}, channel)} At least 1 customer must be available before requesting approval.
                       </AlertDescription>
                     </Alert>
                   )}
@@ -1036,12 +1207,12 @@ export function CampaignStudioClient() {
                     <div className="rounded-xl border border-border bg-muted p-4">
                       <Users className="h-5 w-5" />
                       <p className="mt-3 text-3xl font-black">{audience.included_count.toLocaleString("en-NP")}</p>
-                      <p className="text-xs font-semibold text-muted-foreground">Currently eligible</p>
+                      <p className="text-xs font-semibold text-muted-foreground">Can receive it</p>
                     </div>
                     <div className="rounded-xl border border-border bg-muted p-4">
                       <ShieldCheck className="h-5 w-5" />
                       <p className="mt-3 text-3xl font-black">{audience.excluded_count.toLocaleString("en-NP")}</p>
-                      <p className="text-xs font-semibold text-muted-foreground">Excluded safely</p>
+                      <p className="text-xs font-semibold text-muted-foreground">Cannot receive</p>
                     </div>
                   </div>
                   <div className="rounded-2xl border p-4">
@@ -1051,7 +1222,7 @@ export function CampaignStudioClient() {
                   {Object.keys(audience.exclusions || {}).length > 0 && (
                     <div>
                       <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Why some customers can’t receive this</p>
-                      <p className="mt-1 text-xs text-muted-foreground">These customers are excluded for legal or technical reasons:</p>
+                      <p className="mt-1 text-xs text-muted-foreground">These customers are left out because they cannot receive this promotion:</p>
                       <div className="mt-2 space-y-2">
                         {Object.entries(audience.exclusions).map(([reason, count]) => (
                           <div key={reason} className="flex items-center justify-between rounded-xl bg-muted/50 px-3 py-2 text-sm">
@@ -1061,7 +1232,7 @@ export function CampaignStudioClient() {
                       </div>
                     </div>
                   )}
-                  <p className="text-xs leading-5 text-muted-foreground">Consent, phone validity, frequency caps, returns, merge state, and channel status must be checked again before any future delivery.</p>
+                  <p className="text-xs leading-5 text-muted-foreground">Yummy checks permission, contact details, and recent promotions again before sending.</p>
                 </div>
               ) : null}
             </CardContent>
@@ -1074,7 +1245,7 @@ export function CampaignStudioClient() {
           <Card>
             <CardHeader>
               <CardTitle>Offer rules</CardTitle>
-              <CardDescription>V1 supports fixed or capped-percentage discounts only. Backend order calculation remains authoritative.</CardDescription>
+              <CardDescription>Choose a fixed discount or a percentage with a maximum discount amount.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-5">
               <RadioGroup
@@ -1096,34 +1267,35 @@ export function CampaignStudioClient() {
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="offer-value">{offer.type === "fixed" ? "Discount amount (Rs.)" : "Discount percentage"}</Label>
-                  <Input id="offer-value" type="number" min="1" max={offer.type === "percentage" ? "100" : undefined} value={offer.value} disabled={isReadOnly} onChange={(event) => updateOffer("value", Number(event.target.value))} />
+                  <Input id="offer-value" name="offer_value" autoComplete="off" type="number" inputMode="decimal" min="1" max={offer.type === "percentage" ? "100" : undefined} value={offer.value} disabled={isReadOnly} onChange={(event) => updateOffer("value", Number(event.target.value))} />
                   {offerValidation.errors.value && <p className="text-xs text-destructive">{offerValidation.errors.value}</p>}
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="offer-minimum">Minimum order value (Rs.)</Label>
-                  <Input id="offer-minimum" type="number" min="1" value={offer.minimum_order_value} disabled={isReadOnly} onChange={(event) => updateOffer("minimum_order_value", Number(event.target.value))} />
+                  <Input id="offer-minimum" name="minimum_order_value" autoComplete="off" type="number" inputMode="decimal" min="1" value={offer.minimum_order_value} disabled={isReadOnly} onChange={(event) => updateOffer("minimum_order_value", Number(event.target.value))} />
                   {offerValidation.errors.minimum_order_value && <p className="text-xs text-destructive">{offerValidation.errors.minimum_order_value}</p>}
                 </div>
                 {offer.type === "percentage" && (
                   <div className="space-y-2">
                     <Label htmlFor="offer-cap">Maximum discount per redemption (Rs.)</Label>
-                    <Input id="offer-cap" type="number" min="1" value={offer.percentage_cap ?? ""} disabled={isReadOnly} onChange={(event) => updateOffer("percentage_cap", event.target.value ? Number(event.target.value) : null)} />
+                    <Input id="offer-cap" name="maximum_discount" autoComplete="off" type="number" inputMode="decimal" min="1" value={offer.percentage_cap ?? ""} disabled={isReadOnly} onChange={(event) => updateOffer("percentage_cap", event.target.value ? Number(event.target.value) : null)} />
                     {offerValidation.errors.percentage_cap && <p className="text-xs text-destructive">{offerValidation.errors.percentage_cap}</p>}
                   </div>
                 )}
                 <div className="space-y-2">
                   <Label htmlFor="offer-limit">Maximum redemptions</Label>
-                  <Input id="offer-limit" type="number" min="1" step="1" value={offer.redemption_limit} disabled={isReadOnly} onChange={(event) => updateOffer("redemption_limit", Number(event.target.value))} />
+                  <Input id="offer-limit" name="maximum_redemptions" autoComplete="off" type="number" inputMode="numeric" min="1" step="1" value={offer.redemption_limit} disabled={isReadOnly} onChange={(event) => updateOffer("redemption_limit", Number(event.target.value))} />
                   {offerValidation.errors.redemption_limit && <p className="text-xs text-destructive">{offerValidation.errors.redemption_limit}</p>}
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="offer-start">Starts</Label>
-                  <Input id="offer-start" type="date" value={offer.valid_from} disabled={isReadOnly} onChange={(event) => updateOffer("valid_from", event.target.value)} />
+                  <Label htmlFor="offer-start">Offer starts</Label>
+                  <Input id="offer-start" name="offer_start_date" autoComplete="off" type="date" value={offer.valid_from} disabled={isReadOnly} onChange={(event) => updateOffer("valid_from", event.target.value)} />
                   {offerValidation.errors.valid_from && <p className="text-xs text-destructive">{offerValidation.errors.valid_from}</p>}
+                  {!offerValidation.errors.valid_from && <p className="text-xs text-muted-foreground">The campaign cannot be sent before this date.</p>}
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="offer-expiry">Expires</Label>
-                  <Input id="offer-expiry" type="date" value={offer.valid_until} disabled={isReadOnly} onChange={(event) => updateOffer("valid_until", event.target.value)} />
+                  <Label htmlFor="offer-expiry">Offer expires</Label>
+                  <Input id="offer-expiry" name="offer_expiry_date" autoComplete="off" type="date" value={offer.valid_until} disabled={isReadOnly} onChange={(event) => updateOffer("valid_until", event.target.value)} />
                   {offerValidation.errors.valid_until && <p className="text-xs text-destructive">{offerValidation.errors.valid_until}</p>}
                 </div>
               </div>
@@ -1164,15 +1336,15 @@ export function CampaignStudioClient() {
                   <CardTitle>{channel === "email" ? "Email content" : channel === "sms" ? "SMS message" : "Message and poster"}</CardTitle>
                   <CardDescription className="mt-1">
                     {channel === "email"
-                      ? "Approved templates only. No synthetic content is generated."
+                      ? "Choose an approved style, then review the subject and message."
                       : channel === "sms"
-                        ? "Text-only campaign. Cost depends on message encoding, length, and recipient count."
+                        ? "Choose an approved text message and check the credits needed."
                       : "Controlled templates use the restaurant's real logo. No synthetic food image is generated."}
                   </CardDescription>
                 </div>
-                <Button variant="outline" size="sm" onClick={() => void suggestCopy()} disabled={suggestingCopy || isReadOnly}>
+                {channel === "email" && <Button variant="outline" size="sm" onClick={() => void suggestCopy()} disabled={suggestingCopy || isReadOnly}>
                   {suggestingCopy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Lightbulb className="mr-2 h-4 w-4" />}Suggest copy
-                </Button>
+                </Button>}
               </div>
             </CardHeader>
             <CardContent className="space-y-5">
@@ -1180,20 +1352,20 @@ export function CampaignStudioClient() {
                 <Alert className="rounded-xl border border-border bg-card"><TriangleAlert className="h-4 w-4" /><AlertDescription>Growth brand settings are unavailable. The preview uses a safe template and the restaurant profile logo when available.</AlertDescription></Alert>
               )}
               <div className="space-y-2">
-                <Label>Language</Label>
-                <Select value={language} disabled={isReadOnly} onValueChange={(value) => { setLanguage(value as GrowthLanguage); setCopyCustomized(false); }}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <Label>Language</Label>
+                  <Select value={language} disabled={isReadOnly} onValueChange={(value) => { setLanguage(value as GrowthLanguage); setCopyCustomized(false); }}>
+                  <SelectTrigger aria-label="Campaign language"><SelectValue /></SelectTrigger>
                   <SelectContent><SelectItem value="en">English</SelectItem><SelectItem value="ne">Nepali</SelectItem><SelectItem value="ne_romanized">Romanized Nepali</SelectItem></SelectContent>
                 </Select>
               </div>
               {channel !== "sms" && <div className="space-y-2">
-                <Label>Approved email template</Label>
+                <Label>Email Style</Label>
                 <Select
                   value={selectedMessageTemplateId}
                   disabled={isReadOnly || templatesLoading || approvedMessageTemplates.length === 0}
                   onValueChange={setSelectedMessageTemplateId}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger aria-label="Email style">
                     <SelectValue
                       placeholder={templatesLoading ? "Loading approved templates…" : "No approved template"}
                     />
@@ -1201,14 +1373,14 @@ export function CampaignStudioClient() {
                   <SelectContent>
                     {approvedMessageTemplates.map((template) => (
                       <SelectItem key={template.id} value={String(template.id)}>
-                        {template.key} · {template.provider_template_name}
+                        {template.key.replaceAll("_", " ")}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
                 {selectedMessageTemplate && (
                   <p className="text-xs leading-5 text-muted-foreground">
-                    Provider-approved template. Variables: {selectedMessageTemplate.variable_names.length ? selectedMessageTemplate.variable_names.join(", ") : "none"}.
+                    This approved email style is ready to personalize for each customer.
                   </p>
                 )}
               </div>}
@@ -1222,7 +1394,7 @@ export function CampaignStudioClient() {
                 <Alert className="rounded-xl border border-border bg-card">
                   <TriangleAlert className="h-4 w-4" />
                   <AlertDescription>
-                    No provider-approved email template matches {languageLabel(language)}. You can save a draft, but Yummy will not submit this campaign for review until one is available.
+                    No approved email style is available in {languageLabel(language)}. Save the draft and contact Yummy support for help.
                   </AlertDescription>
                 </Alert>
               )}
@@ -1230,40 +1402,85 @@ export function CampaignStudioClient() {
                 <>
                   <div className="space-y-2">
                     <Label htmlFor="email-subject">Email subject</Label>
-                    <Input id="email-subject" value={emailSubject} maxLength={255} disabled={isReadOnly} onChange={(event) => { setEmailSubject(event.target.value); setCopyCustomized(true); }} />
+                    <Input id="email-subject" name="email_subject" autoComplete="off" value={emailSubject} maxLength={255} disabled={isReadOnly} onChange={(event) => { setEmailSubject(event.target.value); setCopyCustomized(true); }} />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="email-body">Email body (HTML)</Label>
-                    <Textarea id="email-body" value={emailBodyHtml} maxLength={20000} rows={12} disabled={isReadOnly} onChange={(event) => { setEmailBodyHtml(event.target.value); setCopyCustomized(true); }} />
-                    <div className="flex justify-between text-xs text-muted-foreground"><span><code>{"{{customer_name}}"}</code> is personalized per recipient.</span><span>{emailBodyHtml.length}/20000</span></div>
+                    <Label htmlFor="email-body">Email Message</Label>
+                    <Textarea id="email-body" name="email_message" autoComplete="off" value={emailBodyHtml} maxLength={20000} rows={12} disabled={isReadOnly} onChange={(event) => { setEmailBodyHtml(event.target.value); setCopyCustomized(true); }} />
+                    <div className="flex justify-end text-xs text-muted-foreground"><span>{emailBodyHtml.length.toLocaleString("en-NP")}/20,000</span></div>
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="email-terms">Visible terms</Label>
-                    <Textarea id="email-terms" value={terms} maxLength={240} rows={3} disabled={isReadOnly} onChange={(event) => setTerms(event.target.value)} />
+                    <Textarea id="email-terms" name="offer_terms" autoComplete="off" value={terms} maxLength={240} rows={3} disabled={isReadOnly} onChange={(event) => setTerms(event.target.value)} />
                     <p className="text-xs text-muted-foreground">Shown in the poster-style email preview when &quot;Use poster template&quot; is enabled below.</p>
                   </div>
                 </>
               ) : channel === "sms" ? (
                 <>
                   <div className="space-y-2">
-                    <Label htmlFor="sms-message">SMS message</Label>
-                    <Textarea id="sms-message" value={message} maxLength={700} rows={7} disabled={isReadOnly} onChange={(event) => { setMessage(event.target.value); setCopyCustomized(true); }} />
-                    <div className="flex justify-between text-xs text-muted-foreground">
-                      <span><code>{"{{customer_name}}"}</code> is personalized for each recipient.</span>
-                      <span>{message.length}/700</span>
+                    <Label htmlFor="sms-template">Yummy SMS template</Label>
+                    <Select
+                      value={selectedSmsTemplateCode}
+                      disabled={isReadOnly || smsTemplatesLoading || smsTemplates.length === 0}
+                      onValueChange={setSelectedSmsTemplateCode}
+                    >
+                      <SelectTrigger id="sms-template" aria-label="SMS message">
+                        <SelectValue placeholder={smsTemplatesLoading ? "Loading templates…" : "Choose a template"} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {smsTemplates.map((template) => (
+                          <SelectItem key={template.code} value={template.code}>
+                            {template.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {selectedSmsTemplate && (
+                      <p className="text-xs leading-5 text-muted-foreground">
+                        {selectedSmsTemplate.description}
+                      </p>
+                    )}
+                  </div>
+                  {smsTemplatesError && (
+                    <Alert variant="destructive">
+                      <AlertCircle className="h-4 w-4" />
+                      <AlertDescription>{smsTemplatesError}</AlertDescription>
+                    </Alert>
+                  )}
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium">Message preview</p>
+                    <div className="min-h-28 rounded-xl border bg-muted/30 p-4 text-sm leading-6 text-foreground">
+                      {selectedSmsTemplate?.message_body || "Choose a Yummy SMS template."}
+                    </div>
+                    <p className="text-xs leading-5 text-muted-foreground">This approved message cannot be edited, but customer and offer details are added automatically.</p>
+                  </div>
+                  <div className="overflow-hidden rounded-xl border">
+                    <div className="border-b bg-muted/30 px-4 py-3">
+                      <p className="font-semibold">SMS Credit Check</p>
+                      <p className="mt-1 text-xs text-muted-foreground">Based on the current message and customers who can receive it.</p>
+                    </div>
+                    <div className="grid grid-cols-2 divide-x sm:grid-cols-3">
+                      <div className="p-4"><p className="text-xs text-muted-foreground">Customers</p><p className="mt-1 text-xl font-black tabular-nums">{smsEstimate?.recipient_count.toLocaleString("en-NP") ?? "—"}</p></div>
+                      <div className="p-4"><p className="text-xs text-muted-foreground">Credits Needed</p><p className="mt-1 text-xl font-black tabular-nums">{smsEstimate?.required_credits.toLocaleString("en-NP") ?? "—"}</p></div>
+                      <div className="col-span-2 border-t p-4 sm:col-span-1 sm:border-t-0"><p className="text-xs text-muted-foreground">Available</p><p className="mt-1 text-xl font-black tabular-nums">{smsWallet?.available_credits.toLocaleString("en-NP") ?? "Unavailable"}</p></div>
                     </div>
                   </div>
-                  <Alert className="rounded-xl border-violet-500/30 bg-violet-500/5">
-                    <MessageSquareText className="h-4 w-4 text-violet-600" />
-                    <AlertTitle>SMS credit estimate</AlertTitle>
-                    <AlertDescription>
-                      {smsEstimate
-                        ? `${smsEstimate.encoding.toUpperCase()} · ${smsEstimate.segments_per_recipient} segment${smsEstimate.segments_per_recipient === 1 ? "" : "s"} per customer · ${smsEstimate.required_credits.toLocaleString("en-NP")} credits for ${smsEstimate.recipient_count.toLocaleString("en-NP")} eligible customers.`
-                        : "Enter a message to calculate its SMS segments and required credits."}
-                      {smsWallet && ` Available balance: ${smsWallet.available_credits.toLocaleString("en-NP")} credits.`}
-                    </AlertDescription>
-                  </Alert>
-                  <p className="text-xs leading-5 text-muted-foreground">You may draft and submit this campaign for approval. Scheduling stays blocked until an SMS provider and sufficient credits are configured.</p>
+                  {smsCreditShortfall !== null && smsCreditShortfall > 0 ? (
+                    <Alert className="border-amber-500/40 bg-amber-500/5">
+                      <TriangleAlert aria-hidden="true" className="h-4 w-4" />
+                      <AlertTitle>Add {smsCreditShortfall.toLocaleString("en-NP")} More Credits</AlertTitle>
+                      <AlertDescription className="space-y-3">
+                        <p>You can save and request approval now, but you will need more credits before scheduling this campaign.</p>
+                        <Button asChild type="button" variant="outline" size="sm"><Link href="/grow/settings#grow-sms-credits">Buy SMS Credits</Link></Button>
+                      </AlertDescription>
+                    </Alert>
+                  ) : smsEstimate && smsWallet ? (
+                    <Alert className="border-emerald-500/30 bg-emerald-500/5">
+                      <CheckCircle2 aria-hidden="true" className="h-4 w-4" />
+                      <AlertTitle>Enough Credits Available</AlertTitle>
+                      <AlertDescription>Your current balance covers this campaign estimate.</AlertDescription>
+                    </Alert>
+                  ) : null}
                 </>
               ) : null}
             </CardContent>
@@ -1321,7 +1538,7 @@ export function CampaignStudioClient() {
                   </div>
                   <div className="space-y-2">
                     <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Who Will Receive</p>
-                    <p className="text-3xl font-bold tabular-nums">{audience ? audience.included_count.toLocaleString("en-NP") : "..."}</p>
+                    <p className="text-3xl font-bold tabular-nums">{audience ? audience.included_count.toLocaleString("en-NP") : "—"}</p>
                     <p className="text-sm text-muted-foreground">customers</p>
                   </div>
                   <div className="space-y-2">
@@ -1332,7 +1549,7 @@ export function CampaignStudioClient() {
                   <div className="space-y-2">
                     <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Language & Channel</p>
                     <p className="text-lg font-bold">{languageLabel(language)} · {channel === "sms" ? "SMS" : "Email"}</p>
-                    <p className="text-sm text-muted-foreground">{channel === "email" ? selectedMessageTemplate?.key || "No template" : channel === "sms" ? "Text-only message" : `${posterTemplate} poster`}</p>
+                    <p className="text-sm text-muted-foreground">{channel === "email" ? selectedMessageTemplate?.key || "No template" : selectedSmsTemplate?.name || "No SMS template"}</p>
                   </div>
                 </div>
 
@@ -1364,8 +1581,8 @@ export function CampaignStudioClient() {
                   <Label htmlFor="review-acceptance" className="flex cursor-pointer items-start gap-3 rounded-lg border border-border p-4 hover:bg-muted/20 transition-colors">
                     <Checkbox id="review-acceptance" checked={reviewAccepted} onCheckedChange={(checked) => setReviewAccepted(checked === true)} />
                     <span className="space-y-1">
-                      <span className="block font-semibold text-sm">I understand this sends the campaign for approval</span>
-                      <span className="block text-sm text-muted-foreground">This does NOT send messages to customers. A manager must approve first.</span>
+                      <span className="block font-semibold text-sm">Send this campaign for manager approval</span>
+                      <span className="block text-sm text-muted-foreground">This will not send messages to customers yet.</span>
                     </span>
                   </Label>
                 )}
@@ -1387,11 +1604,11 @@ export function CampaignStudioClient() {
                   )}
                   {actionPolicy.can_submit_for_review && (
                     <Button 
-                      disabled={saving || submittingReview || (channel !== "sms" && (templatesLoading || !selectedMessageTemplate)) || !reviewAccepted || !audience || audience.included_count <= 0} 
+                      disabled={saving || submittingReview || (channel === "sms" ? (smsTemplatesLoading || !selectedSmsTemplate) : (templatesLoading || !selectedMessageTemplate)) || !reviewAccepted || !audience || audience.included_count <= 0}
                       onClick={() => void submitForReview()}
                     >
                       {submittingReview ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileCheck2 className="mr-2 h-4 w-4" />}
-                      Submit for review
+                      Send for Approval
                     </Button>
                   )}
                 </div>
@@ -1405,7 +1622,7 @@ export function CampaignStudioClient() {
 
           {channel === "email" ? (
             <Card className="h-fit">
-              <CardHeader><CardTitle>Email review</CardTitle><CardDescription>This copy becomes immutable once submitted for review.</CardDescription></CardHeader>
+              <CardHeader><CardTitle>Email Review</CardTitle><CardDescription>Confirm what customers will see before requesting approval.</CardDescription></CardHeader>
               <CardContent>
                 <EmailPreview
                   subject={emailSubject}
@@ -1431,16 +1648,16 @@ export function CampaignStudioClient() {
             </Card>
           ) : channel === "sms" ? (
             <Card className="h-fit">
-              <CardHeader><CardTitle>SMS review</CardTitle><CardDescription>Message copy becomes immutable after approval.</CardDescription></CardHeader>
+              <CardHeader><CardTitle>SMS Review</CardTitle><CardDescription>Confirm the customer message and available credits.</CardDescription></CardHeader>
               <CardContent className="space-y-4">
                 <div className="rounded-2xl border bg-muted/40 p-4 text-sm leading-6 whitespace-pre-wrap">{message}</div>
                 {smsEstimate && (
                   <div className="grid grid-cols-2 gap-3 text-sm">
-                    <div className="rounded-xl border p-3"><p className="text-muted-foreground">Segments each</p><p className="text-lg font-bold">{smsEstimate.segments_per_recipient}</p></div>
-                    <div className="rounded-xl border p-3"><p className="text-muted-foreground">Credits needed</p><p className="text-lg font-bold">{smsEstimate.required_credits.toLocaleString("en-NP")}</p></div>
+                    <div className="rounded-xl border p-3"><p className="text-muted-foreground">Credits Needed</p><p className="text-lg font-bold tabular-nums">{smsEstimate.required_credits.toLocaleString("en-NP")}</p></div>
+                    <div className="rounded-xl border p-3"><p className="text-muted-foreground">Credits Available</p><p className="text-lg font-bold tabular-nums">{smsWallet?.available_credits.toLocaleString("en-NP") ?? "Unavailable"}</p></div>
                   </div>
                 )}
-                <Alert className="border-amber-500/40 bg-amber-500/5"><TriangleAlert className="h-4 w-4" /><AlertDescription>Approval does not send this SMS. Scheduling remains unavailable until provider delivery and credits are configured.</AlertDescription></Alert>
+                {smsCreditShortfall !== null && smsCreditShortfall > 0 && <Alert className="border-amber-500/40 bg-amber-500/5"><TriangleAlert aria-hidden="true" className="h-4 w-4" /><AlertDescription>Add {smsCreditShortfall.toLocaleString("en-NP")} more credits before scheduling. Sending for approval does not use credits.</AlertDescription></Alert>}
               </CardContent>
             </Card>
           ) : (
@@ -1459,10 +1676,10 @@ export function CampaignStudioClient() {
       {!isReadOnly && step < 4 && (
         <div className="flex items-center justify-between border-t pt-5">
           <Button variant="outline" disabled={step === 1} onClick={() => changeStep((step - 1) as StudioStep)}><ChevronLeft className="mr-2 h-4 w-4" />Back</Button>
-          <div className="hidden items-center gap-2 text-xs text-muted-foreground sm:flex"><Eye className="h-4 w-4" />Nothing is saved until you choose Save draft or Submit for manual review.</div>
-          <Button onClick={continueFromCurrentStep}>Continue<ArrowRight className="ml-2 h-4 w-4" /></Button>
+          <div className="hidden items-center gap-2 text-xs text-muted-foreground sm:flex"><Eye className="h-4 w-4" />Your progress is saved on this device.</div>
+          <Button onClick={continueFromCurrentStep}>{step === 1 ? "Set Offer" : step === 2 ? "Prepare Message" : "Review Campaign"}<ArrowRight className="ml-2 h-4 w-4" /></Button>
         </div>
       )}
-    </div>
+    </main>
   );
 }

@@ -40,6 +40,7 @@ export const segmentLabels: Record<GrowthSegmentCode, string> = {
   new: "New Customers",
   regular: "Regular Customers",
   lapsed: "Inactive Customers",
+  all: "Custom Audience",
 };
 
 export function campaignActions(
@@ -292,5 +293,16 @@ export function buildGrowthScheduleInput(
     scheduled_at: `${normalizedLocal}${offset}`,
     timezone: timeZone,
   };
+}
+
+export function scheduleOfferWindowConflict(
+  scheduledAt: string,
+  validFrom: string,
+  validUntil: string,
+): "before" | "after" | null {
+  const sendTime = new Date(scheduledAt).getTime();
+  if (sendTime < new Date(validFrom).getTime()) return "before";
+  if (sendTime >= new Date(validUntil).getTime()) return "after";
+  return null;
 }
 

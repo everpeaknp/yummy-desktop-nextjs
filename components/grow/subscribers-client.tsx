@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Grid3x3, List, Phone, MessageSquareText, RefreshCw, Search, Users, Filter, ChevronLeft, ChevronRight, PencilLine, Loader2, UserCheck, UserMinus } from "lucide-react";
+import { Phone, MessageSquareText, RefreshCw, Search, Users, Filter, ChevronLeft, ChevronRight, PencilLine, Loader2, UserCheck, UserMinus } from "lucide-react";
 import { MdEmail } from "react-icons/md";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -39,6 +39,7 @@ import { toast } from "sonner";
 import { hasPermission } from "@/lib/role-permissions";
 import apiClient from "@/lib/api-client";
 import { CustomerApis } from "@/lib/api/endpoints";
+import { getApiErrorMessage } from "@/lib/api-error-message";
 
 interface Subscriber {
   customer_id: number;
@@ -56,7 +57,6 @@ interface Subscriber {
   customer_created_at?: string | null;
 }
 
-type ViewMode = "table" | "grid";
 type ChannelFilter = "all" | "email" | "sms" | "both";
 type BulkConsentMode = "opt_in" | "opt_out";
 
@@ -78,9 +78,9 @@ function ConsentBadge({
 }) {
   const label =
     status === "opted_in"
-      ? "Opted in"
+      ? "Allowed"
       : status === "opted_out"
-        ? "Opted out"
+        ? "Stopped"
         : "Not asked";
   return (
     <Badge
@@ -94,9 +94,9 @@ function ConsentBadge({
       )}
     >
       {channel === "SMS" ? (
-        <MessageSquareText className="h-3.5 w-3.5" />
+        <MessageSquareText aria-hidden="true" className="h-3.5 w-3.5" />
       ) : (
-        <MdEmail className="h-3.5 w-3.5" />
+        <MdEmail aria-hidden="true" className="h-3.5 w-3.5" />
       )}
       {channel}: {label}
     </Badge>
@@ -110,7 +110,6 @@ export function SubscribersClient() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<ViewMode>("table");
   const [channelFilter, setChannelFilter] = useState<ChannelFilter>("all");
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 20;
@@ -142,7 +141,7 @@ export function SubscribersClient() {
       setFilteredSubscribers(data);
     } catch (err) {
       console.error("Failed to load subscribers:", err);
-      setError(err instanceof Error ? err.message : "Failed to load subscribers");
+      setError(getApiErrorMessage(err, "Customers could not be loaded. Try again."));
     } finally {
       setLoading(false);
     }
@@ -192,7 +191,6 @@ export function SubscribersClient() {
     ).length,
     email: subscribers.filter((s) => s.email_subscribed).length,
     sms: subscribers.filter((s) => s.sms_subscribed).length,
-    both: subscribers.filter((s) => s.sms_subscribed && s.email_subscribed).length,
   };
 
   // Pagination
@@ -270,7 +268,7 @@ export function SubscribersClient() {
       setConsentCustomer(null);
       await loadSubscribers();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to update consent");
+      toast.error(getApiErrorMessage(err, "Failed to update marketing consent"));
     } finally {
       setConsentSaving(false);
     }
@@ -378,136 +376,65 @@ export function SubscribersClient() {
   };
 
   return (
-    <div className="flex flex-col gap-6 max-w-[1600px] mx-auto pb-20 px-4">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <main className="mx-auto flex w-full max-w-[1500px] flex-col gap-6 px-4 pb-20">
+      <header className="flex flex-col gap-4 border-b border-border pb-6 md:flex-row md:items-end md:justify-between">
         <div className="space-y-1">
-          <h1 className="text-2xl font-bold tracking-tight">Customer Audience</h1>
-          <p className="text-sm text-muted-foreground">
-            All active customers, with their marketing consent shown per channel
+          <h1 className="text-pretty text-3xl font-black tracking-tight">Customers</h1>
+          <p className="max-w-2xl text-sm text-muted-foreground">
+            See who can receive offers and update a customer&apos;s contact permission.
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="flex items-center border rounded-lg p-1">
-            <Button
-              variant={viewMode === "table" ? "default" : "ghost"}
-              size="sm"
-              onClick={() => setViewMode("table")}
-              className="h-8 gap-1.5"
-            >
-              <List className="h-4 w-4" />
-              <span className="hidden sm:inline">Table</span>
-            </Button>
-            <Button
-              variant={viewMode === "grid" ? "default" : "ghost"}
-              size="sm"
-              onClick={() => setViewMode("grid")}
-              className="h-8 gap-1.5"
-            >
-              <Grid3x3 className="h-4 w-4" />
-              <span className="hidden sm:inline">Grid</span>
-            </Button>
+        <Button variant="outline" size="sm" onClick={() => void loadSubscribers()} disabled={loading} className="gap-2 self-start md:self-auto">
+          <RefreshCw aria-hidden="true" className={cn("h-4 w-4", loading && "animate-spin")} />
+          Refresh customers
+        </Button>
+      </header>
+
+      <section className="grid overflow-hidden rounded-2xl border border-border bg-card sm:grid-cols-2 lg:grid-cols-4" aria-label="Customer reach summary">
+        {[
+          ["All customers", stats.customers, "People in your customer list"],
+          ["Can receive offers", stats.total, "Email, SMS, or both"],
+          ["SMS", stats.sms, "Can receive text offers"],
+          ["Email", stats.email, "Can receive email offers"],
+        ].map(([label, value, detail], index) => (
+          <div key={label} className={cn("p-5", index > 0 && "border-t border-border sm:border-l sm:border-t-0", index === 2 && "sm:border-l-0 sm:border-t lg:border-l lg:border-t-0")}>
+            <p className="text-sm font-medium text-muted-foreground">{label}</p>
+            <p className="mt-2 text-3xl font-black tabular-nums">{value}</p>
+            <p className="mt-1 text-xs text-muted-foreground">{detail}</p>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => void loadSubscribers()}
-            disabled={loading}
-            className="gap-2"
-          >
-            <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
-            Refresh
-          </Button>
-        </div>
-      </div>
-
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
-        <Card>
-          <CardContent className="p-5">
-            <div className="flex items-center gap-3">
-              <div className="p-2.5 rounded-lg bg-primary/10">
-                <Users className="h-5 w-5 text-primary" />
-              </div>
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Total Customers</p>
-                <p className="text-2xl font-bold tabular-nums mt-0.5">{stats.customers}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-5">
-            <div className="flex items-center gap-3">
-              <div className="p-2.5 rounded-lg bg-violet-500/10">
-                <MessageSquareText className="h-5 w-5 text-violet-600" />
-              </div>
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">SMS</p>
-                <p className="text-2xl font-bold tabular-nums mt-0.5">{stats.sms}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-5">
-            <div className="flex items-center gap-3">
-              <div className="p-2.5 rounded-lg bg-orange-500/10">
-                <Users className="h-5 w-5 text-orange-600" />
-              </div>
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Subscribers</p>
-                <p className="text-2xl font-bold tabular-nums mt-0.5">{stats.total}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-5">
-            <div className="flex items-center gap-3">
-              <div className="p-2.5 rounded-lg bg-blue-500/10">
-                <MdEmail className="h-5 w-5 text-blue-600" />
-              </div>
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Email</p>
-                <p className="text-2xl font-bold tabular-nums mt-0.5">{stats.email}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-      </div>
+        ))}
+      </section>
 
       {/* Subscribers List */}
       <Card>
         <CardHeader>
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
-              <CardTitle>All Customers</CardTitle>
+              <CardTitle>Customer list</CardTitle>
               <CardDescription>
                 Showing {filteredSubscribers.length ? startIndex + 1 : 0}-{Math.min(endIndex, filteredSubscribers.length)} of {filteredSubscribers.length} customers
               </CardDescription>
             </div>
             <div className="flex flex-col sm:flex-row gap-2">
               <Select value={channelFilter} onValueChange={(value) => setChannelFilter(value as ChannelFilter)}>
-                <SelectTrigger className="w-full sm:w-48">
-                  <Filter className="h-4 w-4 mr-2" />
+                <SelectTrigger aria-label="Filter customers by offer permission" className="w-full sm:w-48">
+                  <Filter aria-hidden="true" className="mr-2 h-4 w-4" />
                   <SelectValue placeholder="Filter by channel" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Customers</SelectItem>
-                  <SelectItem value="email">Email opted in</SelectItem>
-                  <SelectItem value="sms">SMS opted in</SelectItem>
-                  <SelectItem value="both">Both opted in</SelectItem>
+                  <SelectItem value="all">Everyone</SelectItem>
+                  <SelectItem value="email">Can receive email</SelectItem>
+                  <SelectItem value="sms">Can receive SMS</SelectItem>
+                  <SelectItem value="both">Can receive both</SelectItem>
                 </SelectContent>
               </Select>
               <div className="relative w-full sm:w-72">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Search aria-hidden="true" className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
-                  placeholder="Search by name, phone, or email..."
+                  aria-label="Search customers"
+                  name="customer-search"
+                  autoComplete="off"
+                  placeholder="Search by name, phone, or email…"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="pl-9"
@@ -522,7 +449,7 @@ export function SubscribersClient() {
                   {selectedCustomerIds.size} customer{selectedCustomerIds.size === 1 ? "" : "s"} selected
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  Eligibility is checked separately for Email and SMS.
+                  Choose whether to allow or stop offers for these customers.
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -539,16 +466,16 @@ export function SubscribersClient() {
                   className="gap-1.5"
                   onClick={() => openBulkDialog("opt_out")}
                 >
-                  <UserMinus className="h-4 w-4" />
-                  Opt out
+                  <UserMinus aria-hidden="true" className="h-4 w-4" />
+                  Stop offers
                 </Button>
                 <Button
                   size="sm"
                   className="gap-1.5"
                   onClick={() => openBulkDialog("opt_in")}
                 >
-                  <UserCheck className="h-4 w-4" />
-                  Opt in
+                  <UserCheck aria-hidden="true" className="h-4 w-4" />
+                  Allow offers
                 </Button>
               </div>
             </div>
@@ -562,18 +489,20 @@ export function SubscribersClient() {
               ))}
             </div>
           ) : error ? (
-            <div className="text-center py-10">
+            <div className="flex flex-col items-center py-10 text-center">
               <p className="text-sm text-destructive">{error}</p>
+              <Button variant="outline" size="sm" className="mt-4" onClick={() => void loadSubscribers()}>
+                Try again
+              </Button>
             </div>
           ) : filteredSubscribers.length === 0 ? (
             <div className="text-center py-10">
-              <Users className="h-12 w-12 mx-auto text-muted-foreground/50 mb-3" />
-              <p className="text-sm text-muted-foreground">
-                {searchQuery || channelFilter !== "all" ? "No customers match your filters" : "No customers yet"}
-              </p>
+              <Users aria-hidden="true" className="mx-auto mb-3 h-10 w-10 text-muted-foreground/50" />
+              <p className="text-sm font-medium">{searchQuery || channelFilter !== "all" ? "No matching customers" : "No customers yet"}</p>
+              <p className="mt-1 text-xs text-muted-foreground">{searchQuery || channelFilter !== "all" ? "Try another search or choose Everyone." : "Customers will appear after their first completed order."}</p>
             </div>
-          ) : viewMode === "table" ? (
-            <div className="rounded-lg border">
+          ) : (
+            <div className="overflow-x-auto rounded-lg border">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -597,9 +526,9 @@ export function SubscribersClient() {
                     <TableHead>Name</TableHead>
                     <TableHead>Phone</TableHead>
                     <TableHead>Email</TableHead>
-                    <TableHead>Preferred Language</TableHead>
-                    <TableHead>Marketing consent</TableHead>
-                    <TableHead className="text-right">Last opt-in</TableHead>
+                    <TableHead>Language</TableHead>
+                    <TableHead>Can receive</TableHead>
+                    <TableHead className="text-right">Permission added</TableHead>
                     {canManageConsent && <TableHead className="w-[90px]" />}
                   </TableRow>
                 </TableHeader>
@@ -624,7 +553,7 @@ export function SubscribersClient() {
                       <TableCell>
                         {subscriber.phone ? (
                           <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                            <Phone className="h-3.5 w-3.5" />
+                            <Phone aria-hidden="true" className="h-3.5 w-3.5" />
                             {subscriber.phone}
                           </span>
                         ) : (
@@ -634,7 +563,7 @@ export function SubscribersClient() {
                       <TableCell>
                         {subscriber.email ? (
                           <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                            <MdEmail className="h-3.5 w-3.5" />
+                            <MdEmail aria-hidden="true" className="h-3.5 w-3.5" />
                             {subscriber.email}
                           </span>
                         ) : (
@@ -663,8 +592,8 @@ export function SubscribersClient() {
                             className="gap-1.5"
                             onClick={() => openConsentDialog(subscriber)}
                           >
-                            <PencilLine className="h-3.5 w-3.5" />
-                            Manage
+                            <PencilLine aria-hidden="true" className="h-3.5 w-3.5" />
+                            Edit
                           </Button>
                         </TableCell>
                       )}
@@ -672,74 +601,6 @@ export function SubscribersClient() {
                   ))}
                 </TableBody>
               </Table>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {paginatedSubscribers.map((subscriber) => (
-                <div
-                  key={subscriber.customer_id}
-                  className={cn(
-                    "relative flex flex-col gap-3 rounded-lg border p-4 transition-colors hover:bg-muted/30",
-                    selectedCustomerIds.has(subscriber.customer_id) &&
-                      "border-primary/40 bg-primary/5",
-                  )}
-                >
-                  {canManageConsent && (
-                    <Checkbox
-                      checked={selectedCustomerIds.has(subscriber.customer_id)}
-                      onCheckedChange={(checked) =>
-                        toggleCustomerSelection(
-                          subscriber.customer_id,
-                          checked === true,
-                        )
-                      }
-                      aria-label={`Select ${subscriber.name}`}
-                      className="absolute right-4 top-4"
-                    />
-                  )}
-                  <div className="space-y-1">
-                    <p className="font-semibold">{subscriber.name}</p>
-                    <div className="space-y-1 text-sm text-muted-foreground">
-                      {subscriber.phone && (
-                        <div className="flex items-center gap-1.5">
-                          <Phone className="h-3.5 w-3.5" />
-                          {subscriber.phone}
-                        </div>
-                      )}
-                      {subscriber.email && (
-                        <div className="flex items-center gap-1.5">
-                          <MdEmail className="h-3.5 w-3.5" />
-                          {subscriber.email}
-                        </div>
-                      )}
-                      <div className="flex items-center gap-1.5 text-xs">
-                        <span className="font-medium">Language:</span>
-                        <span>{getLanguageLabel(subscriber.preferred_language)}</span>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2 pt-2 border-t">
-                    <ConsentBadge channel="Email" status={subscriber.email_status} />
-                    <ConsentBadge channel="SMS" status={subscriber.sms_status} />
-                  </div>
-                  {subscriber.created_at && (
-                    <p className="text-xs text-muted-foreground">
-                      Subscribed {new Date(subscriber.created_at).toLocaleDateString()}
-                    </p>
-                  )}
-                  {canManageConsent && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="mt-auto gap-1.5"
-                      onClick={() => openConsentDialog(subscriber)}
-                    >
-                      <PencilLine className="h-3.5 w-3.5" />
-                      Manage consent
-                    </Button>
-                  )}
-                </div>
-              ))}
             </div>
           )}
 
@@ -756,7 +617,7 @@ export function SubscribersClient() {
                   onClick={() => goToPage(currentPage - 1)}
                   disabled={currentPage === 1}
                 >
-                  <ChevronLeft className="h-4 w-4" />
+                  <ChevronLeft aria-hidden="true" className="h-4 w-4" />
                   Previous
                 </Button>
                 <Button
@@ -766,7 +627,7 @@ export function SubscribersClient() {
                   disabled={currentPage === totalPages}
                 >
                   Next
-                  <ChevronRight className="h-4 w-4" />
+                  <ChevronRight aria-hidden="true" className="h-4 w-4" />
                 </Button>
               </div>
             </div>
@@ -782,7 +643,7 @@ export function SubscribersClient() {
       >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Manage marketing consent</DialogTitle>
+            <DialogTitle>Customer contact permissions</DialogTitle>
             <DialogDescription>
               Add any missing contact details, then select the channels {consentCustomer?.name}
               {" "}explicitly agreed to. Turning a channel off records an opt-out immediately.
@@ -792,6 +653,7 @@ export function SubscribersClient() {
           <div className="space-y-3 py-2">
             <div className="flex items-start gap-3 rounded-lg border p-3">
               <Checkbox
+                aria-label="Allow SMS offers"
                 checked={consentDraft.sms}
                 disabled={!contactDraft.phone.trim() && !consentCustomer?.sms_subscribed}
                 onCheckedChange={(checked) =>
@@ -801,18 +663,31 @@ export function SubscribersClient() {
                   }))
                 }
               />
-              <div className="min-w-0 flex-1">
+              <div className="min-w-0 flex-1 space-y-2">
                 <span className="flex items-center gap-2 text-sm font-medium">
                   <MessageSquareText className="h-4 w-4 text-violet-600" /> SMS
                 </span>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Uses the phone number above.
-                </p>
+                <Input
+                  value={contactDraft.phone}
+                  onChange={(event) =>
+                    setContactDraft((current) => ({
+                      ...current,
+                      phone: event.target.value,
+                    }))
+                  }
+                  type="tel"
+                  name="customer-phone"
+                  inputMode="tel"
+                  autoComplete="tel"
+                  placeholder="98XXXXXXXX"
+                  aria-label="Customer phone number"
+                />
               </div>
             </div>
 
             <div className="flex items-start gap-3 rounded-lg border p-3">
               <Checkbox
+                aria-label="Allow email offers"
                 checked={consentDraft.email}
                 disabled={!contactDraft.email.trim() && !consentCustomer?.email_subscribed}
                 onCheckedChange={(checked) =>
@@ -835,6 +710,9 @@ export function SubscribersClient() {
                     }))
                   }
                   type="email"
+                  name="customer-email"
+                  autoComplete="email"
+                  spellCheck={false}
                   placeholder="customer@example.com"
                   aria-label="Customer email address"
                 />
@@ -966,6 +844,6 @@ export function SubscribersClient() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </main>
   );
 }

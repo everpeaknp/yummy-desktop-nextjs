@@ -12,7 +12,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
-import { Textarea } from "@/components/ui/textarea";
 import { growthApi } from "@/lib/api/growth";
 import type { GrowthSettings, GrowthSmsCreditPackage, GrowthSmsCreditPurchase, GrowthSmsWallet } from "@/lib/api/growth-types";
 import { getApiErrorMessage } from "@/lib/api-error-message";
@@ -36,17 +35,16 @@ function findQrPayload(value: unknown): string | null {
   return null;
 }
 
-export function GrowthSettingsClient() {
+export function GrowthSettingsClient({ focusSection }: { focusSection?: "credits" }) {
   const { user } = useAuth();
   const canManageSettings = hasPermission(user, "grow.settings.manage");
   const [settings, setSettings] = useState<GrowthSettings | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [creditLoadError, setCreditLoadError] = useState("");
   const [savingEnrollment, setSavingEnrollment] = useState(false);
-  const [savingConsentPolicy, setSavingConsentPolicy] = useState(false);
   const [savingQuietHours, setSavingQuietHours] = useState(false);
   const [savingFrequencyCap, setSavingFrequencyCap] = useState(false);
-  const [consentPolicyVersion, setConsentPolicyVersion] = useState("");
-  const [consentText, setConsentText] = useState("");
   const [quietHoursStart, setQuietHoursStart] = useState("21:00");
   const [quietHoursEnd, setQuietHoursEnd] = useState("08:00");
   const [frequencyCapDays, setFrequencyCapDays] = useState(7);
@@ -71,20 +69,25 @@ export function GrowthSettingsClient() {
 
   const load = useCallback(async () => {
     setLoading(true);
+    setLoadError("");
+    setCreditLoadError("");
     try {
-      const [data, wallet, packages] = await Promise.all([
+      const [settingsResult, walletResult, packagesResult] = await Promise.allSettled([
         growthApi.getSettings(), growthApi.getSmsWallet(), growthApi.getSmsPackages(),
       ]);
+      if (settingsResult.status === "rejected") throw settingsResult.reason;
+      const data = settingsResult.value;
       setSettings(data);
-      setConsentPolicyVersion(data.consent_policy_version || "");
-      setConsentText(data.consent_text || "");
       setQuietHoursStart(data.quiet_hours_start.slice(0, 5));
       setQuietHoursEnd(data.quiet_hours_end.slice(0, 5));
       setFrequencyCapDays(data.promotion_frequency_cap_days);
-      setSmsWallet(wallet);
-      setSmsPackages(packages);
+      setSmsWallet(walletResult.status === "fulfilled" ? walletResult.value : null);
+      setSmsPackages(packagesResult.status === "fulfilled" ? packagesResult.value : []);
+      if (walletResult.status === "rejected" || packagesResult.status === "rejected") {
+        setCreditLoadError("SMS balance and purchase options could not be loaded.");
+      }
     } catch (error) {
-      toast.error(getApiErrorMessage(error, "Unable to load Growth settings"));
+      setLoadError(getApiErrorMessage(error, "Campaign settings could not be loaded."));
     } finally {
       setLoading(false);
     }
@@ -93,6 +96,14 @@ export function GrowthSettingsClient() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (loading || (focusSection !== "credits" && window.location.hash !== "#grow-sms-credits")) return;
+    document.getElementById("grow-sms-credits")?.scrollIntoView({
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+      block: "start",
+    });
+  }, [focusSection, loading]);
 
   useEffect(() => {
     const payload = findQrPayload(smsPurchase?.qr_payload);
@@ -135,10 +146,6 @@ export function GrowthSettingsClient() {
 
   const toggleCustomerSignup = async (enabled: boolean) => {
     if (!settings) return;
-    if (enabled && (!settings.consent_policy_version || !settings.consent_text_hash)) {
-      toast.error("Save the customer consent policy before enabling sign-up.");
-      return;
-    }
     setSavingEnrollment(true);
     try {
       const updated = await growthApi.updateSettings({ public_enrollment_enabled: enabled });
@@ -198,30 +205,6 @@ export function GrowthSettingsClient() {
       toast.error(getApiErrorMessage(error, "Unable to update email delivery"));
     } finally {
       setSavingEmail(false);
-    }
-  };
-
-  const saveConsentPolicy = async () => {
-    const version = consentPolicyVersion.trim();
-    const text = consentText.trim();
-    if (!version || !text) {
-      toast.error("Consent policy version and consent text are both required.");
-      return;
-    }
-    setSavingConsentPolicy(true);
-    try {
-      const updated = await growthApi.updateSettings({
-        consent_policy_version: version,
-        consent_text: text,
-      });
-      setSettings(updated);
-      setConsentPolicyVersion(updated.consent_policy_version || "");
-      setConsentText(updated.consent_text || "");
-      toast.success("Consent policy saved. Public sign-up can now be enabled.");
-    } catch (error) {
-      toast.error(getApiErrorMessage(error, "Unable to save consent policy"));
-    } finally {
-      setSavingConsentPolicy(false);
     }
   };
 
@@ -301,7 +284,7 @@ export function GrowthSettingsClient() {
         <ShieldAlert className="h-4 w-4" />
         <AlertTitle>You don&apos;t have access to Growth settings</AlertTitle>
         <AlertDescription>
-          Managing campaign delivery and consent settings requires the grow.settings.manage permission.
+          Ask a manager to update campaign delivery and customer sign-up settings.
         </AlertDescription>
       </Alert>
     );
@@ -310,22 +293,85 @@ export function GrowthSettingsClient() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-24 text-muted-foreground">
-        <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-        Loading Growth settings...
+        <Loader2 aria-hidden="true" className="mr-2 h-5 w-5 animate-spin motion-reduce:animate-none" />
+        Loading Growth settings…
       </div>
     );
   }
 
+  if (loadError || !settings) {
+    return (
+      <Alert className="mx-auto max-w-2xl">
+        <TriangleAlert aria-hidden="true" className="h-4 w-4" />
+        <AlertTitle>Campaign settings are unavailable</AlertTitle>
+        <AlertDescription className="space-y-3">
+          <p>{loadError || "Campaign settings could not be loaded."}</p>
+          <Button type="button" variant="outline" size="sm" onClick={() => void load()}>
+            Try Again
+          </Button>
+        </AlertDescription>
+      </Alert>
+    );
+  }
+
   return (
-    <div className="mx-auto w-full max-w-3xl space-y-6 pb-10">
-      <div className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-emerald-700 dark:text-emerald-300">
-        <Sprout className="h-4 w-4" />
-        Yummy Grow settings
-      </div>
-      <h1 className="text-3xl font-black tracking-tight">Customer sign-up</h1>
-      <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
-        Manage campaign delivery, consent wording, quiet hours, and frequency limits.
-      </p>
+    <main className="mx-auto flex w-full max-w-4xl flex-col gap-6 px-4 pb-16">
+      <header className="border-b border-border pb-6">
+        <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-emerald-700 dark:text-emerald-300">
+          <Sprout aria-hidden="true" className="h-4 w-4" />
+          Yummy Grow
+        </div>
+        <h1 className="text-pretty text-3xl font-black tracking-tight">Campaign Settings</h1>
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
+          Manage your message balance, delivery channels, customer limits, and sign-up tools.
+        </p>
+      </header>
+
+      <Card id="grow-sms-credits" className="scroll-mt-6 overflow-hidden border-primary/20">
+        <CardHeader>
+          <CardTitle>SMS Balance</CardTitle>
+          <CardDescription>See what is available now and add credits before scheduling a text campaign.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          {creditLoadError ? (
+            <Alert>
+              <TriangleAlert aria-hidden="true" className="h-4 w-4" />
+              <AlertTitle>SMS balance unavailable</AlertTitle>
+              <AlertDescription className="flex flex-wrap items-center justify-between gap-3">
+                <span>{creditLoadError}</span>
+                <Button type="button" variant="outline" size="sm" onClick={() => void load()}>Try Again</Button>
+              </AlertDescription>
+            </Alert>
+          ) : null}
+          <div className="grid gap-4 rounded-xl bg-primary/[0.045] p-5 sm:grid-cols-[1fr_auto] sm:items-end">
+            <div>
+              <p className="text-sm font-medium text-muted-foreground">Available to send</p>
+              <p className="mt-1 text-4xl font-black tabular-nums">{smsWallet?.available_credits.toLocaleString("en-NP") ?? "—"}</p>
+              <p className="mt-1 text-xs text-muted-foreground">Each text uses at least 1 credit; longer messages may use more.</p>
+            </div>
+            <div className="sm:text-right">
+              <p className="text-sm text-muted-foreground">Set aside for scheduled campaigns</p>
+              <p className="mt-1 text-xl font-bold tabular-nums">{smsWallet?.reserved_credits.toLocaleString("en-NP") ?? "—"}</p>
+            </div>
+          </div>
+          {smsPackages.length ? (
+            <div className="grid gap-3 sm:grid-cols-2">
+              {smsPackages.map((item) => (
+                <div key={item.code} className="rounded-xl border p-4">
+                  <p className="text-2xl font-black tabular-nums">{item.credits.toLocaleString("en-NP")}</p>
+                  <p className="text-sm text-muted-foreground">SMS credits</p>
+                  <p className="mt-3 font-semibold">NPR {Number(item.price_npr).toLocaleString("en-NP")}</p>
+                  <Button className="mt-4 w-full" onClick={() => void buySmsCredits(item.code)} disabled={buyingPackage !== null}>
+                    {buyingPackage === item.code ? <Loader2 aria-hidden="true" className="mr-2 h-4 w-4 animate-spin motion-reduce:animate-none" /> : <CreditCard aria-hidden="true" className="mr-2 h-4 w-4" />}Buy Credits
+                  </Button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            !creditLoadError && <Alert><TriangleAlert aria-hidden="true" className="h-4 w-4" /><AlertTitle>SMS credit purchases are unavailable</AlertTitle><AlertDescription>Contact Yummy support to enable credit purchases for this restaurant.</AlertDescription></Alert>
+          )}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
@@ -397,7 +443,7 @@ export function GrowthSettingsClient() {
               <TriangleAlert className="h-4 w-4" />
               <AlertTitle>Customer menu address is not configured</AlertTitle>
               <AlertDescription>
-                Set NEXT_PUBLIC_CUSTOMER_MENU_BASE_URL to the public address of the Yummy customer menu.
+                Customer sign-up is not available yet. Contact Yummy support to connect your public menu address.
               </AlertDescription>
             </Alert>
           )}
@@ -406,13 +452,12 @@ export function GrowthSettingsClient() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Delivery channels</CardTitle>
+          <CardTitle>Campaign Rules</CardTitle>
           <CardDescription>
-            Turn a channel off to stop new sends immediately without affecting the other channel or
-            any campaign already in flight elsewhere.
+            Choose how campaigns are delivered and how often customers can hear from you.
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="flex flex-col gap-4">
           <div className="rounded-lg border p-4">
             <div>
               <p className="text-sm font-medium">Campaign quiet hours</p>
@@ -425,6 +470,8 @@ export function GrowthSettingsClient() {
               <label className="space-y-2 text-sm font-medium">
                 <span>Starts at</span>
                 <Input
+                  name="campaign_quiet_hours_start"
+                  autoComplete="off"
                   type="time"
                   value={quietHoursStart}
                   onChange={(event) => setQuietHoursStart(event.target.value)}
@@ -434,6 +481,8 @@ export function GrowthSettingsClient() {
               <label className="space-y-2 text-sm font-medium">
                 <span>Ends at</span>
                 <Input
+                  name="campaign_quiet_hours_end"
+                  autoComplete="off"
                   type="time"
                   value={quietHoursEnd}
                   onChange={(event) => setQuietHoursEnd(event.target.value)}
@@ -466,7 +515,7 @@ export function GrowthSettingsClient() {
             </div>
             <div className="mt-4 flex flex-wrap items-end gap-3">
               <label className="space-y-2 text-sm font-medium" htmlFor="promotion-frequency-cap">
-                <span className="block">Frequency cap</span>
+                <span className="block">Wait at least</span>
                 <span className="flex items-center gap-2">
                   <Input
                     id="promotion-frequency-cap"
@@ -498,44 +547,47 @@ export function GrowthSettingsClient() {
                 }
               >
                 {savingFrequencyCap ? <Loader2 aria-hidden="true" className="mr-2 h-4 w-4 animate-spin motion-reduce:animate-none" /> : null}
-                Save frequency cap
+                Save customer limit
               </Button>
             </div>
           </div>
-          <div className="flex items-center justify-between rounded-lg border p-3">
+          <div className="flex items-center justify-between gap-4 rounded-lg border p-4">
             <div>
-              <p className="text-sm font-medium">SMS campaigns enabled</p>
+              <p className="text-sm font-medium">Send SMS offers</p>
               <p className="text-xs text-muted-foreground">
-                Enables SMS consent and campaign preparation. Live sending still requires a configured provider and credits.
+                Turn this off to prevent new text campaigns from being prepared or sent.
               </p>
             </div>
             <Switch
+              aria-label="Enable SMS campaigns"
               checked={Boolean(settings?.sms_enabled)}
               onCheckedChange={(checked) => void toggleSms(checked)}
               disabled={savingSms}
             />
           </div>
-          <div className="flex items-center justify-between rounded-lg border p-3">
+          <div className="flex items-center justify-between gap-4 rounded-lg border p-4">
             <div>
-              <p className="text-sm font-medium">Email delivery enabled</p>
+              <p className="text-sm font-medium">Send email offers</p>
               <p className="text-xs text-muted-foreground">
-                Required before any email campaign can be scheduled or sent.
+                Turn this off to prevent new email campaigns from being scheduled or sent.
               </p>
             </div>
             <Switch
+              aria-label="Enable email delivery"
               checked={Boolean(settings?.email_enabled)}
               onCheckedChange={(checked) => void toggleEmail(checked)}
               disabled={savingEmail}
             />
           </div>
-          <div className="flex items-center justify-between rounded-lg border p-3">
+          <div className="flex items-center justify-between gap-4 rounded-lg border p-4">
             <div>
-              <p className="text-sm font-medium">AI copy generation enabled</p>
+              <p className="text-sm font-medium">Campaign writing suggestions</p>
               <p className="text-xs text-muted-foreground">
-                When enabled, uses AI to suggest campaign copy. When disabled, uses system templates.
+                Suggest message ideas while you create a campaign. Turn this off to use Yummy templates only.
               </p>
             </div>
             <Switch
+              aria-label="Enable campaign writing suggestions"
               checked={Boolean(settings?.ai_copy_enabled)}
               onCheckedChange={(checked) => void toggleAiCopy(checked)}
               disabled={savingAiCopy}
@@ -544,43 +596,13 @@ export function GrowthSettingsClient() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>SMS credits</CardTitle>
-          <CardDescription>Prepaid credits are consumed by SMS segments, not simply by customer count.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-5">
-          <div className="flex items-center justify-between rounded-xl border p-4">
-            <div><p className="text-sm text-muted-foreground">Available balance</p><p className="text-3xl font-black tabular-nums">{smsWallet?.available_credits.toLocaleString("en-NP") ?? "—"}</p></div>
-            <div className="text-right"><p className="text-sm text-muted-foreground">Reserved</p><p className="text-lg font-bold tabular-nums">{smsWallet?.reserved_credits.toLocaleString("en-NP") ?? "—"}</p></div>
-          </div>
-          {smsPackages.length ? (
-            <div className="grid gap-3 sm:grid-cols-3">
-              {smsPackages.map((item) => (
-                <div key={item.code} className="rounded-xl border p-4">
-                  <p className="font-bold">{item.label}</p>
-                  <p className="mt-1 text-2xl font-black">{item.credits.toLocaleString("en-NP")}</p>
-                  <p className="text-xs text-muted-foreground">credits · NPR {Number(item.price_npr).toLocaleString("en-NP")}</p>
-                  <Button className="mt-4 w-full" onClick={() => void buySmsCredits(item.code)} disabled={buyingPackage !== null}>
-                    {buyingPackage === item.code ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CreditCard className="mr-2 h-4 w-4" />}Buy with Fonepay
-                  </Button>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <Alert><TriangleAlert className="h-4 w-4" /><AlertTitle>Credit sales are not configured</AlertTitle><AlertDescription>Yummy must configure its Fonepay merchant and approved SMS package prices before purchases can be accepted.</AlertDescription></Alert>
-          )}
-        </CardContent>
-      </Card>
-
       <Dialog open={Boolean(smsPurchase)} onOpenChange={(open) => { if (!open) setSmsPurchase(null); }}>
         <DialogContent className="sm:max-w-md">
-          <DialogHeader><DialogTitle>Pay with Fonepay</DialogTitle><DialogDescription>Scan and pay NPR {Number(smsPurchase?.amount_npr || 0).toLocaleString("en-NP")} for {smsPurchase?.credits.toLocaleString("en-NP")} SMS credits.</DialogDescription></DialogHeader>
+          <DialogHeader><DialogTitle>Buy SMS Credits</DialogTitle><DialogDescription>Scan with Fonepay to pay NPR {Number(smsPurchase?.amount_npr || 0).toLocaleString("en-NP")} for {smsPurchase?.credits.toLocaleString("en-NP")} credits.</DialogDescription></DialogHeader>
           <div className="space-y-4 text-center">
             {purchaseQr ? <Image src={purchaseQr} width={300} height={300} alt="Fonepay payment QR" unoptimized className="mx-auto rounded-xl bg-white p-3" /> : <Alert><TriangleAlert className="h-4 w-4" /><AlertDescription>Fonepay did not return a displayable QR payload.</AlertDescription></Alert>}
-            <p className="font-mono text-xs text-muted-foreground">{smsPurchase?.provider_reference}</p>
             <Button className="w-full" onClick={() => void checkSmsPayment()} disabled={checkingPayment || smsPurchase?.status === "paid"}>
-              {checkingPayment ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}{smsPurchase?.status === "paid" ? "Payment verified" : "I paid — check status"}
+              {checkingPayment ? <Loader2 aria-hidden="true" className="mr-2 h-4 w-4 animate-spin motion-reduce:animate-none" /> : <RefreshCw aria-hidden="true" className="mr-2 h-4 w-4" />}{smsPurchase?.status === "paid" ? "Payment Verified" : "Check My Payment"}
             </Button>
             <p className="text-xs text-muted-foreground">Credits are added only after Yummy verifies the exact amount with Fonepay.</p>
           </div>
@@ -591,70 +613,28 @@ export function GrowthSettingsClient() {
         <CardHeader>
           <CardTitle>Customer marketing consent</CardTitle>
           <CardDescription>
-            This wording records the policy customers accept from their Yummy account.
+            Yummy applies one reviewed consent policy across every restaurant.
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-6">
+        <CardContent>
           <div className="space-y-4 rounded-xl border p-4">
             <div>
-              <p className="text-sm font-semibold">Customer consent policy</p>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-sm font-semibold">Yummy marketing consent policy</p>
+                <span className="rounded-full border px-2.5 py-1 text-xs font-medium text-muted-foreground">
+                  Version {settings?.consent_policy_version || "—"}
+                </span>
+              </div>
               <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                This text is recorded with each customer opt-in. Review it for your business before
-                enabling marketing campaigns.
+                Managed by Yummy and recorded whenever a customer chooses to receive your promotions.
               </p>
             </div>
-            <label className="block space-y-2">
-              <span className="text-sm font-medium">Policy version</span>
-              <Input
-                value={consentPolicyVersion}
-                onChange={(event) => setConsentPolicyVersion(event.target.value)}
-                placeholder="For example: 2026-10"
-                maxLength={80}
-                disabled={savingConsentPolicy}
-              />
-              <span className="block text-xs text-muted-foreground">
-                Change this version whenever the consent wording changes.
-              </span>
-            </label>
-            <label className="block space-y-2">
-              <span className="text-sm font-medium">Consent text shown to customers</span>
-              <Textarea
-                value={consentText}
-                onChange={(event) => setConsentText(event.target.value)}
-                placeholder="I agree to receive marketing messages from this restaurant through the channels I select. I can unsubscribe at any time."
-                rows={5}
-                maxLength={4000}
-                disabled={savingConsentPolicy}
-              />
-            </label>
-            <div className="flex flex-wrap items-center gap-3">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => void saveConsentPolicy()}
-                disabled={
-                  savingConsentPolicy ||
-                  !consentPolicyVersion.trim() ||
-                  !consentText.trim()
-                }
-              >
-                {savingConsentPolicy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                Save reviewed policy
-              </Button>
-              {settings?.consent_text_hash ? (
-                <span className="text-xs font-medium text-emerald-700 dark:text-emerald-300">
-                  Saved policy: {settings.consent_policy_version}
-                </span>
-              ) : (
-                <span className="text-xs font-medium text-amber-700 dark:text-amber-300">
-                  Required before customer marketing opt-in can be recorded
-                </span>
-              )}
-            </div>
+            <blockquote className="border-l-2 border-primary pl-4 text-sm leading-6 text-foreground">
+              {settings?.consent_text || "Consent policy unavailable."}
+            </blockquote>
           </div>
-
         </CardContent>
       </Card>
-    </div>
+    </main>
   );
 }

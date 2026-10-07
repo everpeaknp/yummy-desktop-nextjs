@@ -2407,6 +2407,7 @@ export const GrowthApis = {
   smsPurchaseVerify: (id: number) => `/growth/sms/purchases/${id}/verify`,
   brand: "/growth/brand",
   messageTemplates: "/growth/message-templates",
+  smsTemplates: "/growth/campaigns/sms-templates",
   suggestCopy: "/growth/content/suggest-copy",
   validateOffer: "/growth/offers/validate",
   sendTestEmail: "/growth/send-test-email",

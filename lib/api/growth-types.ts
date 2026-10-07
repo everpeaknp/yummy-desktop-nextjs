@@ -1,7 +1,7 @@
 export type GrowthReadinessStatus = "ready" | "partial" | "unavailable";
 export type GrowthDataStatus = "confirmed" | "estimated" | "signal" | "unavailable";
-export type GrowthSegmentCode = "new" | "regular" | "lapsed";
-export type GrowthPlaybookCode = "second_visit" | "win_back" | "slow_day";
+export type GrowthSegmentCode = "new" | "regular" | "lapsed" | "all";
+export type GrowthPlaybookCode = "second_visit" | "win_back" | "slow_day" | "custom";
 export type GrowthLanguage = "en" | "ne" | "ne_romanized";
 export type GrowthChannelCode = "whatsapp" | "email" | "sms";
 export type ActiveGrowthChannelCode = "email" | "sms";
@@ -198,11 +198,13 @@ export interface GrowthCampaignCreateInput {
   offer: GrowthOfferInput;
   language: GrowthLanguage;
   message_body?: string | null;
+  sms_template_code?: string | null;
   email_subject?: string | null;
   email_body_html?: string | null;
   email_template?: string | null;
   creative_asset_id?: number | string | null;
   message_template_id?: number | string | null;
+  audience_customer_ids?: number[];
 }
 
 export interface GrowthCampaignUpdateInput {
@@ -210,16 +212,20 @@ export interface GrowthCampaignUpdateInput {
   offer?: GrowthOfferInput;
   language?: GrowthLanguage;
   message_body?: string;
+  sms_template_code?: string;
   email_subject?: string | null;
   email_body_html?: string | null;
   email_template?: string | null;
   creative_asset_id?: number | string | null;
   message_template_id?: number | string | null;
+  audience_customer_ids?: number[];
 }
 
 export interface GrowthCampaign extends GrowthCampaignSummary {
+  audience_customer_ids?: number[];
   offer?: GrowthOffer | null;
   approved_message_snapshot?: string | null;
+  sms_template_code?: string | null;
   email_subject?: string | null;
   email_template?: string | null;
   creative_asset_id?: number | string | null;
@@ -368,6 +374,13 @@ export interface GrowthMessageTemplate {
   provider_status: string;
   variable_names: string[];
   media_type?: string | null;
+}
+
+export interface GrowthSmsTemplate {
+  code: string;
+  name: string;
+  description: string;
+  message_body: string;
 }
 
 export interface GrowthCopySuggestionInput {

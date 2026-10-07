@@ -4,25 +4,18 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertCircle,
+  ArrowLeft,
   ArrowRight,
   CalendarClock,
   CheckCircle2,
-  ChevronLeft,
-  ChevronRight,
   CircleDashed,
-  Grid3x3,
-  List,
+  Clock3,
   Mail,
   MessageSquareText,
-  Megaphone,
   Plus,
   RefreshCw,
   Search,
-  Send,
-  ShieldCheck,
   Users,
-  TrendingUp,
-  Activity,
 } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -35,660 +28,236 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/hooks/use-auth";
 import { growthApi } from "@/lib/api/growth";
 import type { GrowthCampaign, GrowthCampaignStatus } from "@/lib/api/growth-types";
-import { campaignStatusLabels, segmentLabels } from "@/lib/growth/campaign-administration";
+import { campaignStatusLabels } from "@/lib/growth/campaign-administration";
 import { hasPermission } from "@/lib/role-permissions";
 import { cn } from "@/lib/utils";
 
-type Filter = "all" | "needs_action" | "active" | "finished";
+type WorkflowTab = "attention" | "scheduled" | "sent" | "drafts" | "all";
 type ChannelFilter = "all" | "email" | "sms";
-type PlaybookFilter = "all" | "second_visit" | "win_back" | "slow_day";
-type SegmentFilter = "all" | "new" | "regular" | "lapsed";
-type ViewMode = "grid" | "list";
-type SortBy = "scheduled_desc" | "scheduled_asc" | "created_desc" | "created_asc";
+type GoalFilter = "all" | "second_visit" | "win_back" | "slow_day" | "custom";
+type SortBy = "updated_desc" | "scheduled_asc";
+
+const tabLabels: Record<WorkflowTab, string> = {
+  attention: "Needs Attention",
+  scheduled: "Scheduled",
+  sent: "Sent",
+  drafts: "Drafts",
+  all: "All",
+};
+
+const goalLabels: Record<string, string> = {
+  second_visit: "Bring Back New Customers",
+  win_back: "Re-engage Inactive Customers",
+  slow_day: "Fill a Quiet Period",
+  custom: "Selected Customers",
+};
 
 const statusStyles: Record<GrowthCampaignStatus, string> = {
-  draft: "border-amber-500/20 bg-amber-500/10 text-amber-600",
-  review: "border-blue-500/20 bg-blue-500/10 text-blue-600",
-  approved: "border-green-500/20 bg-green-500/10 text-green-600",
-  scheduled: "border-purple-500/20 bg-purple-500/10 text-purple-600",
-  sending: "border-primary/20 bg-primary/10 text-primary",
-  completed: "border-emerald-500/20 bg-emerald-500/10 text-emerald-600",
-  paused: "border-orange-500/20 bg-orange-500/10 text-orange-600",
+  draft: "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300",
+  review: "border-blue-500/30 bg-blue-500/10 text-blue-700 dark:text-blue-300",
+  approved: "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+  scheduled: "border-violet-500/30 bg-violet-500/10 text-violet-700 dark:text-violet-300",
+  sending: "border-primary/30 bg-primary/10 text-primary",
+  completed: "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+  paused: "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300",
   canceled: "border-border bg-muted text-muted-foreground",
-  failed: "border-destructive/20 bg-destructive/10 text-destructive",
+  failed: "border-destructive/30 bg-destructive/10 text-destructive",
 };
 
-const statusStylesTable: Record<GrowthCampaignStatus, string> = {
-  draft: "border-amber-500/30 text-amber-600",
-  review: "border-blue-500/30 text-blue-600",
-  approved: "border-green-500/30 text-green-600",
-  scheduled: "border-purple-500/30 text-purple-600",
-  sending: "border-primary/30 text-primary",
-  completed: "border-emerald-500/30 text-emerald-600",
-  paused: "border-orange-500/30 text-orange-600",
-  canceled: "border-border text-muted-foreground",
-  failed: "border-destructive/30 text-destructive",
+const actionLabels: Record<GrowthCampaignStatus, string> = {
+  draft: "Continue Editing",
+  review: "Review Campaign",
+  approved: "Schedule Campaign",
+  scheduled: "View Schedule",
+  sending: "View Delivery",
+  completed: "View Results",
+  paused: "Review Campaign",
+  canceled: "View Campaign",
+  failed: "Fix Delivery Issue",
 };
 
-const playbookLabels: Record<string, string> = {
-  second_visit: "Second Visit",
-  win_back: "Win Back",
-  slow_day: "Slow Day",
-};
-
-function formatDate(value?: string | null): string {
+function dateTime(value?: string | null): string {
   if (!value) return "Not scheduled";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "Schedule unavailable";
-  return new Intl.DateTimeFormat("en-NP", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(date);
+  return new Intl.DateTimeFormat("en-NP", { dateStyle: "medium", timeStyle: "short" }).format(date);
 }
 
-function filterCampaigns(
-  campaigns: GrowthCampaign[], 
-  filter: Filter, 
-  channelFilter: ChannelFilter, 
-  playbookFilter: PlaybookFilter,
-  segmentFilter: SegmentFilter,
-  searchQuery: string
-): GrowthCampaign[] {
-  let filtered = campaigns;
-  
-  // Apply status filter
-  if (filter === "needs_action") {
-    filtered = filtered.filter((campaign) => ["draft", "review", "approved", "paused"].includes(campaign.status));
-  } else if (filter === "active") {
-    filtered = filtered.filter((campaign) => ["scheduled", "sending"].includes(campaign.status));
-  } else if (filter === "finished") {
-    filtered = filtered.filter((campaign) => ["completed", "canceled", "failed"].includes(campaign.status));
-  }
-  
-  // Apply channel filter
-  if (channelFilter === "email") {
-    filtered = filtered.filter((campaign) => campaign.channel === "email");
-  } else if (channelFilter === "sms") {
-    filtered = filtered.filter((campaign) => campaign.channel === "sms");
-  }
-  
-  // Apply playbook filter
-  if (playbookFilter !== "all") {
-    filtered = filtered.filter((campaign) => campaign.playbook_code === playbookFilter);
-  }
-  
-  // Apply segment filter
-  if (segmentFilter !== "all") {
-    filtered = filtered.filter((campaign) => campaign.segment_code === segmentFilter);
-  }
-  
-  // Apply search filter
-  if (searchQuery.trim()) {
-    const query = searchQuery.toLowerCase();
-    filtered = filtered.filter((campaign) => 
-      campaign.name.toLowerCase().includes(query) ||
-      campaign.playbook_code.toLowerCase().includes(query) ||
-      campaign.segment_code.toLowerCase().includes(query)
-    );
-  }
-  
-  return filtered;
+function matchesTab(campaign: GrowthCampaign, tab: WorkflowTab): boolean {
+  if (tab === "attention") return ["review", "approved", "paused", "failed"].includes(campaign.status);
+  if (tab === "scheduled") return ["scheduled", "sending"].includes(campaign.status);
+  if (tab === "sent") return ["completed", "canceled"].includes(campaign.status);
+  if (tab === "drafts") return campaign.status === "draft";
+  return true;
+}
+
+function CampaignListSkeleton() {
+  return (
+    <div className="mx-auto flex w-full max-w-[1400px] flex-col gap-6 px-4 pb-20" aria-label="Loading campaigns">
+      <Skeleton className="h-28 rounded-2xl" />
+      <Skeleton className="h-16 rounded-2xl" />
+      <Skeleton className="h-[32rem] rounded-2xl" />
+    </div>
+  );
 }
 
 export function CampaignListClient() {
   const user = useAuth((state) => state.user);
   const [campaigns, setCampaigns] = useState<GrowthCampaign[]>([]);
-  const [filter, setFilter] = useState<Filter>("all");
-  const [channelFilter, setChannelFilter] = useState<ChannelFilter>("all");
-  const [playbookFilter, setPlaybookFilter] = useState<PlaybookFilter>("all");
-  const [segmentFilter, setSegmentFilter] = useState<SegmentFilter>("all");
-  const [searchQuery, setSearchQuery] = useState("");
-  const [sortBy, setSortBy] = useState<SortBy>("scheduled_desc");
-  const [viewMode, setViewMode] = useState<ViewMode>("grid");
-  const [currentPage, setCurrentPage] = useState(1);
+  const [tab, setTab] = useState<WorkflowTab>("attention");
+  const [channel, setChannel] = useState<ChannelFilter>("all");
+  const [goal, setGoal] = useState<GoalFilter>("all");
+  const [sortBy, setSortBy] = useState<SortBy>("updated_desc");
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [urlReady, setUrlReady] = useState(false);
+  const pageSize = 10;
 
-  const itemsPerPage = 10;
-
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async (background = false) => {
+    background ? setRefreshing(true) : setLoading(true);
     setError(null);
     try {
       setCampaigns(await growthApi.listCampaigns());
     } catch {
-      setCampaigns([]);
-      setError("Campaigns could not be loaded. No campaign state was changed.");
+      setError("Campaigns could not load. Check your connection and try again.");
     } finally {
       setLoading(false);
-    }
-  }, []);
-
-  const refresh = useCallback(async () => {
-    setRefreshing(true);
-    setError(null);
-    try {
-      setCampaigns(await growthApi.listCampaigns());
-    } catch {
-      setError("Campaigns could not be loaded. No campaign state was changed.");
-    } finally {
       setRefreshing(false);
     }
   }, []);
 
+  useEffect(() => { void load(); }, [load]);
+
   useEffect(() => {
-    void load();
-  }, [load]);
+    const params = new URLSearchParams(window.location.search);
+    const requestedTab = params.get("view") as WorkflowTab | null;
+    const requestedChannel = params.get("channel") as ChannelFilter | null;
+    const requestedGoal = params.get("goal") as GoalFilter | null;
+    const requestedSort = params.get("sort") as SortBy | null;
+    const requestedPage = Number(params.get("page"));
+    if (requestedTab && requestedTab in tabLabels) setTab(requestedTab);
+    if (requestedChannel && ["all", "email", "sms"].includes(requestedChannel)) setChannel(requestedChannel);
+    if (requestedGoal && ["all", "second_visit", "win_back", "slow_day", "custom"].includes(requestedGoal)) setGoal(requestedGoal);
+    if (requestedSort && ["updated_desc", "scheduled_asc"].includes(requestedSort)) setSortBy(requestedSort);
+    if (Number.isInteger(requestedPage) && requestedPage > 0) setPage(requestedPage);
+    setSearch(params.get("q") || "");
+    setUrlReady(true);
+  }, []);
+
+  useEffect(() => {
+    if (!urlReady) return;
+    const params = new URLSearchParams();
+    if (tab !== "attention") params.set("view", tab);
+    if (channel !== "all") params.set("channel", channel);
+    if (goal !== "all") params.set("goal", goal);
+    if (sortBy !== "updated_desc") params.set("sort", sortBy);
+    if (search.trim()) params.set("q", search.trim());
+    if (page > 1) params.set("page", String(page));
+    const query = params.toString();
+    window.history.replaceState(null, "", `${window.location.pathname}${query ? `?${query}` : ""}`);
+  }, [channel, goal, page, search, sortBy, tab, urlReady]);
+
+  const counts = useMemo(() => ({
+    attention: campaigns.filter((campaign) => matchesTab(campaign, "attention")).length,
+    scheduled: campaigns.filter((campaign) => matchesTab(campaign, "scheduled")).length,
+    sent: campaigns.filter((campaign) => matchesTab(campaign, "sent")).length,
+    drafts: campaigns.filter((campaign) => matchesTab(campaign, "drafts")).length,
+    all: campaigns.length,
+  }), [campaigns]);
 
   const visible = useMemo(() => {
-    const filtered = filterCampaigns(campaigns, filter, channelFilter, playbookFilter, segmentFilter, searchQuery);
-    
-    // Sort based on selected sort option
-    return filtered.sort((a, b) => {
-      switch (sortBy) {
-        case "scheduled_desc": {
-          const dateA = a.scheduled_at || a.created_at;
-          const dateB = b.scheduled_at || b.created_at;
-          if (!dateA) return 1;
-          if (!dateB) return -1;
-          return new Date(dateB).getTime() - new Date(dateA).getTime();
+    const query = search.trim().toLowerCase();
+    return campaigns
+      .filter((campaign) => matchesTab(campaign, tab))
+      .filter((campaign) => channel === "all" || campaign.channel === channel)
+      .filter((campaign) => goal === "all" || campaign.playbook_code === goal)
+      .filter((campaign) => !query || campaign.name.toLowerCase().includes(query) || (goalLabels[campaign.playbook_code] || "").toLowerCase().includes(query))
+      .sort((left, right) => {
+        if (sortBy === "scheduled_asc") {
+          return new Date(left.scheduled_at || "9999-12-31").getTime() - new Date(right.scheduled_at || "9999-12-31").getTime();
         }
-        case "scheduled_asc": {
-          const dateA = a.scheduled_at || a.created_at;
-          const dateB = b.scheduled_at || b.created_at;
-          if (!dateA) return 1;
-          if (!dateB) return -1;
-          return new Date(dateA).getTime() - new Date(dateB).getTime();
-        }
-        case "created_desc":
-          return Date.parse(b.created_at || "") - Date.parse(a.created_at || "");
-        case "created_asc":
-          return Date.parse(a.created_at || "") - Date.parse(b.created_at || "");
-        default:
-          return 0;
-      }
-    });
-  }, [campaigns, filter, channelFilter, playbookFilter, segmentFilter, searchQuery, sortBy]);
-  
-  // Pagination calculations
-  const totalPages = Math.ceil(visible.length / itemsPerPage);
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const endIndex = startIndex + itemsPerPage;
-  const paginatedCampaigns = visible.slice(startIndex, endIndex);
-  
-  // Reset to page 1 when filters change
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [filter, channelFilter, playbookFilter, segmentFilter, searchQuery, sortBy]);
-  const counts = useMemo(
-    () => ({
-      review: campaigns.filter((campaign) => campaign.status === "review").length,
-      approved: campaigns.filter((campaign) => campaign.status === "approved").length,
-      scheduled: campaigns.filter((campaign) => ["scheduled", "sending"].includes(campaign.status)).length,
-      completed: campaigns.filter((campaign) => campaign.status === "completed").length,
-      email: campaigns.filter((campaign) => campaign.channel === "email").length,
-      sms: campaigns.filter((campaign) => campaign.channel === "sms").length,
-      second_visit: campaigns.filter((campaign) => campaign.playbook_code === "second_visit").length,
-      win_back: campaigns.filter((campaign) => campaign.playbook_code === "win_back").length,
-      slow_day: campaigns.filter((campaign) => campaign.playbook_code === "slow_day").length,
-      new: campaigns.filter((campaign) => campaign.segment_code === "new").length,
-      regular: campaigns.filter((campaign) => campaign.segment_code === "regular").length,
-      lapsed: campaigns.filter((campaign) => campaign.segment_code === "lapsed").length,
-    }),
-    [campaigns],
-  );
+        return new Date(right.updated_at || right.created_at || 0).getTime() - new Date(left.updated_at || left.created_at || 0).getTime();
+      });
+  }, [campaigns, channel, goal, search, sortBy, tab]);
 
-  if (loading) {
-    return (
-      <div className="dashboard-ui relative flex flex-col gap-10 max-w-[1600px] mx-auto pb-20 px-4" aria-label="Loading campaigns">
-        <Skeleton className="h-32 rounded-2xl" />
-        <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-4">
-          {[0, 1, 2, 3].map((item) => <Skeleton key={item} className="h-32 rounded-2xl" />)}
-        </div>
-        <Skeleton className="h-96 rounded-2xl" />
-      </div>
-    );
-  }
+  const totalPages = Math.max(1, Math.ceil(visible.length / pageSize));
+  const safePage = Math.min(page, totalPages);
+  const pageCampaigns = visible.slice((safePage - 1) * pageSize, safePage * pageSize);
+
+  if (loading) return <CampaignListSkeleton />;
 
   return (
-    <div className="dashboard-ui relative flex flex-col gap-10 max-w-[1600px] mx-auto pb-20 px-4" data-tour="grow-campaigns">
-      {refreshing ? (
-        <div className="pointer-events-none absolute right-4 top-0 z-10 flex items-center gap-2 text-[11px] font-medium text-muted-foreground">
-          <RefreshCw className="h-3 w-3 animate-spin" />
-          Refreshing…
+    <main className="mx-auto flex w-full max-w-[1400px] flex-col gap-6 px-4 pb-20" data-tour="grow-campaigns">
+      <header className="flex flex-col gap-4 border-b border-border pb-6 md:flex-row md:items-end md:justify-between">
+        <div>
+          <Link href="/grow" className="mb-3 inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-primary focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><ArrowLeft aria-hidden="true" className="h-4 w-4" />Grow Home</Link>
+          <h1 className="text-pretty text-3xl font-black tracking-tight">Campaigns</h1>
+          <p className="mt-2 text-sm text-muted-foreground">See what needs action, what is scheduled, and how sent campaigns performed.</p>
         </div>
-      ) : null}
-
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="space-y-1">
-          <div className="flex items-center gap-3 mb-2">
-            <Link href="/grow" className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-primary transition-colors">
-              ← Back to Overview
-            </Link>
-          </div>
-          <h1 className="dc-page-title">Campaign Management</h1>
-          <p className="dc-page-subtitle">
-            Create, review, and manage your marketing campaigns in one place
-          </p>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" size="sm" onClick={() => void load(true)} disabled={refreshing}><RefreshCw aria-hidden="true" className={cn("mr-2 h-4 w-4 motion-reduce:animate-none", refreshing && "animate-spin")} />{refreshing ? "Refreshing…" : "Refresh"}</Button>
+          {hasPermission(user, "grow.campaigns.manage") && <Button asChild size="sm"><Link href="/grow/campaigns/new"><Plus aria-hidden="true" className="mr-2 h-4 w-4" />Create Campaign</Link></Button>}
         </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <Button 
-            variant="ghost" 
-            size="sm" 
-            onClick={() => void refresh()} 
-            className="dc-filter-refresh h-9 gap-2 rounded-2xl px-4"
-            disabled={refreshing}
-          >
-            <RefreshCw className={cn("h-4 w-4", refreshing && "animate-spin")} />
-            Refresh
-          </Button>
-          {hasPermission(user, "grow.campaigns.manage") && (
-            <Button 
-              asChild 
-              className="dc-btn-close-day h-9 gap-2 rounded-2xl px-4 font-medium"
-            >
-              <Link href="/grow/campaigns/new">
-                <Plus className="h-4 w-4" />
-                New Campaign
-              </Link>
-            </Button>
-          )}
-        </div>
-      </div>
+      </header>
 
-      {error && (
-        <Alert className="dc-card border-destructive/30 bg-destructive/5">
-          <AlertCircle className="h-4 w-4 text-destructive" />
-          <AlertTitle className="font-semibold text-destructive">Unable to load campaigns</AlertTitle>
-          <AlertDescription className="text-sm text-destructive/80">{error}</AlertDescription>
-        </Alert>
-      )}
+      {error && <Alert className="border-destructive/30 bg-destructive/5"><AlertCircle aria-hidden="true" className="h-4 w-4 text-destructive" /><AlertTitle>Campaigns Could Not Load</AlertTitle><AlertDescription className="flex flex-wrap items-center justify-between gap-3"><span>{error}</span><Button variant="outline" size="sm" onClick={() => void load()}>Try Again</Button></AlertDescription></Alert>}
 
-      {/* Campaign summary cards */}
-      <section className="grid gap-6 sm:grid-cols-2 xl:grid-cols-4" aria-label="Campaign counts">
-        {[
-          { label: "Awaiting Review", value: counts.review, icon: ShieldCheck, color: "text-blue-500", bgColor: "bg-blue-500/5" },
-          { label: "Approved", value: counts.approved, icon: CheckCircle2, color: "text-green-500", bgColor: "bg-green-500/5" },
-          { label: "Scheduled", value: counts.scheduled, icon: Send, color: "text-purple-500", bgColor: "bg-purple-500/5" },
-          { label: "Completed", value: counts.completed, icon: CheckCircle2, color: "text-emerald-500", bgColor: "bg-emerald-500/5" },
-        ].map((item) => (
-          <div key={item.label} className="group relative overflow-hidden dc-card min-h-[108px] p-5 flex items-center justify-between transition-all duration-300 hover:-translate-y-1">
-            <div className={cn("absolute top-0 right-0 w-28 h-28 rounded-bl-[100px] -mr-4 -mt-4 transition-transform group-hover:scale-110", item.bgColor)} />
-            <div className="flex items-center gap-4 relative z-10">
-              <div className={cn("w-12 h-12 rounded-xl flex items-center justify-center border shadow-sm transition-colors", 
-                item.color.replace("text-", "bg-") + "/10",
-                item.color.replace("text-", "border-") + "/20",
-                "group-hover:" + item.color.replace("text-", "bg-") + "/15"
-              )}>
-                <item.icon className={cn("h-6 w-6", item.color)} />
-              </div>
-              <div>
-                <p className="dc-metric-label mb-1">{item.label}</p>
-                <p className="text-2xl font-black tracking-tight tabular-nums">{item.value.toLocaleString("en-NP")}</p>
-              </div>
-            </div>
-            <TrendingUp className="h-6 w-6 text-muted-foreground opacity-10 group-hover:opacity-20 transition-opacity" />
-          </div>
+      <nav aria-label="Campaign views" className="flex gap-1 overflow-x-auto border-b border-border">
+        {(Object.keys(tabLabels) as WorkflowTab[]).map((item) => (
+          <button key={item} type="button" onClick={() => { setTab(item); setPage(1); }} aria-current={tab === item ? "page" : undefined} className={cn("flex shrink-0 items-center gap-2 border-b-2 px-3 py-3 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", tab === item ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground")}>
+            {tabLabels[item]}<span className={cn("rounded-full px-2 py-0.5 text-xs tabular-nums", tab === item ? "bg-primary/10 text-primary" : "bg-muted")}>{counts[item]}</span>
+          </button>
         ))}
-      </section>
+      </nav>
 
-      {/* Campaigns list */}
-      <section>
-        <Card className="dc-card">
-          <CardHeader className="pb-4 border-b border-black/[0.08] dark:border-white/10">
-            <div className="flex flex-col gap-4">
-              <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
-                <div>
-                  <CardTitle className="dc-card-title flex items-center gap-2">
-                    <Megaphone className="h-4 w-4 text-primary" />
-                    All Campaigns
-                  </CardTitle>
-                  <CardDescription className="text-xs text-muted-foreground mt-1">
-                    Review and manage campaign details and schedules
-                  </CardDescription>
-                </div>
-              </div>
-              
-              {/* Filters, Search, Sort, and View Toggle - All in One Row */}
-              <div className="flex items-center gap-3 overflow-x-auto">
-                {/* Search Input - Increased width */}
-                <div className="relative w-[240px]">
-                  <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-                  <Input
-                    type="text"
-                    placeholder="Search campaigns..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="h-9 rounded-2xl border-black/[0.08] dark:border-white/10 pl-9 text-xs"
-                  />
-                </div>
+      <Card className="border-border/80 shadow-none">
+        <CardHeader className="gap-4 border-b border-border">
+          <div><CardTitle className="text-lg">{tabLabels[tab]}</CardTitle><CardDescription className="mt-1">{tab === "attention" ? "Campaigns waiting for your next decision" : tab === "scheduled" ? "Upcoming and currently sending campaigns" : tab === "sent" ? "Completed and canceled campaigns" : tab === "drafts" ? "Campaigns you have started but not sent for approval" : "Every campaign at this restaurant"}</CardDescription></div>
+          <div className="grid gap-2 md:grid-cols-[minmax(15rem,1fr)_11rem_14rem_11rem]">
+            <div className="relative"><Search aria-hidden="true" className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input aria-label="Search campaigns" name="campaign-search" autoComplete="off" placeholder="Search campaigns…" value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} className="pl-9" /></div>
+            <Select value={channel} onValueChange={(value) => { setChannel(value as ChannelFilter); setPage(1); }}><SelectTrigger aria-label="Filter by channel"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All Channels</SelectItem><SelectItem value="email">Email</SelectItem><SelectItem value="sms">SMS</SelectItem></SelectContent></Select>
+            <Select value={goal} onValueChange={(value) => { setGoal(value as GoalFilter); setPage(1); }}><SelectTrigger aria-label="Filter by campaign goal"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All Campaign Goals</SelectItem><SelectItem value="second_visit">Bring Back New Customers</SelectItem><SelectItem value="win_back">Re-engage Inactive Customers</SelectItem><SelectItem value="slow_day">Fill a Quiet Period</SelectItem><SelectItem value="custom">Selected Customers</SelectItem></SelectContent></Select>
+            <Select value={sortBy} onValueChange={(value) => { setSortBy(value as SortBy); setPage(1); }}><SelectTrigger aria-label="Sort campaigns"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="updated_desc">Recently Updated</SelectItem><SelectItem value="scheduled_asc">Sending Soonest</SelectItem></SelectContent></Select>
+          </div>
+        </CardHeader>
 
-                {/* Status Filter */}
-                <Select value={filter} onValueChange={(value) => setFilter(value as Filter)}>
-                  <SelectTrigger className="w-[130px] h-9 rounded-2xl border-black/[0.08] dark:border-white/10 text-xs font-medium">
-                    <SelectValue placeholder="Status" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Status</SelectItem>
-                    <SelectItem value="needs_action">Action Needed</SelectItem>
-                    <SelectItem value="active">Active</SelectItem>
-                    <SelectItem value="finished">Finished</SelectItem>
-                  </SelectContent>
-                </Select>
-
-                {/* Channel Filter */}
-                <Select value={channelFilter} onValueChange={(value) => setChannelFilter(value as ChannelFilter)}>
-                  <SelectTrigger className="w-[120px] h-9 rounded-2xl border-black/[0.08] dark:border-white/10 text-xs font-medium">
-                    <SelectValue placeholder="Channel" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Channels</SelectItem>
-                    <SelectItem value="email">Email ({counts.email})</SelectItem>
-                    <SelectItem value="sms">SMS ({counts.sms})</SelectItem>
-                  </SelectContent>
-                </Select>
-
-                {/* Playbook Filter */}
-                <Select value={playbookFilter} onValueChange={(value) => setPlaybookFilter(value as PlaybookFilter)}>
-                  <SelectTrigger className="w-[120px] h-9 rounded-2xl border-black/[0.08] dark:border-white/10 text-xs font-medium">
-                    <SelectValue placeholder="Playbook" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Playbooks</SelectItem>
-                    <SelectItem value="second_visit">Second Visit ({counts.second_visit})</SelectItem>
-                    <SelectItem value="win_back">Win Back ({counts.win_back})</SelectItem>
-                    <SelectItem value="slow_day">Slow Day ({counts.slow_day})</SelectItem>
-                  </SelectContent>
-                </Select>
-
-                {/* Segment Filter */}
-                <Select value={segmentFilter} onValueChange={(value) => setSegmentFilter(value as SegmentFilter)}>
-                  <SelectTrigger className="w-[130px] h-9 rounded-2xl border-black/[0.08] dark:border-white/10 text-xs font-medium">
-                    <SelectValue placeholder="Segment" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Segments</SelectItem>
-                    <SelectItem value="new">New ({counts.new})</SelectItem>
-                    <SelectItem value="regular">Regular ({counts.regular})</SelectItem>
-                    <SelectItem value="lapsed">Inactive ({counts.lapsed})</SelectItem>
-                  </SelectContent>
-                </Select>
-
-                {/* Sort By */}
-                <Select value={sortBy} onValueChange={(value) => setSortBy(value as SortBy)}>
-                  <SelectTrigger className="w-[150px] h-9 rounded-2xl border-black/[0.08] dark:border-white/10 text-xs font-medium">
-                    <SelectValue placeholder="Sort by" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="scheduled_desc">Newest First</SelectItem>
-                    <SelectItem value="scheduled_asc">Oldest First</SelectItem>
-                    <SelectItem value="created_desc">Recently Created</SelectItem>
-                    <SelectItem value="created_asc">First Created</SelectItem>
-                  </SelectContent>
-                </Select>
-
-                {/* Spacer - Reduced */}
-                <div className="flex-1 min-w-[10px]"></div>
-
-                {/* View Mode Toggle */}
-                <div className="flex items-center gap-1 bg-muted/50 p-1 rounded-2xl border border-black/[0.08] dark:border-white/10 shrink-0">
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => setViewMode("grid")}
-                    className={cn(
-                      "h-7 w-7 p-0 rounded-xl transition-all",
-                      viewMode === "grid" 
-                        ? "bg-background shadow-sm" 
-                        : "hover:bg-background/50"
-                    )}
-                    title="Grid view"
-                  >
-                    <Grid3x3 className="h-3.5 w-3.5" />
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => setViewMode("list")}
-                    className={cn(
-                      "h-7 w-7 p-0 rounded-xl transition-all",
-                      viewMode === "list" 
-                        ? "bg-background shadow-sm" 
-                        : "hover:bg-background/50"
-                    )}
-                    title="List view"
-                  >
-                    <List className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
-              </div>
+        <CardContent className="p-0">
+          {pageCampaigns.length ? (
+            <div className="divide-y divide-border">
+              {pageCampaigns.map((campaign) => (
+                <article key={campaign.id} className="grid gap-4 p-4 sm:p-5 lg:grid-cols-[minmax(0,1.4fr)_minmax(10rem,0.7fr)_minmax(10rem,0.7fr)_auto] lg:items-center">
+                  <div className="flex min-w-0 items-start gap-3">
+                    <span className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-xl border", campaign.channel === "email" ? "border-blue-500/20 bg-blue-500/10 text-blue-600 dark:text-blue-300" : "border-violet-500/20 bg-violet-500/10 text-violet-600 dark:text-violet-300")}>{campaign.channel === "email" ? <Mail aria-hidden="true" className="h-4 w-4" /> : <MessageSquareText aria-hidden="true" className="h-4 w-4" />}</span>
+                    <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h2 className="truncate text-base font-bold">{campaign.name}</h2><Badge variant="outline" className={statusStyles[campaign.status]}>{campaignStatusLabels[campaign.status]}</Badge></div><p className="mt-1 text-xs text-muted-foreground">{goalLabels[campaign.playbook_code] || "Campaign"} · {campaign.channel === "email" ? "Email" : "SMS"}</p></div>
+                  </div>
+                  <div><p className="text-xs text-muted-foreground">Customers</p><p className="mt-1 text-sm font-semibold tabular-nums"><Users aria-hidden="true" className="mr-1.5 inline h-4 w-4" />{campaign.audience_count.toLocaleString("en-NP")}</p></div>
+                  <div><p className="text-xs text-muted-foreground">{campaign.scheduled_at ? "Sending" : "Created"}</p><p className="mt-1 text-sm font-semibold"><CalendarClock aria-hidden="true" className="mr-1.5 inline h-4 w-4" />{dateTime(campaign.scheduled_at || campaign.created_at)}</p></div>
+                  <Button asChild variant={campaign.status === "approved" || campaign.status === "review" || campaign.status === "failed" ? "default" : "outline"} size="sm" className="justify-between lg:min-w-36"><Link href={`/grow/campaigns/${campaign.id}`}>{actionLabels[campaign.status]}<ArrowRight aria-hidden="true" className="ml-2 h-4 w-4" /></Link></Button>
+                </article>
+              ))}
             </div>
-          </CardHeader>
-          <CardContent className="pt-6">
-            {visible.length === 0 ? (
-              <div className="flex min-h-64 flex-col items-center justify-center rounded-xl border border-dashed border-border bg-muted/30 p-10 text-center">
-                <CircleDashed className="h-10 w-10 text-muted-foreground" />
-                <h2 className="mt-4 font-semibold text-sm">No campaigns found</h2>
-                <p className="mt-1.5 max-w-md text-sm text-muted-foreground">
-                  {campaigns.length === 0
-                    ? "Create your first campaign to start engaging with customers"
-                    : searchQuery 
-                      ? `No campaigns match "${searchQuery}"`
-                      : "Try a different filter to see other campaigns"}
-                </p>
-              </div>
-            ) : (
-              <>
-                {viewMode === "grid" ? (
-                  <div className="grid gap-5 lg:grid-cols-2">
-                    {paginatedCampaigns.map((campaign) => (
-                      <Link
-                        key={campaign.id}
-                        href={`/grow/campaigns/${campaign.id}`}
-                        className="group relative overflow-hidden dc-card p-5 transition-all duration-300 hover:-translate-y-1"
-                      >
-                        <div className="absolute top-0 right-0 w-24 h-24 bg-primary/5 rounded-bl-[80px] -mr-4 -mt-4 transition-transform group-hover:scale-110" />
-                        <div className="relative z-10">
-                          <div className="flex items-start justify-between gap-4 mb-3">
-                            <div className="min-w-0 flex-1 flex items-start gap-3">
-                              {/* Channel Icon */}
-                              <div className={cn(
-                                "w-9 h-9 rounded-lg flex items-center justify-center border shrink-0 transition-colors",
-                                campaign.channel === "email"
-                                  ? "bg-blue-500/10 border-blue-500/20 text-blue-600 group-hover:bg-blue-500/15"
-                                  : campaign.channel === "sms"
-                                    ? "bg-violet-500/10 border-violet-500/20 text-violet-600 group-hover:bg-violet-500/15"
-                                    : "bg-muted border-border text-muted-foreground"
-                              )}>
-                                {campaign.channel === "email" ? (
-                                  <Mail className="h-4 w-4" />
-                                ) : (
-                                  <MessageSquareText className="h-4 w-4" />
-                                )}
-                              </div>
-                              <div className="min-w-0 flex-1">
-                                <h2 className="truncate font-bold text-base mb-1 group-hover:text-primary transition-colors">
-                                  {campaign.name}
-                                </h2>
-                                <p className="text-xs text-muted-foreground">
-                                  {playbookLabels[campaign.playbook_code] || campaign.playbook_code} · {segmentLabels[campaign.segment_code] || campaign.segment_code}
-                                </p>
-                              </div>
-                            </div>
-                            <Badge variant="outline" className={cn("shrink-0 text-xs font-semibold", statusStyles[campaign.status])}>
-                              {campaignStatusLabels[campaign.status]}
-                            </Badge>
-                          </div>
-                          <div className="flex items-center justify-between gap-3 pt-3 border-t border-black/[0.08] dark:border-white/10">
-                            <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                              <span className="inline-flex items-center gap-1.5">
-                                <Users className="h-3.5 w-3.5" />
-                                <span className="font-medium">{campaign.audience_count.toLocaleString("en-NP")}</span>
-                              </span>
-                              <span className="inline-flex items-center gap-1.5">
-                                <CalendarClock className="h-3.5 w-3.5" />
-                                <span className="font-medium">{formatDate(campaign.scheduled_at)}</span>
-                              </span>
-                            </div>
-                            <span className="inline-flex items-center gap-1 font-semibold text-primary text-xs">
-                              View <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
-                            </span>
-                          </div>
-                        </div>
-                      </Link>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="rounded-xl border border-black/[0.08] dark:border-white/10 overflow-x-auto">
-                    {/* Table */}
-                    <table className="w-full">
-                      {/* Table Header */}
-                      <thead>
-                        <tr className="bg-muted/30 border-b border-black/[0.08] dark:border-white/10">
-                          <th className="px-3 py-2.5 text-left text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Channel</th>
-                          <th className="px-3 py-2.5 text-left text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Campaign Name</th>
-                          <th className="px-3 py-2.5 text-left text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Playbook</th>
-                          <th className="px-3 py-2.5 text-left text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Segment</th>
-                          <th className="px-3 py-2.5 text-right text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Audience</th>
-                          <th className="px-3 py-2.5 text-left text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Scheduled</th>
-                          <th className="px-3 py-2.5 text-center text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Status</th>
-                          <th className="px-3 py-2.5 w-8"></th>
-                        </tr>
-                      </thead>
-                      
-                      {/* Table Body */}
-                      <tbody className="divide-y divide-black/[0.08] dark:divide-white/10">
-                        {paginatedCampaigns.map((campaign) => (
-                          <tr
-                            key={campaign.id}
-                            className="group transition-colors hover:bg-muted/50 cursor-pointer"
-                            onClick={() => window.location.href = `/grow/campaigns/${campaign.id}`}
-                          >
-                            {/* Channel Icon */}
-                            <td className="px-3 py-2.5">
-                              <div className={cn(
-                                "w-8 h-8 rounded-lg flex items-center justify-center border",
-                                campaign.channel === "email"
-                                  ? "bg-blue-500/10 border-blue-500/20 text-blue-600"
-                                  : campaign.channel === "sms"
-                                    ? "bg-violet-500/10 border-violet-500/20 text-violet-600"
-                                    : "bg-muted border-border text-muted-foreground"
-                              )}>
-                                {campaign.channel === "email" ? (
-                                  <Mail className="h-3.5 w-3.5" />
-                                ) : (
-                                  <MessageSquareText className="h-3.5 w-3.5" />
-                                )}
-                              </div>
-                            </td>
+          ) : (
+            <div className="flex min-h-72 flex-col items-center justify-center p-8 text-center">
+              {tab === "attention" && !search && channel === "all" && goal === "all" ? <CheckCircle2 aria-hidden="true" className="h-10 w-10 text-emerald-600" /> : <CircleDashed aria-hidden="true" className="h-10 w-10 text-muted-foreground" />}
+              <h2 className="mt-4 text-base font-semibold">{tab === "attention" && !search && channel === "all" && goal === "all" ? "Nothing Needs Attention" : "No Campaigns Found"}</h2>
+              <p className="mt-2 max-w-md text-sm text-muted-foreground">{campaigns.length === 0 ? "Create your first campaign to start bringing customers back." : "Try another view or remove a filter."}</p>
+              {campaigns.length === 0 && hasPermission(user, "grow.campaigns.manage") && <Button asChild className="mt-5"><Link href="/grow/campaigns/new">Create Campaign</Link></Button>}
+            </div>
+          )}
+        </CardContent>
 
-                            {/* Campaign Name */}
-                            <td className="px-3 py-2.5">
-                              <span className="font-bold text-sm group-hover:text-primary transition-colors">
-                                {campaign.name}
-                              </span>
-                            </td>
+        {visible.length > pageSize && (
+          <footer className="flex flex-col gap-3 border-t border-border px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-xs text-muted-foreground">Showing {(safePage - 1) * pageSize + 1}–{Math.min(safePage * pageSize, visible.length)} of {visible.length} campaigns</p>
+            <div className="flex items-center gap-2"><Button variant="outline" size="sm" onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={safePage === 1}>Previous</Button><span className="px-2 text-xs font-medium tabular-nums">Page {safePage} of {totalPages}</span><Button variant="outline" size="sm" onClick={() => setPage((current) => Math.min(totalPages, current + 1))} disabled={safePage === totalPages}>Next</Button></div>
+          </footer>
+        )}
+      </Card>
 
-                            {/* Playbook */}
-                            <td className="px-3 py-2.5">
-                              <span className="text-xs text-muted-foreground">
-                                {playbookLabels[campaign.playbook_code] || campaign.playbook_code}
-                              </span>
-                            </td>
-
-                            {/* Segment */}
-                            <td className="px-3 py-2.5">
-                              <span className="text-xs text-muted-foreground">
-                                {segmentLabels[campaign.segment_code] || campaign.segment_code}
-                              </span>
-                            </td>
-
-                            {/* Audience Count */}
-                            <td className="px-3 py-2.5 text-right">
-                              <div className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-                                <Users className="h-3 w-3" />
-                                <span className="font-medium tabular-nums">{campaign.audience_count.toLocaleString("en-NP")}</span>
-                              </div>
-                            </td>
-
-                            {/* Scheduled Time */}
-                            <td className="px-3 py-2.5">
-                              <div className="flex items-center gap-1.5 text-xs text-muted-foreground whitespace-nowrap">
-                                <CalendarClock className="h-3 w-3 shrink-0" />
-                                <span className="font-medium">{formatDate(campaign.scheduled_at)}</span>
-                              </div>
-                            </td>
-
-                            {/* Status Badge */}
-                            <td className="px-3 py-2.5 text-center">
-                              <Badge variant="outline" className={cn("text-[10px] font-semibold whitespace-nowrap bg-transparent", statusStylesTable[campaign.status])}>
-                                {campaignStatusLabels[campaign.status]}
-                              </Badge>
-                            </td>
-
-                            {/* Arrow */}
-                            <td className="px-3 py-2.5">
-                              <ArrowRight className="h-3.5 w-3.5 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-primary" />
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-
-                {/* Pagination Controls */}
-                {totalPages > 1 && (
-                  <div className="flex items-center justify-between pt-6 mt-6 border-t border-black/[0.08] dark:border-white/10">
-                    <p className="text-xs text-muted-foreground">
-                      Showing <span className="font-medium">{startIndex + 1}</span> to <span className="font-medium">{Math.min(endIndex, visible.length)}</span> of <span className="font-medium">{visible.length}</span> campaigns
-                    </p>
-                    <div className="flex items-center gap-2">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                        disabled={currentPage === 1}
-                        className="h-8 w-8 p-0 rounded-xl"
-                      >
-                        <ChevronLeft className="h-4 w-4" />
-                      </Button>
-                      <div className="flex items-center gap-1">
-                        {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
-                          <Button
-                            key={page}
-                            size="sm"
-                            variant={currentPage === page ? "default" : "ghost"}
-                            onClick={() => setCurrentPage(page)}
-                            className={cn(
-                              "h-8 w-8 p-0 rounded-xl text-xs font-medium",
-                              currentPage === page && "bg-primary text-primary-foreground"
-                            )}
-                          >
-                            {page}
-                          </Button>
-                        ))}
-                      </div>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                        disabled={currentPage === totalPages}
-                        className="h-8 w-8 p-0 rounded-xl"
-                      >
-                        <ChevronRight className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </div>
-                )}
-              </>
-            )}
-          </CardContent>
-        </Card>
-      </section>
-    </div>
+      <p className="flex items-center gap-2 text-xs text-muted-foreground"><Clock3 aria-hidden="true" className="h-4 w-4" />Campaign actions follow your assigned permissions and the current campaign status.</p>
+    </main>
   );
 }
-

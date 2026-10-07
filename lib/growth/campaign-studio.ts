@@ -84,6 +84,15 @@ export const CAMPAIGN_PLAYBOOKS: readonly CampaignPlaybookDefinition[] = [
     observedFact: "The audience is based on regular-customer history, not predicted behavior.",
     audienceLabel: "Regular customers",
   },
+  {
+    code: "custom",
+    segment: "all",
+    title: "Choose your audience",
+    shortTitle: "Custom audience",
+    description: "Reach every eligible subscriber, or select specific customers yourself.",
+    observedFact: "This audience is chosen by you; consent and delivery safeguards still apply.",
+    audienceLabel: "Eligible subscribers",
+  },
 ] as const;
 
 export function getCampaignPlaybook(
@@ -354,20 +363,22 @@ export function buildCampaignCreateInput({
   channel,
   offer,
   language,
-  message,
+  smsTemplateCode,
   emailSubject,
   emailBodyHtml,
   emailTemplate,
+  audienceCustomerIds = [],
 }: {
   name: string;
   playbookCode: GrowthPlaybookCode;
   channel: GrowthChannelCode;
   offer: CampaignOfferDraft;
   language: GrowthLanguage;
-  message: string;
+  smsTemplateCode?: string;
   emailSubject?: string;
   emailBodyHtml?: string;
   emailTemplate?: string;
+  audienceCustomerIds?: number[];
 }): GrowthCampaignCreateInput {
   const playbook = getCampaignPlaybook(playbookCode);
   return {
@@ -377,10 +388,12 @@ export function buildCampaignCreateInput({
     channel,
     offer: toGrowthOfferInput(offer),
     language,
-    message_body: channel !== "email" ? message.trim() : null,
+    message_body: null,
+    sms_template_code: channel === "sms" ? (smsTemplateCode || null) : null,
     email_subject: channel === "email" ? (emailSubject || "").trim() : null,
     email_body_html: channel === "email" ? (emailBodyHtml || "").trim() : null,
     email_template: channel === "email" ? (emailTemplate || "").trim() || null : null,
+    audience_customer_ids: playbook.code === "custom" ? audienceCustomerIds : [],
   };
 }
 

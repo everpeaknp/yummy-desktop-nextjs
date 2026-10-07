@@ -229,7 +229,7 @@ export function TemplatePreview({ campaign, template }: TemplatePreviewProps) {
                     
                     {/* Message Text */}
                     {messageBody ? (
-                      <p className="whitespace-pre-wrap text-base leading-relaxed">
+                      <p className="whitespace-pre-wrap text-base leading-relaxed text-slate-900">
                         {messageBody}
                       </p>
                     ) : !creativeAsset?.secure_url ? (
@@ -331,7 +331,7 @@ export function TemplatePreview({ campaign, template }: TemplatePreviewProps) {
                         
                         {/* Message Text */}
                         {messageBody && (
-                          <p className="whitespace-pre-wrap text-sm leading-relaxed">
+                          <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-900">
                             {messageBody}
                           </p>
                         )}

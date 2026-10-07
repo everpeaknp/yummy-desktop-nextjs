@@ -27,6 +27,7 @@ import type {
   GrowthSettingsUpdate,
   GrowthSmsEstimate,
   GrowthSmsWallet,
+  GrowthSmsTemplate,
   GrowthSmsCreditPackage,
   GrowthSmsCreditPurchase,
   NormalizedGrowthOverview,
@@ -139,9 +140,17 @@ export const growthApi = {
   async previewSegment(
     segmentCode: GrowthSegmentCode,
     channel: GrowthChannelCode = "email",
+    customerIds: number[] = [],
   ): Promise<GrowthSegmentPreview> {
     return getData(
-      apiClient.get(GrowthApis.segmentPreview(segmentCode), { params: { channel } }),
+      apiClient.get(GrowthApis.segmentPreview(segmentCode), {
+        params: {
+          channel,
+          limit: 500,
+          customer_ids: customerIds.length ? customerIds : undefined,
+        },
+        paramsSerializer: { indexes: null },
+      }),
     );
   },
 
@@ -288,6 +297,10 @@ export const growthApi = {
         params: { restaurant_id: restaurantId, include_all: true },
       }),
     );
+  },
+
+  async listSmsTemplates(): Promise<GrowthSmsTemplate[]> {
+    return getData(apiClient.get(GrowthApis.smsTemplates));
   },
 
   async updateStaffConsent(input: {

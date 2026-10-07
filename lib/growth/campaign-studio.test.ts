@@ -49,7 +49,6 @@ describe("Campaign Studio playbooks", () => {
         channel: "whatsapp",
         offer: validFixedOffer,
         language: "en",
-        message: "Hi {{customer_name}}",
       }).segment_code,
     ).toBe(segment);
   });
@@ -111,18 +110,19 @@ describe("Campaign Studio action boundary", () => {
 });
 
 describe("Campaign Studio SMS drafts", () => {
-  it("persists SMS copy without a WhatsApp template or poster", () => {
+  it("persists only the selected Yummy SMS template code", () => {
     const input = buildCampaignCreateInput({
       name: "SMS return offer",
       playbookCode: "win_back",
       channel: "sms",
       offer: validFixedOffer,
       language: "en",
-      message: "Hi {{customer_name}}, come back for Rs. 100 off.",
+      smsTemplateCode: "welcome_back",
     });
 
     expect(input.channel).toBe("sms");
-    expect(input.message_body).toContain("come back");
+    expect(input.sms_template_code).toBe("welcome_back");
+    expect(input.message_body).toBeNull();
     expect(input.email_subject).toBeNull();
     expect(input.creative_asset_id).toBeUndefined();
     expect(input.message_template_id).toBeUndefined();
