@@ -364,7 +364,7 @@ export function OnboardingWizard({
         }
       }, 450);
     },
-    [clearFieldError],
+    [clearFieldError, setDraft],
   );
 
   /** Address typed → update pin on map */
@@ -409,7 +409,7 @@ export function OnboardingWizard({
         }
       }, 700);
     },
-    [clearFieldError],
+    [clearFieldError, setDraft],
   );
 
   const handleImageUpload = async (
@@ -1103,23 +1103,6 @@ export function OnboardingWizard({
     return (
       <div className="relative w-full min-h-screen bg-gradient-to-br from-background via-background to-muted/20">
         <div className="relative z-10 mx-auto w-full max-w-3xl px-4 py-12 sm:px-6 md:px-8">
-          {/* Logo */}
-          <div className="mb-8 flex justify-center">
-            <div className="flex items-center gap-3">
-              <div className="grid h-12 w-12 place-items-center overflow-hidden rounded-xl bg-gradient-to-br from-primary to-orange-600 shadow-lg">
-                <Image
-                  src="/logos/yummy_logo.png"
-                  alt="Yummy"
-                  width={40}
-                  height={40}
-                  className="object-contain brightness-0 invert"
-                  unoptimized
-                />
-              </div>
-              <span className="text-2xl font-bold tracking-tight text-foreground">Yummy</span>
-            </div>
-          </div>
-
           <div className="w-full overflow-hidden rounded-3xl bg-card shadow-2xl shadow-primary/5 ring-1 ring-border/50">
             {/* Orange accent bar */}
             <div className="h-1 bg-gradient-to-r from-primary via-orange-500 to-primary" />
