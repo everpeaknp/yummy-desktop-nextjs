@@ -177,7 +177,7 @@ export function CreditReminderSettingsDialog({
                 </div>
 
                 <p className="text-xs text-muted-foreground">
-                  Sent at {formatReminderHour(settings.credit_reminder_send_hour)} in the restaurant&apos;s local time.
+                  Sent during the {formatReminderHour(settings.credit_reminder_send_hour)} hour in the restaurant&apos;s local time.
                 </p>
 
                 <ChannelRow
@@ -221,7 +221,7 @@ export function CreditReminderSettingsDialog({
 
 function formatReminderHour(hour: number) {
   const period = hour >= 12 ? "PM" : "AM";
-  return `${hour % 12 || 12}:00 ${period}`;
+  return `${hour % 12 || 12} ${period}`;
 }
 
 function ReminderHourField({
@@ -241,7 +241,7 @@ function ReminderHourField({
 
   return (
     <fieldset className="space-y-1.5">
-      <legend className="text-xs text-muted-foreground">Send at</legend>
+      <legend className="text-xs text-muted-foreground">Send during</legend>
       <div className="grid grid-cols-2 gap-2">
         <div className="space-y-1">
           <span className="text-xs text-muted-foreground">Hour</span>
