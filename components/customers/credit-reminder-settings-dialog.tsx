@@ -34,7 +34,6 @@ interface CreditReminderSettings {
   credit_reminder_sms_enabled: boolean;
   credit_reminder_interval_days: number;
   credit_reminder_send_hour: number;
-  credit_reminder_send_minute: number;
   credit_reminder_min_amount: number;
 }
 
@@ -45,7 +44,6 @@ const defaults: CreditReminderSettings = {
   credit_reminder_sms_enabled: false,
   credit_reminder_interval_days: 7,
   credit_reminder_send_hour: 9,
-  credit_reminder_send_minute: 0,
   credit_reminder_min_amount: 1,
 };
 
@@ -161,12 +159,10 @@ export function CreditReminderSettingsDialog({
                     value={settings.credit_reminder_interval_days}
                     onChange={(value) => update("credit_reminder_interval_days", value)}
                   />
-                  <ReminderTimeField
+                  <ReminderHourField
                     disabled={channelsDisabled}
                     hour={settings.credit_reminder_send_hour}
-                    minute={settings.credit_reminder_send_minute}
                     onHourChange={(value) => update("credit_reminder_send_hour", value)}
-                    onMinuteChange={(value) => update("credit_reminder_send_minute", value)}
                   />
                   <NumberField
                     id="credit-reminder-minimum"
@@ -181,7 +177,7 @@ export function CreditReminderSettingsDialog({
                 </div>
 
                 <p className="text-xs text-muted-foreground">
-                  Scheduled for {formatReminderTime(settings.credit_reminder_send_hour, settings.credit_reminder_send_minute)} in the restaurant&apos;s local time.
+                  Sent at {formatReminderHour(settings.credit_reminder_send_hour)} in the restaurant&apos;s local time.
                 </p>
 
                 <ChannelRow
@@ -223,23 +219,19 @@ export function CreditReminderSettingsDialog({
   );
 }
 
-function formatReminderTime(hour: number, minute: number) {
+function formatReminderHour(hour: number) {
   const period = hour >= 12 ? "PM" : "AM";
-  return `${hour % 12 || 12}:${String(minute).padStart(2, "0")} ${period}`;
+  return `${hour % 12 || 12}:00 ${period}`;
 }
 
-function ReminderTimeField({
+function ReminderHourField({
   disabled,
   hour,
-  minute,
   onHourChange,
-  onMinuteChange,
 }: {
   disabled: boolean;
   hour: number;
-  minute: number;
   onHourChange: (value: number) => void;
-  onMinuteChange: (value: number) => void;
 }) {
   const period = hour >= 12 ? "PM" : "AM";
   const hour12 = hour % 12 || 12;
@@ -249,8 +241,8 @@ function ReminderTimeField({
 
   return (
     <fieldset className="space-y-1.5">
-      <legend className="text-xs text-muted-foreground">Send time</legend>
-      <div className="grid grid-cols-[1fr_1fr_1fr] gap-2">
+      <legend className="text-xs text-muted-foreground">Send at</legend>
+      <div className="grid grid-cols-2 gap-2">
         <div className="space-y-1">
           <span className="text-xs text-muted-foreground">Hour</span>
           <Select
@@ -264,19 +256,6 @@ function ReminderTimeField({
             <SelectContent>
               {Array.from({ length: 12 }, (_, index) => index + 1).map((value) => (
                 <SelectItem key={value} value={String(value)}>{value}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-1">
-          <span className="text-xs text-muted-foreground">Minute</span>
-          <Select disabled={disabled} value={String(minute)} onValueChange={(value) => onMinuteChange(Number(value))}>
-            <SelectTrigger aria-label="Reminder minute" className="h-10 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {Array.from({ length: 60 }, (_, index) => index).map((value) => (
-                <SelectItem key={value} value={String(value)}>{String(value).padStart(2, "0")}</SelectItem>
               ))}
             </SelectContent>
           </Select>
