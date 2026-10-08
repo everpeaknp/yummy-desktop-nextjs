@@ -392,6 +392,8 @@ export const CustomerApis = {
   getCreditHistory: (id: number) => `/customers/${id}/credit/history`,
   creditReminderSettings: (restaurantId: number) =>
     `/customers/credit-reminder-settings/${restaurantId}`,
+  loyaltySettings: (restaurantId: number) =>
+    `/customers/loyalty-settings/${restaurantId}`,
 };
 
 export const InventoryApis = {

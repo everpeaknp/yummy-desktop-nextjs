@@ -1,12 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { BellRing, Pencil, Plus, User } from "lucide-react";
+import { BellRing, Gift, Pencil, Plus, User } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 import { AddCustomerDialog } from "@/components/customers/add-customer-dialog";
 import { EditCustomerDialog } from "@/components/customers/edit-customer-dialog";
 import { CreditReminderSettingsDialog } from "@/components/customers/credit-reminder-settings-dialog";
+import { LoyaltySettingsDialog } from "@/components/customers/loyalty-settings-dialog";
 import { MetricCard } from "@/components/cards/metric-card";
 import { SearchField } from "@/components/patterns/controls/search-field";
 import { FilterBar } from "@/components/patterns/controls/filter-bar";
@@ -55,6 +56,7 @@ export default function CustomersPage() {
   const [addCustomerOpen, setAddCustomerOpen] = useState(false);
   const [editCustomer, setEditCustomer] = useState<CustomerRecord | null>(null);
   const [reminderSettingsOpen, setReminderSettingsOpen] = useState(false);
+  const [loyaltySettingsOpen, setLoyaltySettingsOpen] = useState(false);
 
   const user = useAuth((state) => state.user);
   const me = useAuth((state) => state.me);
@@ -182,6 +184,15 @@ export default function CustomersPage() {
           description="Manage customer relationships, sales history, and settlements."
           actions={
             <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                className="h-11 rounded-xl"
+                onClick={() => setLoyaltySettingsOpen(true)}
+              >
+                <Gift className="mr-2 h-4 w-4" />
+                Loyalty points
+              </Button>
               <Button
                 type="button"
                 variant="outline"
@@ -460,6 +471,11 @@ export default function CustomersPage() {
         restaurantId={user?.restaurant_id}
         open={reminderSettingsOpen}
         onOpenChange={setReminderSettingsOpen}
+      />
+      <LoyaltySettingsDialog
+        restaurantId={user?.restaurant_id}
+        open={loyaltySettingsOpen}
+        onOpenChange={setLoyaltySettingsOpen}
       />
     </AppPage>
   );
