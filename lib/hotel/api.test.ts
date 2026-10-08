@@ -23,6 +23,15 @@ beforeEach(() => {
 });
 
 describe("hotelPmsApi", () => {
+  it("updates a room type with PATCH and unwraps the returned type", async () => {
+    const input = { base_rate: 6500, name: "Deluxe" };
+    const result = { id: 30, ...input };
+    mocked.patch.mockResolvedValue({ data: { status: "success", data: result } });
+
+    expect(await hotelPmsApi.updateRoomType(30, input)).toEqual(result);
+    expect(mocked.patch).toHaveBeenCalledWith("/hotel/v2/room-types/30", input);
+  });
+
   it("unwraps both backend envelopes and direct payloads", () => {
     expect(
       unwrapHotelResponse({

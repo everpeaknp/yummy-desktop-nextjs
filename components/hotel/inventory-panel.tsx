@@ -78,6 +78,7 @@ interface Props {
   canManage: boolean;
   refreshKey: number;
   onChanged: () => void;
+  initialMode?: "book" | "manage";
 }
 
 const floorKey = (floorId: number | null) =>
@@ -88,13 +89,16 @@ export function InventoryPanel({
   canManage,
   refreshKey,
   onChanged,
+  initialMode = "book",
 }: Props) {
   const [rooms, setRooms] = useState<HotelRoom[]>([]);
   const [buildings, setBuildings] = useState<HotelBuilding[]>([]);
   const [roomTypes, setRoomTypes] = useState<HotelRoomType[]>([]);
   const [floors, setFloors] = useState<HotelFloor[]>([]);
   const [selectedFloor, setSelectedFloor] = useState("all");
-  const [mode, setMode] = useState<"book" | "manage">("book");
+  const [mode, setMode] = useState<"book" | "manage">(
+    canManage ? initialMode : "book",
+  );
   const [selectedType, setSelectedType] = useState("all");
   const [minimumPrice, setMinimumPrice] = useState("");
   const [maximumPrice, setMaximumPrice] = useState("");
@@ -119,6 +123,7 @@ export function InventoryPanel({
   const [loading, setLoading] = useState(true);
   const [workingId, setWorkingId] = useState<number | null>(null);
   const [typeDialog, setTypeDialog] = useState(false);
+  const [editingType, setEditingType] = useState<HotelRoomType | null>(null);
   const [roomDialog, setRoomDialog] = useState(false);
   const [floorDialog, setFloorDialog] = useState(false);
   const [buildingDialog, setBuildingDialog] = useState(false);
@@ -325,25 +330,46 @@ export function InventoryPanel({
     onChanged();
   };
 
-  const createType = async () => {
-    if (!typeCode.trim() || !typeName.trim() || Number(typeRate) < 0) return;
+  const openTypeDialog = (type?: HotelRoomType) => {
+    setEditingType(type ?? null);
+    setTypeCode(type?.code ?? "");
+    setTypeName(type?.name ?? "");
+    setTypeRate(type ? String(type.base_rate) : "");
+    setTypeAdults(String(type?.max_adults ?? 2));
+    setTypeChildren(String(type?.max_children ?? 0));
+    setTypeDialog(true);
+  };
+
+  const validType =
+    Boolean(typeCode.trim() && typeName.trim()) &&
+    Number.isFinite(Number(typeRate)) &&
+    Number(typeRate) >= 0;
+
+  const saveType = async () => {
+    if (!validType) return;
     setSaving(true);
     try {
-      await hotelPmsApi.createRoomType({
-        restaurant_id: restaurantId,
+      const input = {
         code: typeCode.trim(),
         name: typeName.trim(),
         base_rate: Number(typeRate || 0),
         max_adults: Math.max(1, Number(typeAdults || 1)),
         max_children: Math.max(0, Number(typeChildren || 0)),
-      });
+      };
+      if (editingType) {
+        await hotelPmsApi.updateRoomType(editingType.id, input);
+      } else {
+        await hotelPmsApi.createRoomType({ restaurant_id: restaurantId, ...input });
+      }
       setTypeDialog(false);
-      setTypeCode("");
-      setTypeName("");
-      setTypeRate("");
-      await afterMutation("Room type created");
+      await afterMutation(editingType ? "Room type updated" : "Room type created");
     } catch (error) {
-      toast.error(getApiErrorMessage(error, "Failed to create room type"));
+      toast.error(
+        getApiErrorMessage(
+          error,
+          editingType ? "Failed to update room type" : "Failed to create room type",
+        ),
+      );
     } finally {
       setSaving(false);
     }
@@ -1046,6 +1072,127 @@ export function InventoryPanel({
     />
   );
 
+  const typeDialogNode = (
+    <Dialog open={typeDialog} onOpenChange={setTypeDialog}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>
+            {editingType ? `Edit ${editingType.name}` : "Add room type"}
+          </DialogTitle>
+          <DialogDescription>
+            {editingType
+              ? "Update the nightly price and guest capacity."
+              : "Create a reusable room option with its price and guest capacity."}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-3 py-2">
+          <div className="grid grid-cols-[120px_1fr] gap-3">
+            <div className="space-y-2">
+              <Label htmlFor="hotel-typeCode">Short code</Label>
+              <Input
+                id="hotel-typeCode"
+                value={typeCode}
+                onChange={(e) => setTypeCode(e.target.value.toUpperCase())}
+                placeholder="DLX"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="hotel-typeName">Room type name</Label>
+              <Input
+                id="hotel-typeName"
+                value={typeName}
+                onChange={(e) => setTypeName(e.target.value)}
+                placeholder="Deluxe room"
+              />
+            </div>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="hotel-typeRate">Nightly price</Label>
+            <Input
+              type="number"
+              min={0}
+              id="hotel-typeRate"
+              value={typeRate}
+              onChange={(e) => setTypeRate(e.target.value)}
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label htmlFor="hotel-typeAdults">Adults</Label>
+              <Input
+                type="number"
+                min={1}
+                id="hotel-typeAdults"
+                value={typeAdults}
+                onChange={(e) => setTypeAdults(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="hotel-typeChildren">Children</Label>
+              <Input
+                type="number"
+                min={0}
+                id="hotel-typeChildren"
+                value={typeChildren}
+                onChange={(e) => setTypeChildren(e.target.value)}
+              />
+            </div>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setTypeDialog(false)}>
+            Cancel
+          </Button>
+          <Button
+            disabled={saving || !validType}
+            onClick={() => void saveType()}
+          >
+            {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {editingType ? "Save changes" : "Add room type"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+
+  const roomTypesNode = canManage && mode === "manage" ? (
+    <div className="mt-4 rounded-2xl border bg-card p-4">
+      <div className="mb-3 flex items-center justify-between">
+        <div>
+          <h3 className="font-bold">Room types</h3>
+          <p className="text-xs text-muted-foreground">
+            Nightly price and guest capacity
+          </p>
+        </div>
+        <Wrench className="h-4 w-4 text-muted-foreground" />
+      </div>
+      <div className="space-y-2">
+        {roomTypes.map((type) => (
+          <div
+            key={type.id}
+            className="flex items-center justify-between gap-3 rounded-xl bg-muted/40 px-3 py-2.5"
+          >
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold">
+                {type.name}
+              </p>
+              <p className="text-[11px] text-muted-foreground">
+                Up to {type.max_adults + type.max_children} guests
+              </p>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <p className="text-xs font-bold">{hotelCurrency(type.base_rate)}</p>
+              <Button variant="ghost" size="sm" aria-label={`Edit ${type.name}`}
+                disabled={saving} onClick={() => openTypeDialog(type)}>
+                <Pencil className="mr-2 h-4 w-4" />Edit
+              </Button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  ) : null;
+
   if (loading && buildings.length === 0) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
@@ -1072,6 +1219,8 @@ export function InventoryPanel({
           title="No buildings yet"
           description="Add a building to begin setting up hotel rooms."
         />
+        {roomTypesNode}
+        {typeDialogNode}
         {buildingDialogNode}
       </div>
     );
@@ -1107,7 +1256,7 @@ export function InventoryPanel({
                   <Plus className="mr-2 h-4 w-4" />
                   Add building
                 </Button>
-                <Button variant="outline" onClick={() => setTypeDialog(true)}>
+                <Button variant="outline" onClick={() => openTypeDialog()}>
                   <Plus className="mr-2 h-4 w-4" />
                   Add room type
                 </Button>
@@ -1116,6 +1265,7 @@ export function InventoryPanel({
           </div>
         </div>
         {bookingFiltersNode}
+        {roomTypesNode}
         <HotelPropertyMap
           buildings={buildings}
           floors={floors}
@@ -1216,77 +1366,7 @@ export function InventoryPanel({
             </DialogFooter>
           </DialogContent>
         </Dialog>
-        <Dialog open={typeDialog} onOpenChange={setTypeDialog}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Add room type</DialogTitle>
-              <DialogDescription>
-                Create a reusable room option with its price and guest capacity.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="grid gap-3 py-2">
-              <div className="grid grid-cols-[120px_1fr] gap-3">
-                <div className="space-y-2">
-                  <Label>Short code</Label>
-                  <Input
-                    value={typeCode}
-                    onChange={(e) => setTypeCode(e.target.value.toUpperCase())}
-                    placeholder="DLX"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Room type name</Label>
-                  <Input
-                    value={typeName}
-                    onChange={(e) => setTypeName(e.target.value)}
-                    placeholder="Deluxe room"
-                  />
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label>Nightly price</Label>
-                <Input
-                  type="number"
-                  min={0}
-                  value={typeRate}
-                  onChange={(e) => setTypeRate(e.target.value)}
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-2">
-                  <Label>Adults</Label>
-                  <Input
-                    type="number"
-                    min={1}
-                    value={typeAdults}
-                    onChange={(e) => setTypeAdults(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Children</Label>
-                  <Input
-                    type="number"
-                    min={0}
-                    value={typeChildren}
-                    onChange={(e) => setTypeChildren(e.target.value)}
-                  />
-                </div>
-              </div>
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setTypeDialog(false)}>
-                Cancel
-              </Button>
-              <Button
-                disabled={saving || !typeCode.trim() || !typeName.trim()}
-                onClick={() => void createType()}
-              >
-                {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Add
-                room type
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+        {typeDialogNode}
         <Dialog open={roomDialog} onOpenChange={setRoomDialog}>
           <DialogContent>
             <DialogHeader>
@@ -1694,7 +1774,7 @@ export function InventoryPanel({
                   <Building2 className="mr-2 h-4 w-4" />
                   Add floor
                 </Button>
-                <Button variant="outline" onClick={() => setTypeDialog(true)}>
+                <Button variant="outline" onClick={() => openTypeDialog()}>
                   <Plus className="mr-2 h-4 w-4" />
                   Add room type
                 </Button>
@@ -2053,37 +2133,7 @@ export function InventoryPanel({
                 </CardContent>
               </Card>
             ) : null}
-            <div className="mt-4 rounded-2xl border bg-card p-4">
-              <div className="mb-3 flex items-center justify-between">
-                <div>
-                  <h3 className="font-bold">Room types</h3>
-                  <p className="text-xs text-muted-foreground">
-                    Nightly price and guest capacity
-                  </p>
-                </div>
-                <Wrench className="h-4 w-4 text-muted-foreground" />
-              </div>
-              <div className="space-y-2">
-                {roomTypes.slice(0, 5).map((type) => (
-                  <div
-                    key={type.id}
-                    className="flex items-center justify-between gap-3 rounded-xl bg-muted/40 px-3 py-2.5"
-                  >
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold">
-                        {type.name}
-                      </p>
-                      <p className="text-[11px] text-muted-foreground">
-                        Up to {type.max_adults + type.max_children} guests
-                      </p>
-                    </div>
-                    <p className="shrink-0 text-xs font-bold">
-                      {hotelCurrency(type.base_rate)}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </div>
+            {roomTypesNode}
           </aside>
         </div>
       ) : (
@@ -2093,77 +2143,7 @@ export function InventoryPanel({
         />
       )}
 
-      <Dialog open={typeDialog} onOpenChange={setTypeDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Add room type</DialogTitle>
-            <DialogDescription>
-              Create a reusable room option with its price and guest capacity.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-3 py-2">
-            <div className="grid grid-cols-[120px_1fr] gap-3">
-              <div className="space-y-2">
-                <Label>Short code</Label>
-                <Input
-                  value={typeCode}
-                  onChange={(e) => setTypeCode(e.target.value.toUpperCase())}
-                  placeholder="DLX"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Room type name</Label>
-                <Input
-                  value={typeName}
-                  onChange={(e) => setTypeName(e.target.value)}
-                  placeholder="Deluxe room"
-                />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label>Nightly price</Label>
-              <Input
-                type="number"
-                min={0}
-                value={typeRate}
-                onChange={(e) => setTypeRate(e.target.value)}
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-2">
-                <Label>Adults</Label>
-                <Input
-                  type="number"
-                  min={1}
-                  value={typeAdults}
-                  onChange={(e) => setTypeAdults(e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Children</Label>
-                <Input
-                  type="number"
-                  min={0}
-                  value={typeChildren}
-                  onChange={(e) => setTypeChildren(e.target.value)}
-                />
-              </div>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setTypeDialog(false)}>
-              Cancel
-            </Button>
-            <Button
-              disabled={saving || !typeCode.trim() || !typeName.trim()}
-              onClick={() => void createType()}
-            >
-              {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Add
-              room type
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {typeDialogNode}
       <Dialog open={roomDialog} onOpenChange={setRoomDialog}>
         <DialogContent>
           <DialogHeader>

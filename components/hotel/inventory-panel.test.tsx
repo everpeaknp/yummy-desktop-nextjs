@@ -6,6 +6,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { createElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -17,6 +18,7 @@ import type {
   HotelRoomType,
 } from "@/lib/hotel/types";
 import { InventoryPanel } from "./inventory-panel";
+import { toast } from "sonner";
 
 const api = vi.hoisted(() => ({
   listRooms: vi.fn(),
@@ -25,6 +27,8 @@ const api = vi.hoisted(() => ({
   listBuildings: vi.fn(),
   getAvailability: vi.fn(),
   updateRoom: vi.fn(),
+  updateRoomType: vi.fn(),
+  createRoomType: vi.fn(),
   updateFloor: vi.fn(),
   updateBuilding: vi.fn(),
 }));
@@ -196,6 +200,8 @@ describe("InventoryPanel building-first room flow", () => {
     api.listBuildings.mockResolvedValue([building]);
     api.getAvailability.mockResolvedValue(availability);
     api.updateRoom.mockResolvedValue(room);
+    api.updateRoomType.mockResolvedValue(roomType);
+    api.createRoomType.mockResolvedValue(roomType);
     api.updateFloor.mockResolvedValue(floor);
     api.updateBuilding.mockResolvedValue(building);
   });
@@ -204,6 +210,95 @@ describe("InventoryPanel building-first room flow", () => {
     cleanup();
     vi.clearAllMocks();
     vi.unstubAllGlobals();
+  });
+
+  it("starts in manage mode when requested", async () => {
+    render(createElement(InventoryPanel, {
+      restaurantId: 9, canManage: true, refreshKey: 0,
+      onChanged: vi.fn(), initialMode: "manage",
+    }));
+    expect(await screen.findByRole("button", { name: "Done managing" })).toBeTruthy();
+    expect(api.getAvailability).not.toHaveBeenCalled();
+  });
+
+  it("keeps booking mode for staff without management permission", async () => {
+    render(createElement(InventoryPanel, {
+      restaurantId: 9, canManage: false, refreshKey: 0,
+      onChanged: vi.fn(), initialMode: "manage",
+    }));
+    await waitFor(() => expect(api.getAvailability).toHaveBeenCalled());
+    expect(screen.queryByRole("button", { name: "Edit Deluxe" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Edit building" })).toBeNull();
+  });
+
+  it("prefills an existing room type and saves its changed base rate", async () => {
+    const onChanged = vi.fn();
+    render(createElement(InventoryPanel, {
+      restaurantId: 9, canManage: true, refreshKey: 0,
+      onChanged, initialMode: "manage",
+    }));
+    fireEvent.click(await screen.findByRole("button", { name: "Edit Deluxe" }));
+    expect(screen.getByLabelText("Short code")).toHaveValue("DLX");
+    expect(screen.getByLabelText("Room type name")).toHaveValue("Deluxe");
+    expect(screen.getByLabelText("Adults")).toHaveValue(2);
+    expect(screen.getByLabelText("Children")).toHaveValue(1);
+    fireEvent.change(screen.getByLabelText("Nightly price"), { target: { value: "6500" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(api.updateRoomType).toHaveBeenCalledWith(30, {
+      code: "DLX", name: "Deluxe", base_rate: 6500, max_adults: 2, max_children: 1,
+    }));
+    await waitFor(() => expect(onChanged).toHaveBeenCalledOnce());
+    expect(api.listRoomTypes).toHaveBeenCalledTimes(2);
+    expect(api.createRoomType).not.toHaveBeenCalled();
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("keeps failed edits open and allows retrying after the loading state", async () => {
+    let rejectSave!: (error: Error) => void;
+    api.updateRoomType.mockImplementationOnce(() => new Promise((_resolve, reject) => {
+      rejectSave = reject;
+    }));
+    const onChanged = vi.fn();
+    render(createElement(InventoryPanel, {
+      restaurantId: 9, canManage: true, refreshKey: 0,
+      onChanged, initialMode: "manage",
+    }));
+    fireEvent.click(await screen.findByRole("button", { name: "Edit Deluxe" }));
+    fireEvent.change(screen.getByLabelText("Nightly price"), { target: { value: "6500" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    expect(screen.getByRole("button", { name: "Save changes" })).toBeDisabled();
+    rejectSave(new Error("Network unavailable"));
+    await waitFor(() => expect(toast.error).toHaveBeenCalled());
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    expect(screen.getByLabelText("Nightly price")).toHaveValue(6500);
+    expect(screen.getByRole("button", { name: "Save changes" })).toBeEnabled();
+    expect(onChanged).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(onChanged).toHaveBeenCalledOnce());
+  });
+
+  it("opens a fresh creation form after cancelling an edit", async () => {
+    render(createElement(InventoryPanel, {
+      restaurantId: 9, canManage: true, refreshKey: 0,
+      onChanged: vi.fn(), initialMode: "manage",
+    }));
+    fireEvent.click(await screen.findByRole("button", { name: "Edit Deluxe" }));
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add room type" }));
+    expect(screen.getByLabelText("Short code")).toHaveValue("");
+    expect(screen.getByLabelText("Room type name")).toHaveValue("");
+    expect(screen.getByLabelText("Adults")).toHaveValue(2);
+    expect(screen.getByLabelText("Children")).toHaveValue(0);
+    fireEvent.change(screen.getByLabelText("Short code"), { target: { value: "STD" } });
+    fireEvent.change(screen.getByLabelText("Room type name"), { target: { value: "Standard" } });
+    fireEvent.change(screen.getByLabelText("Nightly price"), { target: { value: "3000" } });
+    const dialog = screen.getByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Add room type" }));
+    await waitFor(() => expect(api.createRoomType).toHaveBeenCalledWith({
+      restaurant_id: 9, code: "STD", name: "Standard", base_rate: 3000,
+      max_adults: 2, max_children: 0,
+    }));
+    expect(api.updateRoomType).not.toHaveBeenCalled();
   });
 
   it("opens the selected room booking directly from the buildings screen", async () => {

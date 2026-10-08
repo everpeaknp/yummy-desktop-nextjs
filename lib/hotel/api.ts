@@ -470,6 +470,17 @@ export const hotelPmsApi = {
     );
   },
 
+  async updateRoomType(
+    roomTypeId: number,
+    input: Partial<Pick<HotelRoomType,
+      "name" | "code" | "base_rate" | "max_adults" | "max_children" | "amenities" | "is_active"
+    >>,
+  ): Promise<HotelRoomType> {
+    return unwrapHotelResponse(
+      await apiClient.patch(`${HotelPmsApis.roomTypes}/${roomTypeId}`, input),
+    );
+  },
+
   async createRoom(input: {
     restaurant_id: number;
     room_type_id: number;

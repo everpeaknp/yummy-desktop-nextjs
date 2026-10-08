@@ -23,13 +23,14 @@ import { HotelEmptyState, hotelCurrency, humanizeHotelStatus } from "./hotel-ui"
 
 interface Props {
   restaurantId: number;
+  initialSection?: "pricing" | "plans" | "settings";
   canManageRates: boolean;
   canManageSettings: boolean;
   refreshKey: number;
   onChanged: () => void;
 }
 
-export function RatesPanel({ restaurantId, canManageRates, canManageSettings, refreshKey, onChanged }: Props) {
+export function RatesPanel({ restaurantId, canManageRates, canManageSettings, refreshKey, onChanged, initialSection = "pricing" }: Props) {
   const [settings, setSettings] = useState<HotelPropertySettings | null>(null);
   const [roomTypes, setRoomTypes] = useState<HotelRoomType[]>([]);
   const [ratePlans, setRatePlans] = useState<HotelRatePlan[]>([]);
@@ -49,7 +50,7 @@ export function RatesPanel({ restaurantId, canManageRates, canManageSettings, re
   const [refundable, setRefundable] = useState(true);
   const [earlyDeparturePolicy, setEarlyDeparturePolicy] = useState<HotelEarlyDeparturePolicy>("refund_unused");
   const [earlyDepartureValue, setEarlyDepartureValue] = useState("");
-  const [activeSection, setActiveSection] = useState("pricing");
+  const [activeSection, setActiveSection] = useState<string>(initialSection);
 
   const load = useCallback(async () => {
     setLoading(true);

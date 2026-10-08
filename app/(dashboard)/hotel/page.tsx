@@ -10,6 +10,8 @@ import { BookingsPanel } from "@/components/hotel/bookings-panel";
 import { FrontDeskPanel } from "@/components/hotel/front-desk-panel";
 import { FinancePanel } from "@/components/hotel/finance-panel";
 import { HousekeepingPanel } from "@/components/hotel/housekeeping-panel";
+import { HotelSetupChecklist, type HotelSetupChecklistProps } from "@/components/hotel/hotel-setup-checklist";
+import { useHotelSetupReadiness, type HotelSetupReadinessResult } from "@/hooks/use-hotel-setup-readiness";
 import { InventoryPanel } from "@/components/hotel/inventory-panel";
 import { NightAuditPanel } from "@/components/hotel/night-audit-panel";
 import { RatesPanel } from "@/components/hotel/rates-panel";
@@ -18,6 +20,20 @@ import { useAuth } from "@/hooks/use-auth";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import { getHotelWorkspaceTabs, hasPermission, type PermissionKey } from "@/lib/role-permissions";
 import { AppPage } from "@/components/patterns/page/app-page";
+
+type SetupProps = Omit<HotelSetupChecklistProps, keyof HotelSetupReadinessResult> & {
+  restaurantId: number;
+  refreshKey: number;
+};
+
+function HotelWorkspaceSetup({ restaurantId, refreshKey, ...props }: SetupProps) {
+  const setup = useHotelSetupReadiness(restaurantId, props.canManageStaff);
+  const { reload } = setup;
+  useEffect(() => {
+    if (refreshKey > 0) void reload();
+  }, [refreshKey, reload]);
+  return <HotelSetupChecklist {...setup} {...props} />;
+}
 
 export default function HotelPmsPage() {
   const router = useRouter();
@@ -29,6 +45,9 @@ export default function HotelPmsPage() {
   const [detailOpen, setDetailOpen] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
+  const [inventorySetupRequest, setInventorySetupRequest] = useState(0);
+  const [ratesSetupRequest, setRatesSetupRequest] = useState(0);
+  const [ratesSection, setRatesSection] = useState<"pricing" | "plans" | "settings">("pricing");
 
   const restaurantId = user?.restaurant_id ?? null;
   const can = (permission: PermissionKey) => hasPermission(user, permission);
@@ -107,7 +126,7 @@ export default function HotelPmsPage() {
   }
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-28">
+    <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-44 lg:pb-28">
       <header className="sticky top-0 z-30 border-b bg-background/95 backdrop-blur">
         <div className="mx-auto flex h-16 w-full max-w-[1600px] items-center justify-between gap-3 px-4 sm:px-6">
           <div className="flex min-w-0 items-center gap-2.5">
@@ -129,14 +148,44 @@ export default function HotelPmsPage() {
         </div>
       </header>
       <AppPage width="wide" density="compact" className="px-4 py-4 sm:px-6 md:py-6">
+      {can("hotel.view") ? <div className="mb-5">
+        <HotelWorkspaceSetup
+          restaurantId={restaurantId}
+          refreshKey={refreshKey}
+          canManageInventory={can("hotel.inventory.manage")}
+          canManageRates={can("hotel.rates.manage")}
+          canManageSettings={can("hotel.manage")}
+          canManageStaff={can("admin.staff.view")}
+          onOpenInventory={() => {
+            if (!can("hotel.inventory.manage")) return;
+            setInventorySetupRequest((value) => value + 1);
+            handleTabChange("inventory");
+          }}
+          onOpenRates={() => {
+            if (!can("hotel.rates.manage")) return;
+            setRatesSection("plans");
+            setRatesSetupRequest((value) => value + 1);
+            handleTabChange("rates");
+          }}
+          onOpenSettings={() => {
+            if (!can("hotel.manage")) return;
+            setRatesSection("settings");
+            setRatesSetupRequest((value) => value + 1);
+            handleTabChange("rates");
+          }}
+          onOpenStaff={() => {
+            if (can("admin.staff.view")) router.push("/staff");
+          }}
+        />
+      </div> : null}
       <Tabs value={tab} onValueChange={handleTabChange}>
         <TabsList className="hidden h-auto w-full justify-start gap-1 overflow-x-auto rounded-xl border bg-card p-1 lg:flex">
           {navigation.map((item) => <TabsTrigger key={item.value} value={item.value} className="rounded-lg px-3 py-2 text-sm data-[state=active]:bg-orange-500 data-[state=active]:text-white data-[state=active]:shadow-sm"><item.icon className="mr-2 h-4 w-4" />{item.label}</TabsTrigger>)}
         </TabsList>
         <TabsContent value="front-desk" className="mt-5"><FrontDeskPanel restaurantId={restaurantId} refreshKey={refreshKey} onOpenBooking={openBooking} /></TabsContent>
         <TabsContent value="bookings" className="mt-5"><BookingsPanel restaurantId={restaurantId} canManage={permissions.bookings} refreshKey={refreshKey} onOpenBooking={openBooking} onChanged={changed} /></TabsContent>
-        <TabsContent value="inventory" className="mt-5"><InventoryPanel restaurantId={restaurantId} canManage={can("hotel.inventory.manage")} refreshKey={refreshKey} onChanged={changed} /></TabsContent>
-        <TabsContent value="rates" className="mt-5"><RatesPanel restaurantId={restaurantId} canManageRates={can("hotel.rates.manage")} canManageSettings={can("hotel.manage")} refreshKey={refreshKey} onChanged={changed} /></TabsContent>
+        <TabsContent value="inventory" className="mt-5"><InventoryPanel key={inventorySetupRequest} initialMode={inventorySetupRequest ? "manage" : "book"} restaurantId={restaurantId} canManage={can("hotel.inventory.manage")} refreshKey={refreshKey} onChanged={changed} /></TabsContent>
+        <TabsContent value="rates" className="mt-5"><RatesPanel key={ratesSetupRequest} initialSection={ratesSection} restaurantId={restaurantId} canManageRates={can("hotel.rates.manage")} canManageSettings={can("hotel.manage")} refreshKey={refreshKey} onChanged={changed} /></TabsContent>
         {can("hotel.housekeeping.view") ? <TabsContent value="housekeeping" className="mt-5"><HousekeepingPanel restaurantId={restaurantId} canManage={can("hotel.housekeeping.manage")} refreshKey={refreshKey} onChanged={changed} /></TabsContent> : null}
         {can("hotel.view") && can("reports.analytics.view") ? <TabsContent value="room-orders" className="mt-5"><RoomOrderAnalyticsPanel restaurantId={restaurantId} refreshKey={refreshKey} /></TabsContent> : null}
         {can("hotel.view") && can("finance.income.view") ? <TabsContent value="finance" className="mt-5"><FinancePanel restaurantId={restaurantId} refreshKey={refreshKey} /></TabsContent> : null}
@@ -160,7 +209,7 @@ export default function HotelPmsPage() {
       <BookingDetailDialog bookingId={selectedBookingId} open={detailOpen} onOpenChange={setDetailOpen} permissions={permissions} onChanged={changed} />
       </AppPage>
 
-      <nav aria-label="Hotel workspace navigation" className="fixed inset-x-0 bottom-0 z-40 border-t bg-background/95 px-2 pb-[max(env(safe-area-inset-bottom),0.5rem)] pt-2 backdrop-blur lg:hidden">
+      <nav aria-label="Hotel workspace navigation" className="fixed inset-x-0 bottom-[calc(4.0625rem+max(env(safe-area-inset-bottom),0.5rem))] z-40 border-t bg-background/95 px-2 pb-[max(env(safe-area-inset-bottom),0.5rem)] pt-2 backdrop-blur lg:hidden">
         <div className="mx-auto grid max-w-md grid-cols-4">
           {mobilePrimaryNavigation.map((item) => {
             const active = tab === item.value;
