@@ -50,7 +50,7 @@ function getBusinessScopeLabel(scope: "restaurant" | "hotel" | "both") {
 
 export function HotelSetupChecklist({ status, readiness, hotelTeam, teamStatus, reload, canManageInventory, canManageRates, canManageSettings, canManageStaff, onOpenInventory, onOpenRates, onOpenSettings, onOpenStaff }: HotelSetupChecklistProps) {
   const operationalReady = status === "ready" && !!readiness?.operationalReady;
-  const [expanded, setExpanded] = useState(!operationalReady);
+  const [expanded, setExpanded] = useState(false);
   const contentId = useId();
   useEffect(() => {
     if (operationalReady) setExpanded(false);

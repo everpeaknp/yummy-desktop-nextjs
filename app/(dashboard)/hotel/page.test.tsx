@@ -34,15 +34,27 @@ beforeEach(() => {
   state.readiness = buildHotelSetupReadiness({ settings: { default_checkin_time: "14:00", default_checkout_time: "11:00", currency: "NPR" } as Parameters<typeof buildHotelSetupReadiness>[0]["settings"], roomTypes: [], rooms: [], floors: [], ratePlans: [] });
 });
 afterEach(cleanup);
+function renderHotelPageWithSetupOpen() {
+  const view = render(<HotelPmsPage />);
+  const open = screen.queryByRole("button", { name: "Open setup checklist" });
+  if (open) fireEvent.click(open);
+  return view;
+}
 
 describe("Hotel workspace setup integration", () => {
+  it("starts with the setup checklist collapsed", () => {
+    render(<HotelPmsPage />);
+    expect(screen.getByRole("button", { name: "Open setup checklist" })).toBeInTheDocument();
+    expect(screen.queryByRole("list", { name: "Setup steps" })).not.toBeInTheDocument();
+  });
+
   it("uses the dashboard scroll region instead of creating a nested scroller", () => {
-    const { container } = render(<HotelPmsPage />);
+    const { container } = renderHotelPageWithSetupOpen();
     expect(container.firstElementChild).not.toHaveClass("overflow-y-auto");
   });
 
   it("keeps the selected work and existing navigation below the checklist", () => {
-    render(<HotelPmsPage />);
+    renderHotelPageWithSetupOpen();
     const checklist = screen.getByRole("region", { name: "Hotel setup" });
     const work = screen.getByText("Current front desk work");
     expect(checklist.compareDocumentPosition(work) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -51,11 +63,11 @@ describe("Hotel workspace setup integration", () => {
     expect(screen.getByRole("button", { name: "Exit hotel" })).toBeInTheDocument();
   });
   it("positions mobile Hotel navigation above the shared primary navigation", () => {
-    render(<HotelPmsPage />);
+    renderHotelPageWithSetupOpen();
     expect(screen.getByRole("navigation", { name: "Hotel workspace navigation" })).toHaveClass("bottom-[calc(4.0625rem+max(env(safe-area-inset-bottom),0.5rem))]");
   });
   it("opens Rooms management and refreshes readiness after an edit", async () => {
-    render(<HotelPmsPage />);
+    renderHotelPageWithSetupOpen();
     fireEvent.click(screen.getByRole("button", { name: "Add rooms" }));
     expect(screen.getByText("Rooms mode: manage")).toBeInTheDocument();
     expect(state.push).toHaveBeenCalledWith("/hotel?section=inventory", { scroll: false });
@@ -63,7 +75,7 @@ describe("Hotel workspace setup integration", () => {
     await waitFor(() => expect(state.reload).toHaveBeenCalled());
   });
   it("opens existing settings and booking options directly, including repeated setup actions", async () => {
-    render(<HotelPmsPage />);
+    renderHotelPageWithSetupOpen();
     fireEvent.click(screen.getByRole("button", { name: "Review settings" }));
     await screen.findByRole("heading", { name: "Hotel settings" });
     fireEvent.mouseDown(screen.getByRole("tab", { name: "Daily prices" }));
@@ -75,7 +87,7 @@ describe("Hotel workspace setup integration", () => {
   });
   it("offers only advanced-rate setup to rates managers", async () => {
     state.user.permissions = ["hotel.view", "hotel.rates.manage"];
-    render(<HotelPmsPage />);
+    renderHotelPageWithSetupOpen();
     expect(screen.queryByRole("button", { name: "Review settings" })).not.toBeInTheDocument();
     expect(screen.getByText("Ask your administrator to review property settings.")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Review advanced rates" }));
@@ -83,26 +95,26 @@ describe("Hotel workspace setup integration", () => {
   });
   it("preserves advanced-rate access implied by Hotel management", async () => {
     state.user.permissions = ["hotel.view", "hotel.manage"];
-    render(<HotelPmsPage />);
+    renderHotelPageWithSetupOpen();
     expect(screen.getByRole("button", { name: "Review advanced rates" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Review settings" }));
     await screen.findByRole("heading", { name: "Hotel settings" });
   });
   it("allows staff review for staff viewers", () => {
-    render(<HotelPmsPage />);
+    renderHotelPageWithSetupOpen();
     fireEvent.click(screen.getByRole("button", { name: "Review Hotel team" }));
     expect(state.push).toHaveBeenCalledWith("/staff");
   });
   it("hands staff managers without staff viewing permission to an administrator", () => {
     state.user.permissions = ["hotel.view", "admin.staff.manage", "admin.roles.manage"];
-    render(<HotelPmsPage />);
+    renderHotelPageWithSetupOpen();
     expect(screen.queryByRole("button", { name: "Review Hotel team" })).not.toBeInTheDocument();
     expect(screen.getByText("Ask your administrator to review who has Hotel access.")).toBeInTheDocument();
     expect(screen.getByText("Current front desk work")).toBeInTheDocument();
   });
   it("keeps authorized work usable during a setup API failure", () => {
     state.status = "error"; state.readiness = null;
-    render(<HotelPmsPage />);
+    renderHotelPageWithSetupOpen();
     expect(screen.getByRole("alert")).toHaveTextContent("couldn't check your hotel setup");
     fireEvent.mouseDown(screen.getByRole("tab", { name: "Bookings" }));
     expect(screen.getByText("Bookings work")).toBeInTheDocument();
