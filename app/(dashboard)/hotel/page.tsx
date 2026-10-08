@@ -128,8 +128,8 @@ export default function HotelPmsPage() {
   return (
     <div className="min-w-0 pb-44 lg:pb-28">
       <header className="sticky top-0 z-30 border-b bg-background/95 backdrop-blur">
-        <div className="mx-auto flex h-16 w-full max-w-[1600px] items-center justify-between gap-3 px-4 sm:px-6">
-          <div className="flex min-w-0 items-center gap-2.5">
+        <div className="mx-auto flex min-h-16 w-full max-w-[1600px] items-start justify-between gap-3 px-4 py-2 sm:px-6">
+          <div className="flex min-w-0 items-center gap-2.5 pt-1">
             <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-orange-500/10 text-orange-600">
               <Hotel className="h-5 w-5" />
             </span>
@@ -137,47 +137,47 @@ export default function HotelPmsPage() {
               {activeNavigation?.label ?? "Hotel PMS"}
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => router.push(exitHref)}
-            className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            <span>Exit hotel</span>
-          </button>
+          <div className="flex shrink-0 flex-col items-end">
+            <button
+              type="button"
+              onClick={() => router.push(exitHref)}
+              className="inline-flex h-9 items-center gap-1.5 rounded-lg px-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              <span>Exit hotel</span>
+            </button>
+            {can("hotel.view") ? <HotelWorkspaceSetup
+              restaurantId={restaurantId}
+              refreshKey={refreshKey}
+              canManageInventory={can("hotel.inventory.manage")}
+              canManageRates={can("hotel.rates.manage")}
+              canManageSettings={can("hotel.manage")}
+              canManageStaff={can("admin.staff.view")}
+              onOpenInventory={() => {
+                if (!can("hotel.inventory.manage")) return;
+                setInventorySetupRequest((value) => value + 1);
+                handleTabChange("inventory");
+              }}
+              onOpenRates={() => {
+                if (!can("hotel.rates.manage")) return;
+                setRatesSection("plans");
+                setRatesSetupRequest((value) => value + 1);
+                handleTabChange("rates");
+              }}
+              onOpenSettings={() => {
+                if (!can("hotel.manage")) return;
+                setRatesSection("settings");
+                setRatesSetupRequest((value) => value + 1);
+                handleTabChange("rates");
+              }}
+              onOpenStaff={() => {
+                if (can("admin.staff.view")) router.push("/staff");
+              }}
+            /> : null}
+          </div>
         </div>
       </header>
       <AppPage width="wide" density="compact" className="px-4 py-4 sm:px-6 md:py-6">
-      {can("hotel.view") ? <div className="mb-5">
-        <HotelWorkspaceSetup
-          restaurantId={restaurantId}
-          refreshKey={refreshKey}
-          canManageInventory={can("hotel.inventory.manage")}
-          canManageRates={can("hotel.rates.manage")}
-          canManageSettings={can("hotel.manage")}
-          canManageStaff={can("admin.staff.view")}
-          onOpenInventory={() => {
-            if (!can("hotel.inventory.manage")) return;
-            setInventorySetupRequest((value) => value + 1);
-            handleTabChange("inventory");
-          }}
-          onOpenRates={() => {
-            if (!can("hotel.rates.manage")) return;
-            setRatesSection("plans");
-            setRatesSetupRequest((value) => value + 1);
-            handleTabChange("rates");
-          }}
-          onOpenSettings={() => {
-            if (!can("hotel.manage")) return;
-            setRatesSection("settings");
-            setRatesSetupRequest((value) => value + 1);
-            handleTabChange("rates");
-          }}
-          onOpenStaff={() => {
-            if (can("admin.staff.view")) router.push("/staff");
-          }}
-        />
-      </div> : null}
       <Tabs value={tab} onValueChange={handleTabChange}>
         <TabsList className="hidden h-auto w-full justify-start gap-1 overflow-x-auto rounded-xl border bg-card p-1 lg:flex">
           {navigation.map((item) => <TabsTrigger key={item.value} value={item.value} className="rounded-lg px-3 py-2 text-sm data-[state=active]:bg-orange-500 data-[state=active]:text-white data-[state=active]:shadow-sm"><item.icon className="mr-2 h-4 w-4" />{item.label}</TabsTrigger>)}
