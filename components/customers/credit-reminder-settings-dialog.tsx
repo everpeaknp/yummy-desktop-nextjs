@@ -16,6 +16,13 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import apiClient from "@/lib/api-client";
 import { getApiErrorMessage } from "@/lib/api-error-message";
 import { CustomerApis } from "@/lib/api/endpoints";
@@ -27,6 +34,7 @@ interface CreditReminderSettings {
   credit_reminder_sms_enabled: boolean;
   credit_reminder_interval_days: number;
   credit_reminder_send_hour: number;
+  credit_reminder_send_minute: number;
   credit_reminder_min_amount: number;
 }
 
@@ -37,6 +45,7 @@ const defaults: CreditReminderSettings = {
   credit_reminder_sms_enabled: false,
   credit_reminder_interval_days: 7,
   credit_reminder_send_hour: 9,
+  credit_reminder_send_minute: 0,
   credit_reminder_min_amount: 1,
 };
 
@@ -152,15 +161,12 @@ export function CreditReminderSettingsDialog({
                     value={settings.credit_reminder_interval_days}
                     onChange={(value) => update("credit_reminder_interval_days", value)}
                   />
-                  <NumberField
-                    id="credit-reminder-hour"
-                    label="Send at"
-                    suffix=":00"
-                    min={0}
-                    max={23}
+                  <ReminderTimeField
                     disabled={channelsDisabled}
-                    value={settings.credit_reminder_send_hour}
-                    onChange={(value) => update("credit_reminder_send_hour", value)}
+                    hour={settings.credit_reminder_send_hour}
+                    minute={settings.credit_reminder_send_minute}
+                    onHourChange={(value) => update("credit_reminder_send_hour", value)}
+                    onMinuteChange={(value) => update("credit_reminder_send_minute", value)}
                   />
                   <NumberField
                     id="credit-reminder-minimum"
@@ -173,6 +179,10 @@ export function CreditReminderSettingsDialog({
                     onChange={(value) => update("credit_reminder_min_amount", value)}
                   />
                 </div>
+
+                <p className="text-xs text-muted-foreground">
+                  Scheduled for {formatReminderTime(settings.credit_reminder_send_hour, settings.credit_reminder_send_minute)} in the restaurant&apos;s local time.
+                </p>
 
                 <ChannelRow
                   icon={<Mail className="h-4 w-4" />}
@@ -210,6 +220,81 @@ export function CreditReminderSettingsDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function formatReminderTime(hour: number, minute: number) {
+  const period = hour >= 12 ? "PM" : "AM";
+  return `${hour % 12 || 12}:${String(minute).padStart(2, "0")} ${period}`;
+}
+
+function ReminderTimeField({
+  disabled,
+  hour,
+  minute,
+  onHourChange,
+  onMinuteChange,
+}: {
+  disabled: boolean;
+  hour: number;
+  minute: number;
+  onHourChange: (value: number) => void;
+  onMinuteChange: (value: number) => void;
+}) {
+  const period = hour >= 12 ? "PM" : "AM";
+  const hour12 = hour % 12 || 12;
+  const setPeriod = (nextPeriod: "AM" | "PM") => {
+    onHourChange((hour % 12) + (nextPeriod === "PM" ? 12 : 0));
+  };
+
+  return (
+    <fieldset className="space-y-1.5">
+      <legend className="text-xs text-muted-foreground">Send time</legend>
+      <div className="grid grid-cols-[1fr_1fr_1fr] gap-2">
+        <div className="space-y-1">
+          <span className="text-xs text-muted-foreground">Hour</span>
+          <Select
+            disabled={disabled}
+            value={String(hour12)}
+            onValueChange={(value) => onHourChange((Number(value) % 12) + (period === "PM" ? 12 : 0))}
+          >
+            <SelectTrigger aria-label="Reminder hour" className="h-10 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {Array.from({ length: 12 }, (_, index) => index + 1).map((value) => (
+                <SelectItem key={value} value={String(value)}>{value}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1">
+          <span className="text-xs text-muted-foreground">Minute</span>
+          <Select disabled={disabled} value={String(minute)} onValueChange={(value) => onMinuteChange(Number(value))}>
+            <SelectTrigger aria-label="Reminder minute" className="h-10 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {Array.from({ length: 60 }, (_, index) => index).map((value) => (
+                <SelectItem key={value} value={String(value)}>{String(value).padStart(2, "0")}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1">
+          <span className="text-xs text-muted-foreground">AM/PM</span>
+          <Select disabled={disabled} value={period} onValueChange={(value) => setPeriod(value as "AM" | "PM")}>
+            <SelectTrigger aria-label="Reminder time period" className="h-10 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="AM">AM</SelectItem>
+              <SelectItem value="PM">PM</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+    </fieldset>
   );
 }
 
