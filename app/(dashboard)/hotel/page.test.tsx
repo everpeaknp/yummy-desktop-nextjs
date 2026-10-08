@@ -36,6 +36,11 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("Hotel workspace setup integration", () => {
+  it("uses the dashboard scroll region instead of creating a nested scroller", () => {
+    const { container } = render(<HotelPmsPage />);
+    expect(container.firstElementChild).not.toHaveClass("overflow-y-auto");
+  });
+
   it("keeps the selected work and existing navigation below the checklist", () => {
     render(<HotelPmsPage />);
     const checklist = screen.getByRole("region", { name: "Hotel setup" });

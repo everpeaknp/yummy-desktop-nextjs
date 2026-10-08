@@ -126,7 +126,7 @@ export default function HotelPmsPage() {
   }
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-44 lg:pb-28">
+    <div className="min-w-0 pb-44 lg:pb-28">
       <header className="sticky top-0 z-30 border-b bg-background/95 backdrop-blur">
         <div className="mx-auto flex h-16 w-full max-w-[1600px] items-center justify-between gap-3 px-4 sm:px-6">
           <div className="flex min-w-0 items-center gap-2.5">
