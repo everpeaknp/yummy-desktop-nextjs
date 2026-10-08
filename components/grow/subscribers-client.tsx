@@ -45,6 +45,7 @@ interface Subscriber {
   customer_id: number;
   name: string;
   phone?: string;
+  sms_contact_available?: boolean;
   email?: string;
   preferred_language?: string;
   whatsapp_subscribed: boolean;
@@ -59,6 +60,11 @@ interface Subscriber {
 
 type ChannelFilter = "all" | "email" | "sms" | "both";
 type BulkConsentMode = "opt_in" | "opt_out";
+
+function hasSmsContact(customer: Subscriber): boolean {
+  // Keep existing deployments usable while an API rollout is in progress.
+  return customer.sms_contact_available ?? Boolean(customer.phone);
+}
 
 function getLanguageLabel(lang?: string): string {
   const languageMap: Record<string, string> = {
@@ -232,8 +238,8 @@ export function SubscribersClient() {
     const smsChanged = consentDraft.sms !== consentCustomer.sms_subscribed;
     const phone = contactDraft.phone.trim();
     const email = contactDraft.email.trim();
-    if (consentDraft.sms && !phone) {
-      toast.error("Add a phone number before opting into SMS");
+    if (consentDraft.sms && !hasSmsContact(consentCustomer) && !phone) {
+      toast.error("Add a valid mobile number before allowing SMS offers");
       return;
     }
     if (consentDraft.email && !email) {
@@ -308,7 +314,7 @@ export function SubscribersClient() {
     ).length,
     sms: selectedCustomers.filter((customer) =>
       bulkMode === "opt_in"
-        ? Boolean(customer.phone) && !customer.sms_subscribed
+        ? hasSmsContact(customer) && !customer.sms_subscribed
         : customer.sms_subscribed,
     ).length,
   };
@@ -330,7 +336,7 @@ export function SubscribersClient() {
       const smsEligible =
         bulkChannels.sms &&
         (bulkMode === "opt_in"
-          ? Boolean(customer.phone) && !customer.sms_subscribed
+          ? hasSmsContact(customer) && !customer.sms_subscribed
           : customer.sms_subscribed);
       if (!emailEligible && !smsEligible) return [];
       return [
@@ -775,7 +781,7 @@ export function SubscribersClient() {
                 <MessageSquareText className="h-4 w-4 text-violet-600" /> SMS
               </span>
               <span className="ml-auto text-xs text-muted-foreground">
-                {bulkEligibility.sms} eligible
+                {bulkEligibility.sms} with a valid mobile number
               </span>
               <Checkbox
                 checked={bulkChannels.sms}
