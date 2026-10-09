@@ -19,6 +19,9 @@ import {
   ShoppingCart,
   Award,
   PencilLine,
+  UserRound,
+  Check,
+  ChevronsUpDown,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -37,11 +40,17 @@ import { cn, formatCurrency, getImageUrl } from "@/lib/utils";
 import Image from "next/image";
 import { ItemCustomizationDialog } from "./item-customization-dialog";
 import {
+  CustomerApis,
   KotApis,
   ModifierApis,
   OrderApis,
   TaxConfigApis,
 } from "@/lib/api/endpoints";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { toast } from "sonner";
 import { usePosBillingPermissions } from "@/hooks/use-pos-billing-permissions";
 
@@ -76,6 +85,116 @@ interface MenuCategory {
   id: number;
   name: string;
   itemCount: number;
+}
+
+interface CustomerOption {
+  id: number;
+  name?: string;
+  full_name?: string;
+  phone?: string | null;
+  email?: string | null;
+  is_active?: boolean;
+}
+
+const customerLabel = (customer: CustomerOption) =>
+  customer.full_name || customer.name || `Customer #${customer.id}`;
+
+function OrderCustomerPicker({
+  customers,
+  selectedCustomerId,
+  onSelect,
+  disabled,
+  loading,
+}: {
+  customers: CustomerOption[];
+  selectedCustomerId: number | null;
+  onSelect: (customer: CustomerOption | null) => void;
+  disabled?: boolean;
+  loading?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const selected = customers.find((customer) => customer.id === selectedCustomerId);
+  const normalizedQuery = query.trim().toLowerCase();
+  const filtered = customers.filter((customer) =>
+    [customerLabel(customer), customer.phone, customer.email]
+      .filter(Boolean)
+      .some((value) => String(value).toLowerCase().includes(normalizedQuery)),
+  );
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          className="h-auto min-h-12 w-full justify-between px-3 py-2 text-left font-normal"
+          disabled={disabled || loading}
+          aria-label={
+            selected
+              ? `Customer: ${customerLabel(selected)}. Change customer`
+              : "Choose customer for this order"
+          }
+        >
+          <span className="flex min-w-0 items-center gap-2">
+            <UserRound className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <span className="min-w-0">
+              <span className="block truncate text-sm font-medium">
+                {loading ? "Loading customers…" : selected ? customerLabel(selected) : "Walk-in customer"}
+              </span>
+              <span className="block truncate text-[11px] text-muted-foreground">
+                {selected
+                  ? selected.phone || selected.email || "Customer record selected"
+                  : "Optional · link this table bill to a customer"}
+              </span>
+            </span>
+          </span>
+          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 text-muted-foreground" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-[min(22rem,var(--radix-popover-trigger-width))] p-2">
+        <Input
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Search name, phone, or email"
+          aria-label="Search customers"
+          autoFocus
+          className="mb-2 h-9"
+        />
+        <ScrollArea className="max-h-64">
+          <button
+            type="button"
+            aria-pressed={!selectedCustomerId}
+            onClick={() => { onSelect(null); setOpen(false); setQuery(""); }}
+            className="flex min-h-12 w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <Check className={cn("h-4 w-4", selectedCustomerId ? "opacity-0" : "opacity-100")} />
+            Walk-in customer
+          </button>
+          {filtered.map((customer) => (
+            <button
+              key={customer.id}
+              type="button"
+              aria-pressed={customer.id === selectedCustomerId}
+              onClick={() => { onSelect(customer); setOpen(false); setQuery(""); }}
+              className="flex min-h-12 w-full items-start gap-2 rounded-md px-2 py-2 text-left hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <Check className={cn("mt-0.5 h-4 w-4", customer.id === selectedCustomerId ? "opacity-100" : "opacity-0")} />
+              <span className="min-w-0">
+                <span className="block truncate text-sm font-medium">{customerLabel(customer)}</span>
+                <span className="block truncate text-xs text-muted-foreground">
+                  {[customer.phone, customer.email].filter(Boolean).join(" · ") || "No contact details"}
+                </span>
+              </span>
+            </button>
+          ))}
+          {!filtered.length && (
+            <p className="px-3 py-6 text-center text-sm text-muted-foreground">No customers found.</p>
+          )}
+        </ScrollArea>
+      </PopoverContent>
+    </Popover>
+  );
 }
 
 const getItemUnitPrice = (item: any) => {
@@ -143,6 +262,10 @@ const CartContent = ({
   canMarkNc,
   toggleNc,
   onCustomizeItem,
+  customers,
+  selectedCustomerId,
+  onCustomerSelect,
+  customersLoading,
 }: {
   cart: CartItem[];
   orderId: string | undefined;
@@ -167,6 +290,10 @@ const CartContent = ({
   canMarkNc?: boolean;
   toggleNc?: (cartItemId: number) => void;
   onCustomizeItem: (item: CartItem) => void;
+  customers: CustomerOption[];
+  selectedCustomerId: number | null;
+  onCustomerSelect: (customer: CustomerOption | null) => void;
+  customersLoading: boolean;
 }) => {
   const isAddingItems = Boolean(orderId && orderId !== "create");
   const subtotal = cart.reduce(
@@ -195,6 +322,20 @@ const CartContent = ({
           {tableNames || "No Table"} •{" "}
           {orderData?.channel || channelFromQuery.replace("_", " ")}
         </p>
+        <div className="mt-3">
+          <OrderCustomerPicker
+            customers={customers}
+            selectedCustomerId={selectedCustomerId}
+            onSelect={onCustomerSelect}
+            disabled={isAddingItems || processing}
+            loading={customersLoading}
+          />
+          {!isAddingItems && selectedCustomerId && (
+            <p className="mt-1.5 text-[11px] leading-4 text-muted-foreground">
+              A verified Yummy account linked to this customer can resume the table bill.
+            </p>
+          )}
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4 no-scrollbar">
@@ -443,6 +584,9 @@ export default function POSSystem({
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [deliveryAddress, setDeliveryAddress] = useState("");
+  const [customers, setCustomers] = useState<CustomerOption[]>([]);
+  const [customersLoading, setCustomersLoading] = useState(false);
+  const [selectedCustomerId, setSelectedCustomerId] = useState<number | null>(null);
 
   const user = useAuth((state) => state.user);
   const { canVoidItem, canMarkNc } = usePosBillingPermissions();
@@ -507,8 +651,15 @@ export default function POSSystem({
             console.error("[POS] Tax fetch failed", err);
             return null;
           });
+        setCustomersLoading(true);
+        const customersPromise = apiClient
+          .get(CustomerApis.listCustomers(user.restaurant_id), { params: { skip: 0, limit: 500 } })
+          .catch((err) => {
+            console.error("[POS] Customer fetch failed", err);
+            return null;
+          });
 
-        const [itemRes, tableRes, tablesListRes, orderRes, modRes, taxRes] =
+        const [itemRes, tableRes, tablesListRes, orderRes, modRes, taxRes, customersRes] =
           await Promise.all([
             itemPromise,
             tablePromise,
@@ -516,7 +667,17 @@ export default function POSSystem({
             orderPromise,
             modPromise,
             taxPromise,
+            customersPromise,
           ]);
+
+        if (customersRes?.data?.status === "success") {
+          setCustomers(
+            (customersRes.data.data?.customers || []).filter(
+              (customer: CustomerOption) => customer.is_active !== false,
+            ),
+          );
+        }
+        setCustomersLoading(false);
 
         if (itemRes && itemRes.data.status === "success") {
           const groups = itemRes.data.data;
@@ -599,6 +760,7 @@ export default function POSSystem({
         if (orderRes && orderRes.data.status === "success") {
           const order = orderRes.data.data;
           setOrderData(order);
+          setSelectedCustomerId(order.customer_id || null);
           // An existing order opens an Add Items composer. Saved order lines
           // are context only; this cart contains only newly selected lines.
           if (orderId && orderId !== "create") {
@@ -626,6 +788,7 @@ export default function POSSystem({
       } catch (err) {
         console.error("[POS] Failed to fetch POS data:", err);
       } finally {
+        setCustomersLoading(false);
         setLoading(false);
       }
     };
@@ -817,6 +980,7 @@ export default function POSSystem({
               orderData?.table_id ||
               (tableIdFromQuery ? parseInt(tableIdFromQuery) : null),
         items: cart.map(buildItemPayload),
+        customer_id: !isAddingItems ? selectedCustomerId : undefined,
       };
 
       if (!isAddingItems && channelFromQuery === "room_service") {
@@ -1239,6 +1403,16 @@ export default function POSSystem({
           canMarkNc={canMarkNc}
           toggleNc={toggleNc}
           onCustomizeItem={customizeCartItem}
+          customers={customers}
+          selectedCustomerId={selectedCustomerId}
+          customersLoading={customersLoading}
+          onCustomerSelect={(customer) => {
+            setSelectedCustomerId(customer?.id || null);
+            if (customer) {
+              setCustomerName(customerLabel(customer));
+              setCustomerPhone(customer.phone || "");
+            }
+          }}
         />
       </Card>
 
@@ -1291,6 +1465,16 @@ export default function POSSystem({
               canMarkNc={canMarkNc}
               toggleNc={toggleNc}
               onCustomizeItem={customizeCartItem}
+              customers={customers}
+              selectedCustomerId={selectedCustomerId}
+              customersLoading={customersLoading}
+              onCustomerSelect={(customer) => {
+                setSelectedCustomerId(customer?.id || null);
+                if (customer) {
+                  setCustomerName(customerLabel(customer));
+                  setCustomerPhone(customer.phone || "");
+                }
+              }}
             />
           </SheetContent>
         </Sheet>
