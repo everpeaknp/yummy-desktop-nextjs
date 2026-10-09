@@ -12,7 +12,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Plus, Loader2, Mail, MessageCircle } from "lucide-react";
+import { Plus, Loader2, Mail, MessageSquare } from "lucide-react";
 import apiClient from "@/lib/api-client";
 import { CustomerApis, GrowthApis } from "@/lib/api/endpoints";
 import { useAuth } from "@/hooks/use-auth";
@@ -59,7 +59,7 @@ export function AddCustomerDialog({
   });
   const [marketingConsent, setMarketingConsent] = useState({
     email: false,
-    whatsapp: false,
+    sms: false,
   });
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -95,7 +95,7 @@ export function AddCustomerDialog({
         const customerId = res.data.data?.id;
         if (
           customerId &&
-          (marketingConsent.email || marketingConsent.whatsapp)
+          (marketingConsent.email || marketingConsent.sms)
         ) {
           try {
             await apiClient.post(
@@ -106,7 +106,7 @@ export function AddCustomerDialog({
                   customer_id: customerId,
                   restaurant_id: user.restaurant_id,
                   email_opted_in: marketingConsent.email,
-                  whatsapp_opted_in: marketingConsent.whatsapp,
+                  sms_opted_in: marketingConsent.sms,
                 },
               },
             );
@@ -123,7 +123,7 @@ export function AddCustomerDialog({
           pan_number: "",
           billing_address: "",
         });
-        setMarketingConsent({ email: false, whatsapp: false });
+        setMarketingConsent({ email: false, sms: false });
         onCustomerAdded();
       }
     } catch (requestError: any) {
@@ -228,17 +228,17 @@ export function AddCustomerDialog({
               <label className="flex cursor-pointer items-center gap-2 text-sm">
                 <input
                   type="checkbox"
-                  checked={marketingConsent.whatsapp}
+                  checked={marketingConsent.sms}
                   onChange={(event) =>
                     setMarketingConsent((current) => ({
                       ...current,
-                      whatsapp: event.target.checked,
+                      sms: event.target.checked,
                     }))
                   }
                   className="h-4 w-4 rounded border-input accent-primary"
                 />
-                <MessageCircle className="h-4 w-4 text-muted-foreground" />
-                WhatsApp
+                <MessageSquare className="h-4 w-4 text-muted-foreground" />
+                SMS
               </label>
             </div>
           </div>

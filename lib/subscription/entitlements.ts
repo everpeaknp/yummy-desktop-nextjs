@@ -29,7 +29,8 @@ const ENTITLEMENT_LABELS: Record<string, string> = {
   "customers.loyalty.enabled": "Customer loyalty",
   "customers.feedback.enabled": "Customer feedback",
   "grow.enabled": "Yummy Grow",
-  "grow.whatsapp.enabled": "Yummy Grow WhatsApp campaigns",
+  // Historical plan versions can still return this retired key.
+  "grow.whatsapp.enabled": "Retired Grow channel",
   "grow.messages.monthly": "Yummy Grow monthly messages",
   "inventory.enabled": "Inventory management",
   "inventory.suppliers.enabled": "Supplier management",
@@ -357,7 +358,10 @@ export function planFeatures(plan: SubscriptionPlan): MarketingFeature[] {
     attendanceFeatures.push({ label: deviceLabel, included: true });
   }
   const standardFeatures = entries
-    .filter(([key]) => !key.startsWith("attendance."))
+    .filter(
+      ([key]) =>
+        !key.startsWith("attendance.") && key !== "grow.whatsapp.enabled",
+    )
     .map(([key, value]): MarketingFeature | null => {
       const label = entitlementLabel(key);
       if (key.endsWith(".max")) {

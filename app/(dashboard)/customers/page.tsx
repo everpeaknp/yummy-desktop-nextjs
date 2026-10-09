@@ -1,10 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Plus, User } from "lucide-react";
+import { BellRing, Gift, Pencil, Plus, User } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 import { AddCustomerDialog } from "@/components/customers/add-customer-dialog";
+import { EditCustomerDialog } from "@/components/customers/edit-customer-dialog";
+import { CreditReminderSettingsDialog } from "@/components/customers/credit-reminder-settings-dialog";
+import { LoyaltySettingsDialog } from "@/components/customers/loyalty-settings-dialog";
 import { MetricCard } from "@/components/cards/metric-card";
 import { SearchField } from "@/components/patterns/controls/search-field";
 import { FilterBar } from "@/components/patterns/controls/filter-bar";
@@ -52,6 +55,9 @@ export default function CustomersPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [addCustomerOpen, setAddCustomerOpen] = useState(false);
+  const [editCustomer, setEditCustomer] = useState<CustomerRecord | null>(null);
+  const [reminderSettingsOpen, setReminderSettingsOpen] = useState(false);
+  const [loyaltySettingsOpen, setLoyaltySettingsOpen] = useState(false);
 
   const user = useAuth((state) => state.user);
   const me = useAuth((state) => state.me);
@@ -163,6 +169,10 @@ export default function CustomersPage() {
   );
   const openDetails = (customerId: number) =>
     router.push(`/customers/${customerId}`);
+  const openEditCustomer = (customer: CustomerRecord) => {
+    if (isFallbackMode || !canManageCustomers) return;
+    setEditCustomer(customer);
+  };
   const customerName = (customer: CustomerRecord) =>
     customer.full_name || customer.name || "Guest";
   const contact = (customer: CustomerRecord) =>
@@ -175,14 +185,17 @@ export default function CustomersPage() {
           title="Customers"
           description="Manage customer relationships, sales history, and settlements."
           actions={canManageCustomers ? (
-            <Button
-              type="button"
-              className="h-11 rounded-xl"
-              onClick={() => setAddCustomerOpen(true)}
-            >
-              <Plus className="mr-2 h-4 w-4" />
-              Add customer
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button type="button" variant="outline" className="h-11 rounded-xl" onClick={() => setLoyaltySettingsOpen(true)}>
+                <Gift className="mr-2 h-4 w-4" /> Loyalty points
+              </Button>
+              <Button type="button" variant="outline" className="h-11 rounded-xl" onClick={() => setReminderSettingsOpen(true)}>
+                <BellRing className="mr-2 h-4 w-4" /> Credit notifications
+              </Button>
+              <Button type="button" className="h-11 rounded-xl" onClick={() => setAddCustomerOpen(true)}>
+                <Plus className="mr-2 h-4 w-4" /> Add customer
+              </Button>
+            </div>
           ) : null}
         />
       </div>
@@ -240,9 +253,21 @@ export default function CustomersPage() {
               : formatCurrency(totalReceivable, restaurant?.currency)}
           </p>
         </div>
-        <p className="text-xs text-muted-foreground">
-          {customers.length} customers
-        </p>
+        <div className="flex items-center gap-2">
+          <p className="text-xs text-muted-foreground">
+            {customers.length} customers
+          </p>
+          {canManageCustomers ? <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-9 w-9"
+            aria-label="Credit notification settings"
+            onClick={() => setReminderSettingsOpen(true)}
+          >
+            <BellRing className="h-4 w-4" />
+          </Button> : null}
+        </div>
       </div>
 
       <div className="hidden max-w-2xl grid-cols-2 gap-3 lg:grid">
@@ -327,6 +352,23 @@ export default function CustomersPage() {
                       ? balance.label
                       : `${balance.label} ${formatCurrency(balance.amount, restaurant?.currency)}`
                   }
+                  action={
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-9 w-9 shrink-0"
+                      aria-label={`Edit ${customerName(customer)}`}
+                      title={`Edit ${customerName(customer)}`}
+                      disabled={isFallbackMode || !canManageCustomers}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        openEditCustomer(customer);
+                      }}
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                  }
                 />
               );
             })}
@@ -358,10 +400,28 @@ export default function CustomersPage() {
                         : "Active"
                   }
                   trailing={
-                    <div className="hidden min-w-40 text-right text-xs text-muted-foreground lg:block">
-                      {balance.amount === null
-                        ? balance.label
-                        : `${balance.label} ${formatCurrency(balance.amount, restaurant?.currency)}`}
+                    <div className="flex shrink-0 items-center gap-3">
+                      <div className="hidden min-w-40 text-right text-xs text-muted-foreground lg:block">
+                        {balance.amount === null
+                          ? balance.label
+                          : `${balance.label} ${formatCurrency(balance.amount, restaurant?.currency)}`}
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-9 gap-1.5 px-2.5"
+                        aria-label={`Edit ${customerName(customer)}`}
+                        title={`Edit ${customerName(customer)}`}
+                        disabled={isFallbackMode || !canManageCustomers}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          openEditCustomer(customer);
+                        }}
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                        <span className="hidden xl:inline">Edit</span>
+                      </Button>
                     </div>
                   }
                 />
@@ -380,6 +440,27 @@ export default function CustomersPage() {
         open={addCustomerOpen}
         onOpenChange={setAddCustomerOpen}
         onCustomerAdded={fetchCustomers}
+      /> : null}
+      {canManageCustomers ? <EditCustomerDialog
+        customer={editCustomer}
+        open={Boolean(editCustomer)}
+        onOpenChange={(open) => {
+          if (!open) setEditCustomer(null);
+        }}
+        onSaved={() => {
+          setEditCustomer(null);
+          void fetchCustomers();
+        }}
+      /> : null}
+      {canManageCustomers ? <CreditReminderSettingsDialog
+        restaurantId={user?.restaurant_id}
+        open={reminderSettingsOpen}
+        onOpenChange={setReminderSettingsOpen}
+      /> : null}
+      {canManageCustomers ? <LoyaltySettingsDialog
+        restaurantId={user?.restaurant_id}
+        open={loyaltySettingsOpen}
+        onOpenChange={setLoyaltySettingsOpen}
       /> : null}
     </AppPage>
   );

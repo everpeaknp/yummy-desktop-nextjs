@@ -186,6 +186,13 @@ export function OnboardingWizard({
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [uploadingCover, setUploadingCover] = useState(false);
   const [syncingProfile, setSyncingProfile] = useState(Boolean(replay));
+  const [phoneVerificationOpen, setPhoneVerificationOpen] = useState(false);
+  const [phoneVerificationCode, setPhoneVerificationCode] = useState("");
+  const [phoneVerificationError, setPhoneVerificationError] = useState("");
+  const [phoneVerificationPhone, setPhoneVerificationPhone] = useState("");
+  const [phoneVerificationToken, setPhoneVerificationToken] = useState("");
+  const [requestingPhoneCode, setRequestingPhoneCode] = useState(false);
+  const [verifyingPhoneCode, setVerifyingPhoneCode] = useState(false);
   const reverseGeocodeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
@@ -357,7 +364,7 @@ export function OnboardingWizard({
         }
       }, 450);
     },
-    [clearFieldError],
+    [clearFieldError, setDraft],
   );
 
   /** Address typed → update pin on map */
@@ -402,7 +409,7 @@ export function OnboardingWizard({
         }
       }, 700);
     },
-    [clearFieldError],
+    [clearFieldError, setDraft],
   );
 
   const handleImageUpload = async (
@@ -945,7 +952,56 @@ export function OnboardingWizard({
       if (onBackToOptions) onBackToOptions();
     };
 
-    const handleSaveRestaurant = async () => {
+    const requestPhoneCode = async () => {
+      const phone = draft.phone.trim();
+      if (!isValidPhoneNumber(phone)) {
+        setFieldErrors({ phone: "Enter a valid phone number with country code." });
+        return;
+      }
+
+      setRequestingPhoneCode(true);
+      setPhoneVerificationError("");
+      try {
+        await apiClient.post(RestaurantApis.requestPhoneVerification, { phone });
+        setPhoneVerificationPhone(phone);
+        setPhoneVerificationCode("");
+        setPhoneVerificationOpen(true);
+      } catch (err) {
+        toast.error(extractError(err));
+      } finally {
+        setRequestingPhoneCode(false);
+      }
+    };
+
+    const verifyPhoneAndCreate = async () => {
+      const code = phoneVerificationCode.replace(/\D/g, "");
+      if (code.length !== 6) {
+        setPhoneVerificationError("Enter the six-digit code.");
+        return;
+      }
+
+      setVerifyingPhoneCode(true);
+      setPhoneVerificationError("");
+      try {
+        const response = await apiClient.post(
+          RestaurantApis.confirmPhoneVerification,
+          { phone: phoneVerificationPhone, code },
+        );
+        const verificationToken = response.data?.data?.verification_token;
+        if (typeof verificationToken !== "string" || !verificationToken) {
+          throw new Error("Phone verification could not be completed.");
+        }
+        setPhoneVerificationToken(verificationToken);
+        setPhoneVerificationOpen(false);
+        await handleSaveRestaurant(verificationToken);
+      } catch (err) {
+        setPhoneVerificationError(extractError(err));
+      } finally {
+        setVerifyingPhoneCode(false);
+      }
+    };
+
+    const handleSaveRestaurant = async (verifiedToken?: string) => {
       if (!isFormComplete) return;
       
       // Validate required fields
@@ -960,6 +1016,16 @@ export function OnboardingWizard({
         return;
       }
 
+      const currentPhone = draft.phone.trim();
+      const usableToken =
+        phoneVerificationPhone === currentPhone
+          ? verifiedToken || phoneVerificationToken
+          : "";
+      if (!usableToken) {
+        await requestPhoneCode();
+        return;
+      }
+
       setSubmitting(true);
       try {
         const profile = buildProfilePayload();
@@ -968,6 +1034,7 @@ export function OnboardingWizard({
           RestaurantApis.create,
           {
             ...profile,
+            phone_verification_token: usableToken,
             business_type: draft.businessType,
             restaurant_enabled: true,
             hotel_enabled: false,
@@ -1036,23 +1103,6 @@ export function OnboardingWizard({
     return (
       <div className="relative w-full min-h-screen bg-gradient-to-br from-background via-background to-muted/20">
         <div className="relative z-10 mx-auto w-full max-w-3xl px-4 py-12 sm:px-6 md:px-8">
-          {/* Logo */}
-          <div className="mb-8 flex justify-center">
-            <div className="flex items-center gap-3">
-              <div className="grid h-12 w-12 place-items-center overflow-hidden rounded-xl bg-gradient-to-br from-primary to-orange-600 shadow-lg">
-                <Image
-                  src="/logos/yummy_logo.png"
-                  alt="Yummy"
-                  width={40}
-                  height={40}
-                  className="object-contain brightness-0 invert"
-                  unoptimized
-                />
-              </div>
-              <span className="text-2xl font-bold tracking-tight text-foreground">Yummy</span>
-            </div>
-          </div>
-
           <div className="w-full overflow-hidden rounded-3xl bg-card shadow-2xl shadow-primary/5 ring-1 ring-border/50">
             {/* Orange accent bar */}
             <div className="h-1 bg-gradient-to-r from-primary via-orange-500 to-primary" />
@@ -1097,7 +1147,13 @@ export function OnboardingWizard({
                         <AppPhoneInput
                           id="phone"
                           value={draft.phone}
-                          onChange={(value) => patch("phone", value)}
+                          onChange={(value) => {
+                            if (value !== draft.phone) {
+                              setPhoneVerificationToken("");
+                              setPhoneVerificationPhone("");
+                            }
+                            patch("phone", value);
+                          }}
                           defaultCountry="NP"
                           placeholder="Enter phone number"
                           className={cn(
@@ -1221,15 +1277,15 @@ export function OnboardingWizard({
                   </Button>
                   <Button
                     type="button"
-                    onClick={handleSaveRestaurant}
-                    disabled={!isFormComplete || submitting}
+                    onClick={() => void handleSaveRestaurant()}
+                    disabled={!isFormComplete || submitting || requestingPhoneCode}
                     size="lg"
                     className="h-11 bg-primary shadow-lg shadow-primary/25 transition-all hover:shadow-xl hover:shadow-primary/30 sm:w-auto w-full"
                   >
-                    {submitting ? (
+                    {submitting || requestingPhoneCode ? (
                       <>
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Finishing…
+                        {requestingPhoneCode ? "Sending code…" : "Finishing…"}
                       </>
                     ) : (
                       <>
@@ -1247,6 +1303,83 @@ export function OnboardingWizard({
             </div>
           </div>
         </div>
+
+        <Dialog
+          open={phoneVerificationOpen}
+          onOpenChange={(open) => {
+            if (!verifyingPhoneCode) setPhoneVerificationOpen(open);
+          }}
+        >
+          <DialogContent className="max-w-md overscroll-contain">
+            <DialogHeader>
+              <DialogTitle>Verify your phone number</DialogTitle>
+              <DialogDescription>
+                Enter the six-digit code sent to {phoneVerificationPhone}. The code expires in 10 minutes.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-2 py-2">
+              <Label htmlFor="restaurant-phone-code">Verification code</Label>
+              <Input
+                id="restaurant-phone-code"
+                name="restaurant-phone-code"
+                value={phoneVerificationCode}
+                onChange={(event) => {
+                  setPhoneVerificationCode(
+                    event.target.value.replace(/\D/g, "").slice(0, 6),
+                  );
+                  setPhoneVerificationError("");
+                }}
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                spellCheck={false}
+                placeholder="000000"
+                className="h-12 text-center font-mono text-xl tracking-[0.35em]"
+                aria-invalid={Boolean(phoneVerificationError)}
+                aria-describedby={
+                  phoneVerificationError ? "restaurant-phone-code-error" : undefined
+                }
+              />
+              {phoneVerificationError ? (
+                <p
+                  id="restaurant-phone-code-error"
+                  role="alert"
+                  className="text-sm text-destructive"
+                >
+                  {phoneVerificationError}
+                </p>
+              ) : null}
+            </div>
+            <DialogFooter className="gap-2 sm:justify-between sm:space-x-0">
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={requestingPhoneCode || verifyingPhoneCode}
+                onClick={() => void requestPhoneCode()}
+              >
+                {requestingPhoneCode ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Sending…
+                  </>
+                ) : (
+                  "Send a new code"
+                )}
+              </Button>
+              <Button
+                type="button"
+                disabled={verifyingPhoneCode || phoneVerificationCode.length !== 6}
+                onClick={() => void verifyPhoneAndCreate()}
+              >
+                {verifyingPhoneCode ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <ShieldCheck className="mr-2 h-4 w-4" />
+                )}
+                Verify and create
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     );
   }

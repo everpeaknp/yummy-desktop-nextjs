@@ -6,6 +6,7 @@ import {
   campaignActions,
   campaignApprovalChecks,
   isCampaignApprovalReady,
+  scheduleOfferWindowConflict,
 } from "@/lib/growth/campaign-administration";
 
 describe("Growth campaign administration", () => {
@@ -96,5 +97,14 @@ describe("Growth campaign administration", () => {
     expect(() => buildGrowthScheduleInput("2026-02-30T18:30", "Asia/Kathmandu")).toThrow(
       "valid local date",
     );
+  });
+
+  it("identifies schedules outside the offer window", () => {
+    const starts = "2026-10-06T18:15:00Z";
+    const expires = "2026-10-16T18:15:00Z";
+
+    expect(scheduleOfferWindowConflict("2026-10-06T16:14:00Z", starts, expires)).toBe("before");
+    expect(scheduleOfferWindowConflict("2026-10-07T16:14:00Z", starts, expires)).toBeNull();
+    expect(scheduleOfferWindowConflict(expires, starts, expires)).toBe("after");
   });
 });

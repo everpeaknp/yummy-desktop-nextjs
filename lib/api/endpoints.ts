@@ -358,6 +358,8 @@ export const TableTypeApis = {
 
 export const RestaurantApis = {
   create: "/restaurants/",
+  requestPhoneVerification: "/restaurants/phone-verification/request",
+  confirmPhoneVerification: "/restaurants/phone-verification/confirm",
   getById: (id: number) => `/restaurants/${id}`,
   update: (id: number) => `/restaurants/${id}`,
   getByUser: "/restaurants/by-user",
@@ -388,6 +390,10 @@ export const CustomerApis = {
   repayCredit: (id: number) => `/customers/${id}/credit/repay`,
   payOut: (id: number) => `/customers/${id}/payments-out`,
   getCreditHistory: (id: number) => `/customers/${id}/credit/history`,
+  creditReminderSettings: (restaurantId: number) =>
+    `/customers/credit-reminder-settings/${restaurantId}`,
+  loyaltySettings: (restaurantId: number) =>
+    `/customers/loyalty-settings/${restaurantId}`,
 };
 
 export const InventoryApis = {
@@ -2406,6 +2412,7 @@ export const GrowthApis = {
   smsPurchaseVerify: (id: number) => `/growth/sms/purchases/${id}/verify`,
   brand: "/growth/brand",
   messageTemplates: "/growth/message-templates",
+  smsTemplates: "/growth/campaigns/sms-templates",
   suggestCopy: "/growth/content/suggest-copy",
   validateOffer: "/growth/offers/validate",
   sendTestEmail: "/growth/send-test-email",

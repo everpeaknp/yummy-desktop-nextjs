@@ -494,7 +494,7 @@ export function CustomerDetailWorkspace({
           </div>
           <div>
             <p className="text-sm font-medium text-muted-foreground">
-              Current balance
+              Customer balance
             </p>
             <p
               className={
@@ -504,9 +504,9 @@ export function CustomerDetailWorkspace({
               }
             >
               {receivable > 0
-                ? `${formatCurrency(receivable)} receivable`
+                ? `${formatCurrency(receivable)} owed to you`
                 : customerCredit > 0
-                  ? `${formatCurrency(customerCredit)} customer credit`
+                  ? `${formatCurrency(customerCredit)} you owe the customer`
                   : "Settled"}
             </p>
           </div>
@@ -589,7 +589,7 @@ export function CustomerDetailWorkspace({
             <h2 className="text-base font-semibold">Financial summary</h2>
             <div className="mt-3 overflow-hidden rounded-xl border bg-card sm:grid sm:grid-cols-2 sm:divide-x">
               <Metric
-                label="Customer credit"
+                label="Credit owed to customer"
                 value={formatCurrency(customerCredit)}
               />
               <Metric label="Sales" value={formatCurrency(totalSales)} />

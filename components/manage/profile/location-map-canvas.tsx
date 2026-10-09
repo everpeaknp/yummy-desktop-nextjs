@@ -70,8 +70,7 @@ export default function LocationMapCanvas({
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    delete (L.Icon.Default.prototype as any)._getIconUrl;
+    delete (L.Icon.Default.prototype as { _getIconUrl?: unknown })._getIconUrl;
     L.Icon.Default.mergeOptions({
       iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
       iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
@@ -110,18 +109,14 @@ export default function LocationMapCanvas({
       };
     }
 
-    const refresh = () => map.invalidateSize({ animate: false });
-    refresh();
-    const t1 = window.setTimeout(refresh, 100);
-    const t2 = window.setTimeout(refresh, 350);
-    const t3 = window.setTimeout(refresh, 800);
-    window.addEventListener("resize", refresh);
+    const resizeObserver = new ResizeObserver(() => {
+      map.invalidateSize({ animate: false });
+    });
+    resizeObserver.observe(containerRef.current);
+    map.invalidateSize({ animate: false });
 
     return () => {
-      window.clearTimeout(t1);
-      window.clearTimeout(t2);
-      window.clearTimeout(t3);
-      window.removeEventListener("resize", refresh);
+      resizeObserver.disconnect();
       if (apiRef) apiRef.current = null;
       map.remove();
       mapRef.current = null;
