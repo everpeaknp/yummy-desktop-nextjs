@@ -2,8 +2,6 @@ import apiClient from "@/lib/api-client";
 import { AttendanceApis } from "@/lib/api/endpoints";
 import type {
   AttendanceAudit,
-  AttendanceConnectorPair,
-  AttendanceConnectorPairingCode,
   AttendanceDevice,
   AttendanceEntry,
   AttendanceMobileDevice,
@@ -199,12 +197,6 @@ export const attendanceApi = {
   },
   async decideMobileDevice(id: number, action: "approve" | "reject" | "revoke", reason?: string) {
     return unwrap<AttendanceMobileDevice>(await apiClient.post(AttendanceApis.mobileDeviceDecision(id, action), { reason }));
-  },
-  async createConnectorPairingCode(payload: { device_id?: number; ttl_seconds?: number }) {
-    return unwrap<AttendanceConnectorPairingCode>(await apiClient.post(AttendanceApis.connectorPairingCodes, payload));
-  },
-  async pairConnector(payload: { code: string; connector_version?: string }) {
-    return unwrap<AttendanceConnectorPair>(await apiClient.post(AttendanceApis.connectorPair, payload));
   },
 };
 

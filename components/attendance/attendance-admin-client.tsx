@@ -315,13 +315,9 @@ export function AttendanceAdminClient() {
   const [qrDataUrl, setQrDataUrl] = useState("");
   const [stationLabel, setStationLabel] = useState("Restaurant attendance");
   const [ttlSeconds, setTtlSeconds] = useState("60");
-  const [pairingCode, setPairingCode] = useState<{
-    code: string;
-    expires_at: string;
-  } | null>(null);
   const [deviceForm, setDeviceForm] = useState({
     name: "",
-    device_type: "zkteco_lan" as AttendanceDevice["device_type"],
+    device_type: "zkteco_cloud" as AttendanceDevice["device_type"],
     serial_number: "",
     ip_address: "",
     port: "4370",
@@ -1070,21 +1066,6 @@ export function AttendanceAdminClient() {
     }
   }
 
-  async function createPairingCode(deviceId: number) {
-    setBusy(true);
-    try {
-      const result = await attendanceApi.createConnectorPairingCode({
-        device_id: deviceId,
-        ttl_seconds: 600,
-      });
-      setPairingCode({ code: result.code, expires_at: result.expires_at });
-      toast.success("Connector pairing code created");
-    } catch (error) {
-      toast.error(errorMessage(error, "Failed to create pairing code"));
-    } finally {
-      setBusy(false);
-    }
-  }
 
   async function decideMobile(
     device: AttendanceMobileDevice,
@@ -2172,15 +2153,6 @@ export function AttendanceAdminClient() {
                       placeholder="Main entrance scanner"
                     />
                   </Field>
-                  <Field label="Connection type">
-                    <Select value={deviceForm.device_type} onValueChange={(value: AttendanceDevice["device_type"]) => setDeviceForm((current) => ({ ...current, device_type: value }))}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="zkteco_lan">ZKTeco LAN connector</SelectItem>
-                        <SelectItem value="zkteco_cloud">ZKTeco ADMS cloud push</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </Field>
                   <Field label="Serial number">
                     <Input
                       value={deviceForm.serial_number}
@@ -2192,32 +2164,7 @@ export function AttendanceAdminClient() {
                       }
                     />
                   </Field>
-                  {deviceForm.device_type === "zkteco_lan" ? <div className="grid grid-cols-[minmax(0,1fr)_110px] gap-3">
-                    <Field label="IP address">
-                      <Input
-                        value={deviceForm.ip_address}
-                        onChange={(event) =>
-                          setDeviceForm((current) => ({
-                            ...current,
-                            ip_address: event.target.value,
-                          }))
-                        }
-                        placeholder="192.168.1.50"
-                      />
-                    </Field>
-                    <Field label="Port">
-                      <Input
-                        type="number"
-                        value={deviceForm.port}
-                        onChange={(event) =>
-                          setDeviceForm((current) => ({
-                            ...current,
-                            port: event.target.value,
-                          }))
-                        }
-                      />
-                    </Field>
-                  </div> : <p className="text-xs text-muted-foreground">The terminal pushes attendance directly to Yummy. No LAN IP or connector pairing is needed.</p>}
+                  <p className="text-xs text-muted-foreground">This device pushes attendance directly to Yummy through ADMS. No LAN IP or connector pairing is needed.</p>
                   <Field label="Timezone">
                     <TimezoneSelect
                       value={deviceForm.timezone}
@@ -2331,36 +2278,6 @@ export function AttendanceAdminClient() {
                   </Button>
                 </CardContent>
               </Card>
-              {pairingCode ? (
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Connector Pairing Code</CardTitle>
-                    <CardDescription>
-                      Shown once. Use it on the restaurant LAN connector.
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    <p className="break-all rounded-md border bg-muted p-3 font-mono text-sm">
-                      {pairingCode.code}
-                    </p>
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="text-xs text-muted-foreground">
-                        Expires {formatDateTime(pairingCode.expires_at)}
-                      </span>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() =>
-                          copy(pairingCode.code, "Pairing code copied")
-                        }
-                      >
-                        <Copy className="mr-2 h-4 w-4" />
-                        Copy
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              ) : null}
             </div>
             <div className="space-y-5">
               {biometricUnavailable ? (
@@ -2381,7 +2298,6 @@ export function AttendanceAdminClient() {
                 staffProfiles={staffProfiles}
                 usersById={usersById}
                 onToggle={toggleDevice}
-                onPair={createPairingCode}
               />
             </div>
           </div>
@@ -3042,7 +2958,6 @@ function DeviceTable({
   staffProfiles,
   usersById,
   onToggle,
-  onPair,
 }: {
   devices: AttendanceDevice[];
   mappings: StaffDeviceMapping[];
@@ -3050,7 +2965,6 @@ function DeviceTable({
   staffProfiles: StaffProfile[];
   usersById: Map<number, StaffUser>;
   onToggle: (device: AttendanceDevice, checked: boolean) => void;
-  onPair: (deviceId: number) => void;
 }) {
   return (
     <Card>
@@ -3069,14 +2983,13 @@ function DeviceTable({
                 <TableHead>Connection</TableHead>
                 <TableHead>Last sync</TableHead>
                 <TableHead>Active</TableHead>
-                <TableHead className="text-right">Connector</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {devices.length === 0 ? (
                 <TableRow>
                   <TableCell
-                    colSpan={5}
+                    colSpan={4}
                     className="h-24 text-center text-muted-foreground"
                   >
                     No attendance devices registered.
@@ -3103,15 +3016,6 @@ function DeviceTable({
                         checked={device.is_active}
                         onCheckedChange={(checked) => onToggle(device, checked)}
                       />
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {device.device_type === "zkteco_lan" ? <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => onPair(device.id)}
-                      >
-                        Pair
-                      </Button> : <span className="text-sm text-muted-foreground">Push</span>}
                     </TableCell>
                   </TableRow>
                 ))

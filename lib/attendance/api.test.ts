@@ -84,19 +84,17 @@ describe("attendanceApi", () => {
     expect(exported.filename).toBe("attendance.csv");
   });
 
-  it("calls QR device connector and mobile-device endpoints", async () => {
+  it("calls QR device and mobile-device endpoints", async () => {
     await attendanceApi.createQrSession({ station_label: "Front", ttl_seconds: 60 });
     await attendanceApi.createDevice({ name: "ZK" });
     await attendanceApi.updateDevice(7, { is_active: false });
     await attendanceApi.upsertDeviceMapping({ device_id: 7, staff_id: 2, device_user_id: "42" });
-    await attendanceApi.createConnectorPairingCode({ device_id: 7, ttl_seconds: 600 });
     await attendanceApi.decideMobileDevice(3, "revoke", "lost phone");
 
     expect(mocked.post).toHaveBeenCalledWith("/attendance/qr-sessions", { station_label: "Front", ttl_seconds: 60 });
     expect(mocked.post).toHaveBeenCalledWith("/attendance/devices", { name: "ZK" });
     expect(mocked.patch).toHaveBeenCalledWith("/attendance/devices/7", { is_active: false });
     expect(mocked.post).toHaveBeenCalledWith("/attendance/device-mappings", { device_id: 7, staff_id: 2, device_user_id: "42" });
-    expect(mocked.post).toHaveBeenCalledWith("/attendance/connectors/pairing-codes", { device_id: 7, ttl_seconds: 600 });
     expect(mocked.post).toHaveBeenCalledWith("/attendance/mobile-devices/3/revoke", { reason: "lost phone" });
   });
 });
