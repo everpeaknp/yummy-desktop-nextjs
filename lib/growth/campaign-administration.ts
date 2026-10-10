@@ -120,9 +120,9 @@ export function campaignApprovalChecks(
   if (isSms) {
     checks.push({
       key: "template",
-      label: "SMS ready",
+      label: "SMS message prepared",
       ready: true,
-      detail: "SMS uses the approved campaign copy; no provider template is required.",
+      detail: "The backend checks the approved SMSPasal template before approval.",
     });
   } else if (isEmail) {
     // Email campaigns need template approval but not poster

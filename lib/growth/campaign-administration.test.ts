@@ -85,6 +85,22 @@ describe("Growth campaign administration", () => {
     expect(isCampaignApprovalReady(campaignApprovalChecks(campaign, templates, null))).toBe(false);
   });
 
+  it("does not claim that SMS campaigns bypass provider templates", () => {
+    const campaign = {
+      channel: "sms",
+      offer: { id: 3 },
+      approved_message_snapshot: "Prepared message",
+    } as GrowthCampaign;
+
+    expect(campaignApprovalChecks(campaign, [], null)).toContainEqual(
+      expect.objectContaining({
+        key: "template",
+        label: "SMS message prepared",
+        detail: "The backend checks the approved SMSPasal template before approval.",
+      }),
+    );
+  });
+
   it("sends an explicit Nepal offset with the restaurant IANA timezone", () => {
     expect(buildGrowthScheduleInput("2026-08-04T18:30", "Asia/Kathmandu")).toEqual({
       scheduled_at: "2026-08-04T18:30:00+05:45",

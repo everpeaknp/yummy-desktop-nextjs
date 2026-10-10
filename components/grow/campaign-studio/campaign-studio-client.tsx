@@ -305,6 +305,7 @@ export function CampaignStudioClient() {
   const [customCandidates, setCustomCandidates] = useState<NonNullable<GrowthSegmentPreview["customers"]>>([]);
   const [recommendations, setRecommendations] = useState<GrowthOpportunitySummary[]>([]);
   const [recommendationsLoading, setRecommendationsLoading] = useState(true);
+  const [showAllRecommendations, setShowAllRecommendations] = useState(false);
   const [growthSettings, setGrowthSettings] = useState<GrowthSettings | null>(null);
   const [savedCampaign, setSavedCampaign] = useState<GrowthCampaign | null>(null);
   const [saving, setSaving] = useState(false);
@@ -508,8 +509,12 @@ export function CampaignStudioClient() {
 
   useEffect(() => {
     let active = true;
+    // Recalculate signals when opening the studio. A favourite-item signal is
+    // derived from newly completed orders, so a cached/stale opportunity list
+    // must not hide it until the overview is manually refreshed.
     growthApi
-      .listOpportunities()
+      .refreshOpportunities()
+      .catch(() => growthApi.listOpportunities())
       .then((result) => {
         if (active) setRecommendations(result);
       })
@@ -527,13 +532,20 @@ export function CampaignStudioClient() {
   const recommendedAudiences = useMemo(
     () => recommendations
       .filter((opportunity) =>
-        opportunity.eligible_customer_count > 0 &&
         opportunity.status !== "dismissed" &&
         opportunity.status !== "converted" &&
         opportunity.status !== "expired",
-      )
-      .slice(0, 3),
+      ),
     [recommendations],
+  );
+  const visibleRecommendedAudiences = useMemo(
+    () => showAllRecommendations
+      ? recommendedAudiences
+      : recommendedAudiences.slice(0, 3),
+    [recommendedAudiences, showAllRecommendations],
+  );
+  const hasFavouriteItemRecommendation = recommendedAudiences.some(
+    (opportunity) => opportunity.id === "signal:favourite_items",
   );
 
   useEffect(() => {
@@ -1152,17 +1164,22 @@ export function CampaignStudioClient() {
                   </div>
                 ) : recommendedAudiences.length ? (
                   <div className="space-y-2">
-                    {recommendedAudiences.map((opportunity) => {
+                    {visibleRecommendedAudiences.map((opportunity) => {
                       const recommendedChannel = recommendedCampaignChannel(opportunity, growthSettings);
+                      const canReceiveNow = opportunity.eligible_customer_count > 0;
                       return (
                         <div key={String(opportunity.id)} className="flex items-center justify-between gap-3 rounded-xl border border-border p-3">
                           <div className="min-w-0">
                             <p className="font-semibold leading-5">{opportunity.title}</p>
                             <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">{opportunity.explanation || "A customer group is ready for a relevant offer."}</p>
-                            <p className="mt-1 text-xs font-medium text-primary">{opportunity.eligible_customer_count.toLocaleString("en-NP")} can receive it · {recommendedChannel.toUpperCase()}</p>
+                            <p className={cn("mt-1 text-xs font-medium", canReceiveNow ? "text-primary" : "text-muted-foreground")}>
+                              {canReceiveNow
+                                ? `${opportunity.eligible_customer_count.toLocaleString("en-NP")} can receive it · ${recommendedChannel.toUpperCase()}`
+                                : "Matches found · no customer can receive it right now"}
+                            </p>
                           </div>
-                          {isReadOnly ? (
-                            <Button size="sm" variant="outline" disabled className="shrink-0">Use</Button>
+                          {isReadOnly || !canReceiveNow ? (
+                            <Button size="sm" variant="outline" disabled className="shrink-0">{canReceiveNow ? "Use" : "Not ready"}</Button>
                           ) : (
                             <Button asChild size="sm" variant="outline" className="shrink-0">
                               <Link href={campaignRecommendationHref(opportunity, recommendedChannel)}>Use</Link>
@@ -1171,9 +1188,25 @@ export function CampaignStudioClient() {
                         </div>
                       );
                     })}
-                    <Button asChild variant="link" size="sm" className="h-auto px-0 text-primary">
-                      <Link href="/grow">View all suggestions</Link>
-                    </Button>
+                    {recommendedAudiences.length > 3 && (
+                      <Button
+                        type="button"
+                        variant="link"
+                        size="sm"
+                        className="h-auto px-0 text-primary"
+                        onClick={() => setShowAllRecommendations((current) => !current)}
+                        aria-expanded={showAllRecommendations}
+                      >
+                        {showAllRecommendations
+                          ? "Show fewer suggestions"
+                          : `View all ${recommendedAudiences.length} suggestions`}
+                      </Button>
+                    )}
+                    {!hasFavouriteItemRecommendation && (
+                      <p className="pt-1 text-xs leading-5 text-muted-foreground">
+                        Favourite-item suggestions appear after the same menu item is on 2 completed orders for the same customer in the last 90 days.
+                      </p>
+                    )}
                   </div>
                 ) : (
                   <p className="rounded-xl border border-dashed border-border px-3 py-3 text-sm text-muted-foreground">No data-backed recommendation yet. Choose a campaign goal or create your own audience below.</p>

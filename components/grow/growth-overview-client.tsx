@@ -267,7 +267,9 @@ export function GrowthOverviewClient() {
                       {(opportunity.sms_eligible_customer_count ?? 0) > 0 && <span className="text-muted-foreground tabular-nums">At least {count(opportunity.estimated_sms_credits)} SMS credits</span>}
                     </div>
                   </div>
-                  {hasPermission(user, "grow.campaigns.manage") && <Button asChild><Link href={campaignRecommendationHref(opportunity, featuredChannel)}>Review Campaign<ArrowRight aria-hidden="true" className="ml-2 h-4 w-4" /></Link></Button>}
+                  {hasPermission(user, "grow.campaigns.manage") && (opportunity.eligible_customer_count > 0
+                    ? <Button asChild><Link href={campaignRecommendationHref(opportunity, featuredChannel)}>Review Campaign<ArrowRight aria-hidden="true" className="ml-2 h-4 w-4" /></Link></Button>
+                    : <Button disabled>Not Ready to Send</Button>)}
                 </div>
                 {opportunities.length > 1 && (
                   <div className="mt-6 divide-y divide-border border-t border-border" aria-label="More campaign opportunities">
@@ -283,7 +285,9 @@ export function GrowthOverviewClient() {
                               {(item.sms_eligible_customer_count ?? 0) > 0 ? ` · at least ${count(item.estimated_sms_credits)} SMS credits` : ""}
                             </p>
                           </div>
-                          {hasPermission(user, "grow.campaigns.manage") && <Button asChild variant="outline" size="sm"><Link href={campaignRecommendationHref(item, channel)}>Review<ArrowRight aria-hidden="true" className="ml-2 h-4 w-4" /></Link></Button>}
+                          {hasPermission(user, "grow.campaigns.manage") && (item.eligible_customer_count > 0
+                            ? <Button asChild variant="outline" size="sm"><Link href={campaignRecommendationHref(item, channel)}>Review<ArrowRight aria-hidden="true" className="ml-2 h-4 w-4" /></Link></Button>
+                            : <Button variant="outline" size="sm" disabled>Not ready</Button>)}
                         </div>
                       );
                     })}
