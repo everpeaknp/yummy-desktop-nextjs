@@ -222,9 +222,26 @@ export function CampaignStudioClient() {
     ) return;
     appliedGoalRef.current = requestedGoal;
     patchDraft("playbookCode", requestedGoal);
+    if (requestedGoal === "custom") {
+      const selectedCustomers = (searchParams.get("customers") || "")
+        .split(",")
+        .map((value) => Number.parseInt(value, 10))
+        .filter((value) => Number.isSafeInteger(value) && value > 0)
+        .slice(0, 500);
+      patchDraft("customAudienceAll", selectedCustomers.length === 0);
+      patchDraft("audienceCustomerIds", selectedCustomers);
+    }
+    const requestedChannel = searchParams.get("channel");
+    if (requestedChannel === "email" || requestedChannel === "sms") {
+      patchDraft("channel", requestedChannel);
+      patchDraft("selectedMessageTemplateId", "");
+      patchDraft("selectedSmsTemplateCode", "");
+    }
     setStep(1);
     setFurthestStep(1);
-    if (!nameCustomized) patchDraft("campaignName", getCampaignPlaybook(requestedGoal).title);
+    if (!nameCustomized) {
+      patchDraft("campaignName", searchParams.get("name") || getCampaignPlaybook(requestedGoal).title);
+    }
   }, [hydrated, nameCustomized, patchDraft, searchParams, setFurthestStep, setStep]);
 
   const setPlaybookCode = (value: GrowthPlaybookCode) => patchDraft("playbookCode", value);

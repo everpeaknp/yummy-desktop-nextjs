@@ -29,6 +29,7 @@ import { growthApi } from "@/lib/api/growth";
 import type {
   GrowthCampaign,
   GrowthCampaignStatus,
+  GrowthOpportunitySummary,
   GrowthReadinessDomain,
   GrowthSettings,
   GrowthSmsWallet,
@@ -90,6 +91,37 @@ function friendlyOpportunity(text: string): string {
     .replace(/configured lookback/gi, "recent period")
     .replace(/configured active period/gi, "recent period")
     .replace(/observed rules?/gi, "recent visits");
+}
+
+function opportunityChannel(
+  opportunity: GrowthOpportunitySummary,
+  settings: GrowthSettings | null,
+): "email" | "sms" {
+  const smsReach = opportunity.sms_eligible_customer_count ?? 0;
+  const smsAvailable = Boolean(settings?.sms_enabled && smsReach > 0);
+  if (opportunity.recommended_channel === "sms" && smsAvailable) return "sms";
+  if (settings?.email_enabled && (opportunity.email_eligible_customer_count ?? 0) > 0) return "email";
+  return smsAvailable ? "sms" : "email";
+}
+
+function opportunityHref(
+  opportunity: GrowthOpportunitySummary,
+  channel: "email" | "sms",
+): string {
+  if (opportunity.action_route && opportunity.action_route !== "/grow/campaigns/new") {
+    return opportunity.action_route;
+  }
+  const params = new URLSearchParams({
+    // Smart suggestions use the proven custom-audience flow. Fixed
+    // lifecycle playbooks retain their existing audience rules.
+    goal: opportunity.audience_customer_ids?.length ? "custom" : opportunity.playbook_code,
+    channel,
+  });
+  if (opportunity.audience_customer_ids?.length) {
+    params.set("customers", opportunity.audience_customer_ids.join(","));
+    params.set("name", opportunity.title);
+  }
+  return `/grow/campaigns/new?${params.toString()}`;
 }
 
 function readinessName(domain: GrowthReadinessDomain): string {
@@ -171,7 +203,11 @@ export function GrowthOverviewClient() {
   const setupItems = (overview?.readiness.domains ?? []).filter((domain) =>
     domain.status !== "ready" && ["campaigns", "customers"].includes(domain.key || domain.code || domain.domain || ""),
   );
-  const opportunity = overview?.opportunities[0];
+  const opportunities = overview?.opportunities ?? [];
+  const opportunity = opportunities[0];
+  const featuredChannel = opportunity
+    ? opportunityChannel(opportunity, settings)
+    : "email";
   const summary = overview?.summary ?? {};
   const results = overview?.recent_results ?? [];
   const sent = results.reduce((total, item) => total + (item.sent_count || 0), 0);
@@ -201,7 +237,7 @@ export function GrowthOverviewClient() {
             </Button>
           )}
           {hasPermission(user, "grow.campaigns.manage") && (
-            <Button asChild size="sm"><Link href="/grow/campaigns/new"><Megaphone aria-hidden="true" className="mr-2 h-4 w-4" />Create Campaign</Link></Button>
+            <Button asChild size="sm"><Link href="/grow/campaigns/new?goal=custom"><Megaphone aria-hidden="true" className="mr-2 h-4 w-4" />Create Campaign</Link></Button>
           )}
         </div>
       </header>
@@ -244,22 +280,55 @@ export function GrowthOverviewClient() {
       <section className="grid items-start gap-6 xl:grid-cols-[1.35fr_0.65fr]">
         <Card className="overflow-hidden border-primary/20 bg-primary/[0.035] shadow-none">
           <CardHeader className="pb-3">
-            <div className="flex items-center gap-2 text-sm font-semibold text-primary"><Sprout aria-hidden="true" className="h-4 w-4" />Recommended Next Move</div>
+            <div className="flex items-center gap-2 text-sm font-semibold text-primary"><Sprout aria-hidden="true" className="h-4 w-4" />Smart campaign suggestions</div>
+            <CardDescription>Suggestions based on completed visits and current marketing permission—not predictions.</CardDescription>
           </CardHeader>
           <CardContent className="pb-6">
             {opportunity ? (
-              <div className="grid gap-6 lg:grid-cols-[1fr_auto] lg:items-end">
-                <div>
-                  <CardTitle className="text-pretty text-2xl">{opportunity.title}</CardTitle>
-                  <CardDescription className="mt-3 max-w-2xl text-sm leading-6">{friendlyOpportunity(opportunity.explanation || opportunity.suggested_action || "Create a timely offer for these customers.")}</CardDescription>
-                  <p className="mt-4 text-sm font-semibold"><Users aria-hidden="true" className="mr-2 inline h-4 w-4 text-primary" />{count(opportunity.eligible_customer_count)} customers can receive this campaign</p>
+              <div>
+                <div className="grid gap-6 lg:grid-cols-[1fr_auto] lg:items-end">
+                  <div>
+                    <Badge variant="outline" className="mb-3 border-primary/25 bg-background text-primary">Best next move</Badge>
+                    <CardTitle className="text-pretty text-2xl">{opportunity.title}</CardTitle>
+                    <CardDescription className="mt-3 max-w-2xl text-sm leading-6">{friendlyOpportunity(opportunity.explanation || opportunity.suggested_action || "Create a timely offer for these customers.")}</CardDescription>
+                    <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-sm">
+                      <span className="font-semibold tabular-nums"><Mail aria-hidden="true" className="mr-2 inline h-4 w-4 text-primary" />{count(opportunity.email_eligible_customer_count)} by email</span>
+                      <span className="font-semibold tabular-nums"><MessageSquareText aria-hidden="true" className="mr-2 inline h-4 w-4 text-primary" />{count(opportunity.sms_eligible_customer_count)} by SMS</span>
+                      {(opportunity.sms_eligible_customer_count ?? 0) > 0 && <span className="text-muted-foreground tabular-nums">At least {count(opportunity.estimated_sms_credits)} SMS credits</span>}
+                    </div>
+                  </div>
+                  {hasPermission(user, "grow.campaigns.manage") && <Button asChild><Link href={opportunityHref(opportunity, featuredChannel)}>Review Campaign<ArrowRight aria-hidden="true" className="ml-2 h-4 w-4" /></Link></Button>}
                 </div>
-                {hasPermission(user, "grow.campaigns.manage") && (
-                  <Button asChild><Link href={`/grow/campaigns/new?goal=${encodeURIComponent(opportunity.playbook_code)}&opportunity=${encodeURIComponent(String(opportunity.id))}`}>Create This Campaign<ArrowRight aria-hidden="true" className="ml-2 h-4 w-4" /></Link></Button>
+                {opportunities.length > 1 && (
+                  <div className="mt-6 divide-y divide-border border-t border-border" aria-label="More campaign opportunities">
+                    {opportunities.slice(1).map((item) => {
+                      const channel = opportunityChannel(item, settings);
+                      return (
+                        <div key={item.id} className="grid gap-3 py-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+                          <div className="min-w-0">
+                            <p className="font-semibold">{item.title}</p>
+                            <p className="mt-1 text-sm leading-5 text-muted-foreground">{friendlyOpportunity(item.explanation || item.suggested_action || "Review this customer opportunity.")}</p>
+                            <p className="mt-2 text-xs text-muted-foreground tabular-nums">
+                              {count(item.email_eligible_customer_count)} email · {count(item.sms_eligible_customer_count)} SMS
+                              {(item.sms_eligible_customer_count ?? 0) > 0 ? ` · at least ${count(item.estimated_sms_credits)} SMS credits` : ""}
+                            </p>
+                          </div>
+                          {hasPermission(user, "grow.campaigns.manage") && <Button asChild variant="outline" size="sm"><Link href={opportunityHref(item, channel)}>Review<ArrowRight aria-hidden="true" className="ml-2 h-4 w-4" /></Link></Button>}
+                        </div>
+                      );
+                    })}
+                  </div>
                 )}
               </div>
             ) : (
-              <div className="py-4"><CardTitle className="text-xl">Keep Building Your Customer List</CardTitle><CardDescription className="mt-2">New campaign suggestions will appear as more customers visit and join your offers.</CardDescription><Button asChild variant="outline" className="mt-4"><Link href="/grow/subscribers">View Customers</Link></Button></div>
+              <div className="py-4">
+                <CardTitle className="text-xl">No smart suggestion right now</CardTitle>
+                <CardDescription className="mt-2 max-w-xl leading-6">Your customers may not match a visit pattern yet, or they may have received an offer recently. You can still create a campaign for everyone who can receive it or select customers yourself.</CardDescription>
+                <div className="mt-4 flex flex-wrap gap-3">
+                  {hasPermission(user, "grow.campaigns.manage") && <Button asChild><Link href="/grow/campaigns/new?goal=custom">Create Campaign<ArrowRight aria-hidden="true" className="ml-2 h-4 w-4" /></Link></Button>}
+                  <Button asChild variant="outline"><Link href="/grow/subscribers">View Customers</Link></Button>
+                </div>
+              </div>
             )}
           </CardContent>
         </Card>

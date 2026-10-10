@@ -69,6 +69,11 @@ export interface GrowthOpportunitySummary {
   explanation?: string | null;
   suggested_action?: string | null;
   eligible_customer_count: number;
+  email_eligible_customer_count?: number;
+  sms_eligible_customer_count?: number;
+  recommended_channel?: "email" | "sms";
+  estimated_sms_credits?: number;
+  audience_customer_ids?: number[];
   readiness_status: GrowthReadinessStatus;
   data_status?: GrowthDataStatus;
   confidence?: "high" | "medium" | "low" | null;
