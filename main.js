@@ -169,6 +169,12 @@ function isOAuthPopupUrl(url) {
   }
 }
 
+function sanitizeUserAgent(ua) {
+  return String(ua || '')
+    .replace(/Electron\/[^\s]+\s*/gi, '')
+    .trim();
+}
+
 function attachOAuthPopupHandler(webContents) {
   if (!webContents || webContents.isDestroyed()) return;
   webContents.setWindowOpenHandler(({ url }) => {
@@ -182,7 +188,6 @@ function attachOAuthPopupHandler(webContents) {
           parent: getLiveMainWindow() || undefined,
           modal: false,
           webPreferences: {
-            preload: path.join(__dirname, 'preload.js'),
             contextIsolation: true,
             nodeIntegration: false,
             partition: PERSIST_PARTITION,
@@ -507,6 +512,23 @@ function setupAutoUpdater() {
 }
 
 app.whenReady().then(() => {
+  try {
+    const defaultSes = session.defaultSession;
+    if (defaultSes) {
+      defaultSes.setUserAgent(sanitizeUserAgent(defaultSes.getUserAgent()));
+    }
+    const persistSes = session.fromPartition(PERSIST_PARTITION);
+    if (persistSes) {
+      persistSes.setUserAgent(sanitizeUserAgent(persistSes.getUserAgent()));
+    }
+  } catch (err) {
+    log(`[session-ua] failed: ${String(err?.message || err)}`);
+  }
+
+  app.on('web-contents-created', (_, contents) => {
+    attachOAuthPopupHandler(contents);
+  });
+
   logAuthStorageDiagnostics('startup');
   createWindow();
   setupAutoUpdater();
