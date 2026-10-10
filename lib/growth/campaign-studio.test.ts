@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import type { GrowthMessageTemplate } from "@/lib/api/growth-types";
+import type { GrowthMessageTemplate, GrowthSettings } from "@/lib/api/growth-types";
 import {
   approvedImageTemplatesForLanguage,
   buildCampaignCreateInput,
+  campaignRecommendationHref,
   campaignStudioActionPolicy,
   getCampaignPlaybook,
+  getSmartCampaignSuggestion,
+  recommendedCampaignChannel,
   validateCampaignOffer,
   type CampaignOfferDraft,
 } from "@/lib/growth/campaign-studio";
@@ -126,5 +129,73 @@ describe("Campaign Studio SMS drafts", () => {
     expect(input.email_subject).toBeNull();
     expect(input.creative_asset_id).toBeUndefined();
     expect(input.message_template_id).toBeUndefined();
+  });
+});
+
+describe("Campaign Studio favourite-item personalization", () => {
+  it("marks only email drafts as favourite-item personalized", () => {
+    const input = buildCampaignCreateInput({
+      name: "Favourite item offer",
+      playbookCode: "custom",
+      channel: "email",
+      offer: validFixedOffer,
+      language: "en",
+      emailSubject: "Your favourite is waiting",
+      emailBodyHtml: "Hi {{customer_name}}, enjoy {{favourite_item}} with {{offer_code}}.",
+      personalizationKind: "favourite_item",
+      audienceCustomerIds: [3],
+    });
+
+    expect(input.personalization_kind).toBe("favourite_item");
+  });
+});
+
+describe("Campaign Studio smart suggestions", () => {
+  it("preserves the selected audience and favourite-item intent when opening a recommendation", () => {
+    const href = campaignRecommendationHref({
+      id: "signal:favourite_items",
+      playbook_code: "custom",
+      title: "Promote favourite items",
+      eligible_customer_count: 2,
+      audience_customer_ids: [7, 12],
+      readiness_status: "ready",
+    }, "sms");
+
+    expect(href).toContain("goal=custom");
+    expect(href).toContain("channel=sms");
+    expect(href).toContain("customers=7%2C12");
+    expect(href).toContain("personalization=favourite_item");
+  });
+
+  it("does not point staff to SMS when restaurant SMS is disabled", () => {
+    const channel = recommendedCampaignChannel({
+      id: "signal:frequent_visitors",
+      playbook_code: "custom",
+      title: "Thank frequent visitors",
+      eligible_customer_count: 3,
+      email_eligible_customer_count: 3,
+      sms_eligible_customer_count: 3,
+      recommended_channel: "sms",
+      readiness_status: "ready",
+    }, {
+      email_enabled: true,
+      sms_enabled: false,
+    } as GrowthSettings);
+
+    expect(channel).toBe("email");
+  });
+
+  it("keeps the unused-points intent and its email copy together", () => {
+    const suggestion = getSmartCampaignSuggestion("unused_points");
+
+    expect(suggestion?.title).toBe("Customers with unused points");
+    expect(suggestion?.emailCopy.headline).toBe("Your points are ready to use");
+    expect(
+      suggestion?.emailCopy.message("Yummy", "Rs. 100 off above Rs. 600", "2026-10-17"),
+    ).toContain("points ready to use at Yummy");
+  });
+
+  it("does not treat an unknown query value as a smart suggestion", () => {
+    expect(getSmartCampaignSuggestion("unknown")).toBeNull();
   });
 });

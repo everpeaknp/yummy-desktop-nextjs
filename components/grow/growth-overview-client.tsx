@@ -36,6 +36,7 @@ import type {
   NormalizedGrowthOverview,
 } from "@/lib/api/growth-types";
 import { campaignStatusLabels } from "@/lib/growth/campaign-administration";
+import { campaignRecommendationHref, recommendedCampaignChannel } from "@/lib/growth/campaign-studio";
 import { hasPermission } from "@/lib/role-permissions";
 import { cn } from "@/lib/utils";
 
@@ -91,37 +92,6 @@ function friendlyOpportunity(text: string): string {
     .replace(/configured lookback/gi, "recent period")
     .replace(/configured active period/gi, "recent period")
     .replace(/observed rules?/gi, "recent visits");
-}
-
-function opportunityChannel(
-  opportunity: GrowthOpportunitySummary,
-  settings: GrowthSettings | null,
-): "email" | "sms" {
-  const smsReach = opportunity.sms_eligible_customer_count ?? 0;
-  const smsAvailable = Boolean(settings?.sms_enabled && smsReach > 0);
-  if (opportunity.recommended_channel === "sms" && smsAvailable) return "sms";
-  if (settings?.email_enabled && (opportunity.email_eligible_customer_count ?? 0) > 0) return "email";
-  return smsAvailable ? "sms" : "email";
-}
-
-function opportunityHref(
-  opportunity: GrowthOpportunitySummary,
-  channel: "email" | "sms",
-): string {
-  if (opportunity.action_route && opportunity.action_route !== "/grow/campaigns/new") {
-    return opportunity.action_route;
-  }
-  const params = new URLSearchParams({
-    // Smart suggestions use the proven custom-audience flow. Fixed
-    // lifecycle playbooks retain their existing audience rules.
-    goal: opportunity.audience_customer_ids?.length ? "custom" : opportunity.playbook_code,
-    channel,
-  });
-  if (opportunity.audience_customer_ids?.length) {
-    params.set("customers", opportunity.audience_customer_ids.join(","));
-    params.set("name", opportunity.title);
-  }
-  return `/grow/campaigns/new?${params.toString()}`;
 }
 
 function readinessName(domain: GrowthReadinessDomain): string {
@@ -206,7 +176,7 @@ export function GrowthOverviewClient() {
   const opportunities = overview?.opportunities ?? [];
   const opportunity = opportunities[0];
   const featuredChannel = opportunity
-    ? opportunityChannel(opportunity, settings)
+    ? recommendedCampaignChannel(opportunity, settings)
     : "email";
   const summary = overview?.summary ?? {};
   const results = overview?.recent_results ?? [];
@@ -297,12 +267,12 @@ export function GrowthOverviewClient() {
                       {(opportunity.sms_eligible_customer_count ?? 0) > 0 && <span className="text-muted-foreground tabular-nums">At least {count(opportunity.estimated_sms_credits)} SMS credits</span>}
                     </div>
                   </div>
-                  {hasPermission(user, "grow.campaigns.manage") && <Button asChild><Link href={opportunityHref(opportunity, featuredChannel)}>Review Campaign<ArrowRight aria-hidden="true" className="ml-2 h-4 w-4" /></Link></Button>}
+                  {hasPermission(user, "grow.campaigns.manage") && <Button asChild><Link href={campaignRecommendationHref(opportunity, featuredChannel)}>Review Campaign<ArrowRight aria-hidden="true" className="ml-2 h-4 w-4" /></Link></Button>}
                 </div>
                 {opportunities.length > 1 && (
                   <div className="mt-6 divide-y divide-border border-t border-border" aria-label="More campaign opportunities">
                     {opportunities.slice(1).map((item) => {
-                      const channel = opportunityChannel(item, settings);
+                      const channel = recommendedCampaignChannel(item, settings);
                       return (
                         <div key={item.id} className="grid gap-3 py-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
                           <div className="min-w-0">
@@ -313,7 +283,7 @@ export function GrowthOverviewClient() {
                               {(item.sms_eligible_customer_count ?? 0) > 0 ? ` · at least ${count(item.estimated_sms_credits)} SMS credits` : ""}
                             </p>
                           </div>
-                          {hasPermission(user, "grow.campaigns.manage") && <Button asChild variant="outline" size="sm"><Link href={opportunityHref(item, channel)}>Review<ArrowRight aria-hidden="true" className="ml-2 h-4 w-4" /></Link></Button>}
+                          {hasPermission(user, "grow.campaigns.manage") && <Button asChild variant="outline" size="sm"><Link href={campaignRecommendationHref(item, channel)}>Review<ArrowRight aria-hidden="true" className="ml-2 h-4 w-4" /></Link></Button>}
                         </div>
                       );
                     })}

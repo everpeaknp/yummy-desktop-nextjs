@@ -60,8 +60,10 @@ import type {
   GrowthChannelCode,
   GrowthLanguage,
   GrowthMessageTemplate,
+  GrowthOpportunitySummary,
   GrowthPlaybookCode,
   GrowthSegmentPreview,
+  GrowthSettings,
   GrowthSmsEstimate,
   GrowthSmsTemplate,
   GrowthSmsWallet,
@@ -72,11 +74,14 @@ import {
   approvedTemplatesForLanguageAndChannel,
   CAMPAIGN_PLAYBOOKS,
   CAMPAIGN_REVIEW_CAVEATS,
+  campaignRecommendationHref,
   campaignStudioActionPolicy,
   deterministicCampaignCopy,
   formatCampaignOffer,
   getCampaignPlaybook,
+  getSmartCampaignSuggestion,
   PREVIEW_COUPON_CODE,
+  recommendedCampaignChannel,
   validateCampaignOffer,
   type CampaignOfferDraft,
   type CampaignPosterTemplate,
@@ -179,6 +184,8 @@ export function CampaignStudioClient() {
   const restaurant = useRestaurant((state) => state.restaurant);
   const restaurantName = restaurant?.name || "Your restaurant";
   const hydrated = useCampaignStudioHydrated();
+  const smartSuggestion = getSmartCampaignSuggestion(searchParams.get("signal"));
+  const isFavouriteItemSuggestion = searchParams.get("personalization") === "favourite_item";
 
   // Draft fields live in a persisted Zustand store (see use-campaign-studio.ts)
   // so an accidental refresh/navigation mid-draft doesn't lose the campaign,
@@ -215,12 +222,14 @@ export function CampaignStudioClient() {
   useEffect(() => {
     if (!hydrated) return;
     const requestedGoal = searchParams.get("goal") as GrowthPlaybookCode | null;
+    const requestedSignal = searchParams.get("signal") || "";
+    const requestKey = `${requestedGoal || ""}:${requestedSignal}:${searchParams.get("channel") || ""}:${searchParams.get("customers") || ""}`;
     if (
       !requestedGoal ||
-      appliedGoalRef.current === requestedGoal ||
+      appliedGoalRef.current === requestKey ||
       !["second_visit", "win_back", "slow_day", "custom"].includes(requestedGoal)
     ) return;
-    appliedGoalRef.current = requestedGoal;
+    appliedGoalRef.current = requestKey;
     patchDraft("playbookCode", requestedGoal);
     if (requestedGoal === "custom") {
       const selectedCustomers = (searchParams.get("customers") || "")
@@ -230,6 +239,12 @@ export function CampaignStudioClient() {
         .slice(0, 500);
       patchDraft("customAudienceAll", selectedCustomers.length === 0);
       patchDraft("audienceCustomerIds", selectedCustomers);
+      if (smartSuggestion && selectedCustomers.length) {
+        patchDraft("offer", { ...offer, redemption_limit: selectedCustomers.length });
+      }
+    }
+    if (isFavouriteItemSuggestion || smartSuggestion) {
+      patchDraft("copyCustomized", false);
     }
     const requestedChannel = searchParams.get("channel");
     if (requestedChannel === "email" || requestedChannel === "sms") {
@@ -240,9 +255,9 @@ export function CampaignStudioClient() {
     setStep(1);
     setFurthestStep(1);
     if (!nameCustomized) {
-      patchDraft("campaignName", searchParams.get("name") || getCampaignPlaybook(requestedGoal).title);
+      patchDraft("campaignName", smartSuggestion?.title || searchParams.get("name") || getCampaignPlaybook(requestedGoal).title);
     }
-  }, [hydrated, nameCustomized, patchDraft, searchParams, setFurthestStep, setStep]);
+  }, [hydrated, isFavouriteItemSuggestion, nameCustomized, offer, patchDraft, searchParams, setFurthestStep, setStep, smartSuggestion]);
 
   const setPlaybookCode = (value: GrowthPlaybookCode) => patchDraft("playbookCode", value);
   const setChannel = (value: GrowthChannelCode) => {
@@ -288,6 +303,9 @@ export function CampaignStudioClient() {
   const [audienceLoading, setAudienceLoading] = useState(false);
   const [audienceError, setAudienceError] = useState<string | null>(null);
   const [customCandidates, setCustomCandidates] = useState<NonNullable<GrowthSegmentPreview["customers"]>>([]);
+  const [recommendations, setRecommendations] = useState<GrowthOpportunitySummary[]>([]);
+  const [recommendationsLoading, setRecommendationsLoading] = useState(true);
+  const [growthSettings, setGrowthSettings] = useState<GrowthSettings | null>(null);
   const [savedCampaign, setSavedCampaign] = useState<GrowthCampaign | null>(null);
   const [saving, setSaving] = useState(false);
   const [submittingReview, setSubmittingReview] = useState(false);
@@ -356,15 +374,31 @@ export function CampaignStudioClient() {
   );
 
   const starterCopy = useMemo(
-    () =>
-      deterministicCampaignCopy({
+    () => {
+      const copy = deterministicCampaignCopy({
         restaurantName,
         playbookCode,
         language,
         offer,
         channel,
-      }),
-    [channel, language, offer, playbookCode, restaurantName],
+      });
+      if (smartSuggestion && channel === "email") {
+        return {
+          headline: smartSuggestion.emailCopy.headline,
+          message: smartSuggestion.emailCopy.message(
+            restaurantName,
+            formatCampaignOffer(offer),
+            offer.valid_until,
+          ),
+        };
+      }
+      if (!isFavouriteItemSuggestion || channel !== "email") return copy;
+      return {
+        headline: `A favourite is waiting at ${restaurantName}`,
+        message: `Hi {{customer_name}}, your favourite, {{favourite_item}}, is waiting at ${restaurantName}. ${copy.message}`,
+      };
+    },
+    [channel, isFavouriteItemSuggestion, language, offer, playbookCode, restaurantName, smartSuggestion],
   );
 
   useEffect(() => {
@@ -386,9 +420,9 @@ export function CampaignStudioClient() {
 
   useEffect(() => {
     if (!nameCustomized) {
-      setCampaignName(`${playbook.shortTitle} offer`);
+      setCampaignName(smartSuggestion?.title || `${playbook.shortTitle} offer`);
     }
-  }, [nameCustomized, playbook.shortTitle]);
+  }, [nameCustomized, playbook.shortTitle, smartSuggestion]);
 
   useEffect(() => {
     let active = true;
@@ -461,10 +495,59 @@ export function CampaignStudioClient() {
   }, []);
 
   useEffect(() => {
+    let active = true;
+    growthApi.getSettings().then((result) => {
+      if (active) setGrowthSettings(result);
+    }).catch(() => {
+      if (active) setGrowthSettings(null);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    growthApi
+      .listOpportunities()
+      .then((result) => {
+        if (active) setRecommendations(result);
+      })
+      .catch(() => {
+        if (active) setRecommendations([]);
+      })
+      .finally(() => {
+        if (active) setRecommendationsLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const recommendedAudiences = useMemo(
+    () => recommendations
+      .filter((opportunity) =>
+        opportunity.eligible_customer_count > 0 &&
+        opportunity.status !== "dismissed" &&
+        opportunity.status !== "converted" &&
+        opportunity.status !== "expired",
+      )
+      .slice(0, 3),
+    [recommendations],
+  );
+
+  useEffect(() => {
     if (channel !== "sms" || smsTemplatesLoading) return;
+    if (isFavouriteItemSuggestion) {
+      const favouriteTemplate = smsTemplates.find((template) => template.code === "favourite_item_offer");
+      if (favouriteTemplate && selectedSmsTemplateCode !== favouriteTemplate.code) {
+        setSelectedSmsTemplateCode(favouriteTemplate.code);
+      }
+      return;
+    }
     const valid = smsTemplates.some((template) => template.code === selectedSmsTemplateCode);
     if (!valid) setSelectedSmsTemplateCode(smsTemplates[0]?.code ?? "");
-  }, [channel, selectedSmsTemplateCode, smsTemplates, smsTemplatesLoading]);
+  }, [channel, isFavouriteItemSuggestion, selectedSmsTemplateCode, smsTemplates, smsTemplatesLoading]);
 
   useEffect(() => {
     if (channel !== "sms" || message.trim().length === 0) {
@@ -672,8 +755,15 @@ export function CampaignStudioClient() {
           setPageError("Add a clear email subject and body before review.");
           return;
         }
+        if (isFavouriteItemSuggestion && !emailBodyHtml.includes("{{favourite_item}}")) {
+          setPageError("Keep {{favourite_item}} in the email so each customer receives their own favourite-item message.");
+          return;
+        }
       } else if (!selectedSmsTemplate) {
         setPageError("Choose a Yummy SMS template before review.");
+        return;
+      } else if (isFavouriteItemSuggestion && selectedSmsTemplate.code !== "favourite_item_offer") {
+        setPageError("Choose the Favourite item offer SMS template so every customer receives their own favourite item.");
         return;
       }
       if (channel !== "sms" && !selectedMessageTemplate) {
@@ -697,6 +787,7 @@ export function CampaignStudioClient() {
       emailSubject,
       emailBodyHtml,
       emailTemplate: emailPosterTemplate,
+      personalizationKind: isFavouriteItemSuggestion ? "favourite_item" : undefined,
       audienceCustomerIds: customAudienceAll ? [] : audienceCustomerIds,
     });
     return selectedMessageTemplate
@@ -726,6 +817,7 @@ export function CampaignStudioClient() {
              email_subject: channel === "email" ? emailSubject.trim() : undefined,
              email_body_html: channel === "email" ? emailBodyHtml.trim() : undefined,
              email_template: channel === "email" ? emailPosterTemplate : undefined,
+             personalization_kind: isFavouriteItemSuggestion ? "favourite_item" : undefined,
              audience_customer_ids:
                playbookCode === "custom"
                  ? (customAudienceAll ? [] : audienceCustomerIds)
@@ -801,6 +893,15 @@ export function CampaignStudioClient() {
 
   const suggestCopy = async () => {
     if (channel === "sms") return;
+    if (smartSuggestion) {
+      if (channel === "email") {
+        setEmailSubject(starterCopy.headline);
+        setEmailBodyHtml(starterCopy.message);
+      }
+      setCopyCustomized(true);
+      toast.success("Points reminder copy applied. Review it before submission.");
+      return;
+    }
     setSuggestingCopy(true);
     setPageError(null);
     
@@ -1037,25 +1138,47 @@ export function CampaignStudioClient() {
           <Card className="rounded-xl border border-border bg-card transition-all hover:shadow-md">
             <CardHeader className="space-y-3">
               <CardTitle className="text-xl">What do you want this campaign to do?</CardTitle>
-              <CardDescription className="text-sm">Choose a goal and Yummy will find customers who match it.</CardDescription>
+              <CardDescription className="text-sm">Start with a recommendation, choose a campaign goal, or select customers yourself.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-5">
-              <div className="space-y-2">
-                <Label htmlFor="campaign-name">Campaign name</Label>
-                <Input
-                  id="campaign-name"
-                  name="campaign_name"
-                  autoComplete="off"
-                  value={campaignName}
-                  maxLength={120}
-                  disabled={isReadOnly}
-                  onChange={(event) => {
-                    setCampaignName(event.target.value);
-                    setNameCustomized(true);
-                  }}
-                />
-                <p className="text-xs text-muted-foreground">Only your team sees this name.</p>
-              </div>
+              <section className="space-y-3" aria-labelledby="recommended-audiences-title">
+                <div>
+                  <h3 id="recommended-audiences-title" className="text-sm font-bold">Recommended audiences</h3>
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">Based on completed customer activity and current delivery permission.</p>
+                </div>
+                {recommendationsLoading ? (
+                  <div className="flex items-center gap-2 rounded-xl border border-border bg-muted/40 px-3 py-3 text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" />Finding suitable audiences…
+                  </div>
+                ) : recommendedAudiences.length ? (
+                  <div className="space-y-2">
+                    {recommendedAudiences.map((opportunity) => {
+                      const recommendedChannel = recommendedCampaignChannel(opportunity, growthSettings);
+                      return (
+                        <div key={String(opportunity.id)} className="flex items-center justify-between gap-3 rounded-xl border border-border p-3">
+                          <div className="min-w-0">
+                            <p className="font-semibold leading-5">{opportunity.title}</p>
+                            <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">{opportunity.explanation || "A customer group is ready for a relevant offer."}</p>
+                            <p className="mt-1 text-xs font-medium text-primary">{opportunity.eligible_customer_count.toLocaleString("en-NP")} can receive it · {recommendedChannel.toUpperCase()}</p>
+                          </div>
+                          {isReadOnly ? (
+                            <Button size="sm" variant="outline" disabled className="shrink-0">Use</Button>
+                          ) : (
+                            <Button asChild size="sm" variant="outline" className="shrink-0">
+                              <Link href={campaignRecommendationHref(opportunity, recommendedChannel)}>Use</Link>
+                            </Button>
+                          )}
+                        </div>
+                      );
+                    })}
+                    <Button asChild variant="link" size="sm" className="h-auto px-0 text-primary">
+                      <Link href="/grow">View all suggestions</Link>
+                    </Button>
+                  </div>
+                ) : (
+                  <p className="rounded-xl border border-dashed border-border px-3 py-3 text-sm text-muted-foreground">No data-backed recommendation yet. Choose a campaign goal or create your own audience below.</p>
+                )}
+              </section>
 
               <div className="space-y-2">
                 <Label>Delivery channel</Label>
@@ -1094,6 +1217,11 @@ export function CampaignStudioClient() {
                 </RadioGroup>
               </div>
 
+              <section className="space-y-3" aria-labelledby="campaign-goals-title">
+                <div>
+                  <h3 id="campaign-goals-title" className="text-sm font-bold">Campaign goals</h3>
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">Use a simple, proven goal when you do not need a tailored audience.</p>
+                </div>
               <RadioGroup
                 value={playbookCode}
                 onValueChange={(value) => {
@@ -1103,7 +1231,7 @@ export function CampaignStudioClient() {
                 className="gap-3"
                 disabled={isReadOnly}
               >
-                {CAMPAIGN_PLAYBOOKS.map((item) => (
+                {CAMPAIGN_PLAYBOOKS.filter((item) => item.code !== "custom").map((item) => (
                   <Label
                     key={item.code}
                     htmlFor={`playbook-${item.code}`}
@@ -1121,9 +1249,43 @@ export function CampaignStudioClient() {
                   </Label>
                 ))}
               </RadioGroup>
+              </section>
+
+              <section className="space-y-3 border-t border-border pt-5" aria-labelledby="manual-audience-title">
+                <div>
+                  <h3 id="manual-audience-title" className="text-sm font-bold">Choose customers yourself</h3>
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">Send an offer to everyone eligible, or select the people you want to reach.</p>
+                </div>
+                <button
+                  type="button"
+                  aria-pressed={playbookCode === "custom"}
+                  disabled={isReadOnly}
+                  onClick={() => {
+                    setPlaybookCode("custom");
+                    setReviewAccepted(false);
+                  }}
+                  className={cn(
+                    "flex w-full items-start gap-4 rounded-2xl border p-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60",
+                    playbookCode === "custom" && "border-primary bg-primary/5",
+                  )}
+                >
+                  <Users aria-hidden="true" className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
+                  <span>
+                    <span className="block font-bold">Choose your audience</span>
+                    <span className="mt-1 block text-sm font-normal leading-5 text-muted-foreground">Reach everyone eligible, or select specific customers yourself.</span>
+                  </span>
+                </button>
+              </section>
 
               {playbookCode === "custom" && (
                 <div className="space-y-3 border-t border-border pt-5">
+                  {smartSuggestion && !isFavouriteItemSuggestion && (
+                    <Alert className="border-primary/30 bg-primary/5">
+                      <Sparkles aria-hidden="true" className="h-4 w-4 text-primary" />
+                      <AlertTitle>{smartSuggestion.title}</AlertTitle>
+                      <AlertDescription>{smartSuggestion.audienceExplanation}</AlertDescription>
+                    </Alert>
+                  )}
                   <div className="flex items-start gap-3">
                     <Checkbox
                       id="custom-audience-all"
@@ -1185,6 +1347,23 @@ export function CampaignStudioClient() {
                   )}
                 </div>
               )}
+
+              <div className="space-y-2 border-t border-border pt-5">
+                <Label htmlFor="campaign-name">Campaign name</Label>
+                <Input
+                  id="campaign-name"
+                  name="campaign_name"
+                  autoComplete="off"
+                  value={campaignName}
+                  maxLength={120}
+                  disabled={isReadOnly}
+                  onChange={(event) => {
+                    setCampaignName(event.target.value);
+                    setNameCustomized(true);
+                  }}
+                />
+                <p className="text-xs text-muted-foreground">A name is suggested automatically. Only your team sees it.</p>
+              </div>
             </CardContent>
           </Card>
 
@@ -1234,7 +1413,7 @@ export function CampaignStudioClient() {
                   </div>
                   <div className="rounded-2xl border p-4">
                     <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Why this audience</p>
-                    <p className="mt-2 text-sm leading-6">{playbook.observedFact}</p>
+                    <p className="mt-2 text-sm leading-6">{smartSuggestion?.audienceExplanation || playbook.observedFact}</p>
                   </div>
                   {Object.keys(audience.exclusions || {}).length > 0 && (
                     <div>
@@ -1261,10 +1440,21 @@ export function CampaignStudioClient() {
         <div className="grid gap-6 xl:grid-cols-[1fr_0.75fr] overflow-x-hidden">
           <Card>
             <CardHeader>
-              <CardTitle>Offer rules</CardTitle>
-              <CardDescription>Choose a fixed discount or a percentage with a maximum discount amount.</CardDescription>
+              <CardTitle>{smartSuggestion ? `Offer for ${smartSuggestion.title.toLowerCase()}` : "Offer rules"}</CardTitle>
+              <CardDescription>
+                {smartSuggestion
+                  ? "Choose the thank-you offer that will accompany this customer reminder."
+                  : "Choose a fixed discount or a percentage with a maximum discount amount."}
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-5">
+              {smartSuggestion && (
+                <Alert className="border-primary/30 bg-primary/5">
+                  <Info aria-hidden="true" className="h-4 w-4 text-primary" />
+                  <AlertTitle>Keep the points reminder meaningful</AlertTitle>
+                  <AlertDescription>{smartSuggestion.offerGuidance}</AlertDescription>
+                </Alert>
+              )}
               <RadioGroup
                 value={offer.type}
                 onValueChange={(value) => updateOffer("type", value as CampaignOfferDraft["type"])}
@@ -1417,6 +1607,24 @@ export function CampaignStudioClient() {
               )}
               {channel === "email" ? (
                 <>
+                  {smartSuggestion && (
+                    <Alert className="border-primary/30 bg-primary/5">
+                      <Sparkles aria-hidden="true" className="h-4 w-4 text-primary" />
+                      <AlertTitle>Points reminder email</AlertTitle>
+                      <AlertDescription>
+                        This message explains that the selected customers have points ready to use, then includes the offer you set. It does not disclose a customer&apos;s exact balance in the subject line.
+                      </AlertDescription>
+                    </Alert>
+                  )}
+                  {isFavouriteItemSuggestion && (
+                    <Alert className="border-primary/30 bg-primary/5">
+                      <Sparkles aria-hidden="true" className="h-4 w-4 text-primary" />
+                      <AlertTitle>Personalized for each customer</AlertTitle>
+                      <AlertDescription>
+                        Keep <code>{"{{favourite_item}}"}</code> in this email. Yummy uses a customer&apos;s saved favourite when available, or an item they ordered on at least two completed visits. It freezes that choice before sending, so every customer receives their own message and offer code.
+                      </AlertDescription>
+                    </Alert>
+                  )}
                   <div className="space-y-2">
                     <Label htmlFor="email-subject">Email subject</Label>
                     <Input id="email-subject" name="email_subject" autoComplete="off" value={emailSubject} maxLength={255} disabled={isReadOnly} onChange={(event) => { setEmailSubject(event.target.value); setCopyCustomized(true); }} />
@@ -1434,6 +1642,24 @@ export function CampaignStudioClient() {
                 </>
               ) : channel === "sms" ? (
                 <>
+                  {smartSuggestion && (
+                    <Alert className="border-amber-500/40 bg-amber-500/5">
+                      <Info aria-hidden="true" className="h-4 w-4" />
+                      <AlertTitle>Choose the approved SMS template that matches this campaign</AlertTitle>
+                      <AlertDescription>
+                        Select <strong>New reward</strong> for unused-points campaigns. The approved SMS template can name the reward, but it does not expose a customer&apos;s exact points balance.
+                      </AlertDescription>
+                    </Alert>
+                  )}
+                  {isFavouriteItemSuggestion && (
+                    <Alert className="border-amber-500/40 bg-amber-500/5">
+                      <Info aria-hidden="true" className="h-4 w-4" />
+                      <AlertTitle>Use the approved Favourite item offer template</AlertTitle>
+                      <AlertDescription>
+                        Select <strong>Favourite item offer</strong>. Yummy uses a customer&apos;s saved favourite when available, or an item they ordered on at least two completed visits. It freezes that choice before scheduling and sends their own item and offer code. No food name is inserted into a generic template.
+                      </AlertDescription>
+                    </Alert>
+                  )}
                   <div className="space-y-2">
                     <Label htmlFor="sms-template">Yummy SMS template</Label>
                     <Select

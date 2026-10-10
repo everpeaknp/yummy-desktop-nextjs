@@ -207,6 +207,7 @@ export interface GrowthCampaignCreateInput {
   email_subject?: string | null;
   email_body_html?: string | null;
   email_template?: string | null;
+  personalization_kind?: "favourite_item" | null;
   creative_asset_id?: number | string | null;
   message_template_id?: number | string | null;
   audience_customer_ids?: number[];
@@ -221,6 +222,7 @@ export interface GrowthCampaignUpdateInput {
   email_subject?: string | null;
   email_body_html?: string | null;
   email_template?: string | null;
+  personalization_kind?: "favourite_item" | null;
   creative_asset_id?: number | string | null;
   message_template_id?: number | string | null;
   audience_customer_ids?: number[];
