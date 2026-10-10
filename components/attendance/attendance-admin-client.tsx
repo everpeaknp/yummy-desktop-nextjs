@@ -1039,6 +1039,21 @@ export function AttendanceAdminClient() {
     }
   }
 
+  async function deleteTemplate(template: AttendanceShiftTemplate) {
+    if (!window.confirm(`Delete the ${template.name} shift template?`)) return;
+    setBusy(true);
+    try {
+      await attendanceApi.deleteShiftTemplate(template.id);
+      if (editingTemplateId === template.id) resetTemplateForm();
+      await loadAll();
+      toast.success("Shift template deleted");
+    } catch (error) {
+      toast.error(errorMessage(error, "Failed to delete shift template"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function toggleDevice(device: AttendanceDevice, checked: boolean) {
     setDevices((current) =>
       current.map((item) =>
@@ -1696,15 +1711,25 @@ export function AttendanceAdminClient() {
                               {template.unpaid_break_minutes} min break
                             </p>
                           </div>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => editTemplate(template)}
-                            disabled={busy}
-                          >
-                            <Pencil className="mr-1 h-3.5 w-3.5" />
-                            Edit
-                          </Button>
+                          <div className="flex shrink-0 gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => editTemplate(template)}
+                              disabled={busy}
+                            >
+                              <Pencil className="mr-1 h-3.5 w-3.5" />
+                              Edit
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => void deleteTemplate(template)}
+                              disabled={busy}
+                            >
+                              Delete
+                            </Button>
+                          </div>
                         </div>
                       ))}
                     </div>

@@ -6,6 +6,7 @@ vi.mock("@/lib/api-client", () => ({
     get: vi.fn(),
     post: vi.fn(),
     patch: vi.fn(),
+    delete: vi.fn(),
   },
 }));
 
@@ -18,6 +19,7 @@ beforeEach(() => {
   mocked.get.mockResolvedValue({ data: { data: {} } });
   mocked.post.mockResolvedValue({ data: { data: {} } });
   mocked.patch.mockResolvedValue({ data: { data: {} } });
+  mocked.delete.mockResolvedValue({ data: { data: {} } });
 });
 
 describe("attendanceApi", () => {
@@ -88,12 +90,14 @@ describe("attendanceApi", () => {
     await attendanceApi.createQrSession({ station_label: "Front", ttl_seconds: 60 });
     await attendanceApi.createDevice({ name: "ZK" });
     await attendanceApi.updateDevice(7, { is_active: false });
+    await attendanceApi.deleteShiftTemplate(6);
     await attendanceApi.upsertDeviceMapping({ device_id: 7, staff_id: 2, device_user_id: "42" });
     await attendanceApi.decideMobileDevice(3, "revoke", "lost phone");
 
     expect(mocked.post).toHaveBeenCalledWith("/attendance/qr-sessions", { station_label: "Front", ttl_seconds: 60 });
     expect(mocked.post).toHaveBeenCalledWith("/attendance/devices", { name: "ZK" });
     expect(mocked.patch).toHaveBeenCalledWith("/attendance/devices/7", { is_active: false });
+    expect(mocked.delete).toHaveBeenCalledWith("/attendance/shift-templates/6");
     expect(mocked.post).toHaveBeenCalledWith("/attendance/device-mappings", { device_id: 7, staff_id: 2, device_user_id: "42" });
     expect(mocked.post).toHaveBeenCalledWith("/attendance/mobile-devices/3/revoke", { reason: "lost phone" });
   });

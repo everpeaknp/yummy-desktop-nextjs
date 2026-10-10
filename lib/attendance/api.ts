@@ -65,6 +65,9 @@ export const attendanceApi = {
   async updateShiftTemplate(id: number, payload: Partial<AttendanceShiftTemplate>) {
     return unwrap<AttendanceShiftTemplate>(await apiClient.patch(AttendanceApis.shiftTemplate(id), payload));
   },
+  async deleteShiftTemplate(id: number) {
+    return unwrap<void>(await apiClient.delete(AttendanceApis.shiftTemplate(id)));
+  },
   async listSchedules(staffId?: number) {
     return unwrap<AttendanceSchedule[]>(await apiClient.get(AttendanceApis.schedules(staffId)));
   },
