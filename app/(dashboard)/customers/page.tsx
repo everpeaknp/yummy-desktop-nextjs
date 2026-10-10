@@ -186,8 +186,14 @@ export default function CustomersPage() {
           description="Manage customer relationships, sales history, and settlements."
           actions={canManageCustomers ? (
             <div className="flex items-center gap-2">
-              <Button type="button" variant="outline" className="h-11 rounded-xl" onClick={() => setLoyaltySettingsOpen(true)}>
-                <Gift className="mr-2 h-4 w-4" /> Loyalty points
+              <Button
+                type="button"
+                variant="outline"
+                className="h-11 rounded-xl"
+                onClick={() => setLoyaltySettingsOpen(true)}
+              >
+                <Gift className="mr-2 h-4 w-4" />
+                Loyalty program
               </Button>
               <Button type="button" variant="outline" className="h-11 rounded-xl" onClick={() => setReminderSettingsOpen(true)}>
                 <BellRing className="mr-2 h-4 w-4" /> Credit notifications
