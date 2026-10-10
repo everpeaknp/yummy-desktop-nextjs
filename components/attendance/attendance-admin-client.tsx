@@ -29,6 +29,8 @@ import { StaffApis, StaffProfileApis } from "@/lib/api/endpoints";
 import { attendanceApi } from "@/lib/attendance/api";
 import { EntitlementGate } from "@/components/subscription/entitlement-gate";
 import { useEntitlement } from "@/hooks/use-subscription";
+import { useAuth } from "@/hooks/use-auth";
+import { hasPermission } from "@/lib/role-permissions";
 import type {
   AttendanceDevice,
   AttendanceEntry,
@@ -283,6 +285,8 @@ function isBiometricAddonError(error: unknown) {
 
 export function AttendanceAdminClient() {
   const searchParams = useSearchParams();
+  const user = useAuth((state) => state.user);
+  const canManageQrExpiry = hasPermission(user, "attendance.qr.expiry.manage");
   const attendanceAccess = useEntitlement("attendance.enabled", true);
   const mobileAttendanceAccess = useEntitlement("attendance.mobile.enabled", true);
   const biometricAttendanceAccess = useEntitlement("attendance.biometric.enabled", true);
@@ -298,9 +302,6 @@ export function AttendanceAdminClient() {
   const [holidays, setHolidays] = useState<AttendanceHoliday[]>([]);
   const [devices, setDevices] = useState<AttendanceDevice[]>([]);
   const [mappings, setMappings] = useState<StaffDeviceMapping[]>([]);
-  const [mobileDevices, setMobileDevices] = useState<AttendanceMobileDevice[]>(
-    [],
-  );
   const [staffProfiles, setStaffProfiles] = useState<StaffProfile[]>([]);
   const [staffUsers, setStaffUsers] = useState<StaffUser[]>([]);
   const [biometricUnavailable, setBiometricUnavailable] = useState(false);
@@ -314,7 +315,7 @@ export function AttendanceAdminClient() {
   const [qrSession, setQrSession] = useState<AttendanceQrSession | null>(null);
   const [qrDataUrl, setQrDataUrl] = useState("");
   const [stationLabel, setStationLabel] = useState("Restaurant attendance");
-  const [ttlSeconds, setTtlSeconds] = useState("60");
+  const [qrExpirySeconds, setQrExpirySeconds] = useState("15");
   const [deviceForm, setDeviceForm] = useState({
     name: "",
     device_type: "zkteco_cloud" as AttendanceDevice["device_type"],
@@ -335,6 +336,7 @@ export function AttendanceAdminClient() {
     end_local_time: "17:00",
     unpaid_break_minutes: "30",
   });
+  const [editingTemplateId, setEditingTemplateId] = useState<number | null>(null);
   const [scheduleForm, setScheduleForm] = useState({
     staff_id: "default",
     shift_template_id: "",
@@ -468,7 +470,6 @@ export function AttendanceAdminClient() {
         leaveData,
         holidayData,
         biometric,
-        mobileData,
         profilesRes,
         usersRes,
       ] = await Promise.all([
@@ -481,9 +482,6 @@ export function AttendanceAdminClient() {
         attendanceApi.listLeaves(),
         attendanceApi.listHolidays(),
         biometricData,
-        mobileAttendanceAccess.allowed
-          ? attendanceApi.listMobileDevices()
-          : Promise.resolve([] as AttendanceMobileDevice[]),
         apiClient.get(StaffProfileApis.list({ limit: 500 })),
         apiClient.get(StaffApis.list()),
       ]);
@@ -499,7 +497,6 @@ export function AttendanceAdminClient() {
       setDevices(biometric.deviceData);
       setMappings(biometric.mappingData);
       setBiometricUnavailable(biometric.unavailable);
-      setMobileDevices(mobileData);
       setStaffProfiles(profilesRes.data?.data || []);
       setStaffUsers(usersRes.data?.data || []);
     } catch (error) {
@@ -618,13 +615,13 @@ export function AttendanceAdminClient() {
   async function createQrSession() {
     setBusy(true);
     try {
-      const ttl = Math.min(
-        300,
-        Math.max(15, Number.parseInt(ttlSeconds, 10) || 60),
+      const ttlSeconds = Math.min(
+        3600,
+        Math.max(1, Number.parseInt(qrExpirySeconds, 10) || 15),
       );
       const session = await attendanceApi.createQrSession({
         station_label: stationLabel.trim(),
-        ttl_seconds: ttl,
+        ...(canManageQrExpiry ? { ttl_seconds: ttlSeconds } : {}),
       });
       setQrSession(session);
       toast.success("Attendance QR generated");
@@ -849,21 +846,45 @@ export function AttendanceAdminClient() {
     }
   }
 
-  async function createTemplate() {
+  function resetTemplateForm() {
+    setEditingTemplateId(null);
+    setTemplateForm({
+      name: "",
+      start_local_time: "09:00",
+      end_local_time: "17:00",
+      unpaid_break_minutes: "30",
+    });
+  }
+
+  function editTemplate(template: AttendanceShiftTemplate) {
+    setEditingTemplateId(template.id);
+    setTemplateForm({
+      name: template.name,
+      start_local_time: String(template.start_local_time).slice(0, 5),
+      end_local_time: String(template.end_local_time).slice(0, 5),
+      unpaid_break_minutes: String(template.unpaid_break_minutes),
+    });
+  }
+
+  async function saveTemplate() {
     if (!templateForm.name.trim()) return toast.error("Shift name is required");
     setBusy(true);
     try {
-      await attendanceApi.createShiftTemplate({
+      const payload = {
         name: templateForm.name.trim(),
         start_local_time: templateForm.start_local_time,
         end_local_time: templateForm.end_local_time,
         unpaid_break_minutes:
           Number.parseInt(templateForm.unpaid_break_minutes, 10) || 0,
-        is_active: true,
-      });
-      setTemplateForm((current) => ({ ...current, name: "" }));
+      };
+      if (editingTemplateId) {
+        await attendanceApi.updateShiftTemplate(editingTemplateId, payload);
+      } else {
+        await attendanceApi.createShiftTemplate(payload);
+      }
+      resetTemplateForm();
       await loadAll();
-      toast.success("Shift template created");
+      toast.success(editingTemplateId ? "Shift template updated" : "Shift template created");
     } catch (error) {
       toast.error(errorMessage(error, "Failed to create shift"));
     } finally {
@@ -1061,26 +1082,6 @@ export function AttendanceAdminClient() {
       toast.success("Mapping saved");
     } catch (error) {
       toast.error(errorMessage(error, "Failed to save mapping"));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-
-  async function decideMobile(
-    device: AttendanceMobileDevice,
-    action: "approve" | "reject" | "revoke",
-  ) {
-    const reason =
-      action === "approve" ? undefined : window.prompt("Reason") || undefined;
-    if (action !== "approve" && !reason) return;
-    setBusy(true);
-    try {
-      await attendanceApi.decideMobileDevice(device.id, action, reason);
-      await loadAll();
-      toast.success("Mobile device updated");
-    } catch (error) {
-      toast.error(errorMessage(error, "Failed to update mobile device"));
     } finally {
       setBusy(false);
     }
@@ -1653,13 +1654,62 @@ export function AttendanceAdminClient() {
                   />
                 </Field>
                 <Button
-                  onClick={createTemplate}
+                  onClick={saveTemplate}
                   disabled={busy}
                   className="w-full"
                 >
-                  <Plus className="mr-2 h-4 w-4" />
-                  Create template
+                  {editingTemplateId ? (
+                    <Pencil className="mr-2 h-4 w-4" />
+                  ) : (
+                    <Plus className="mr-2 h-4 w-4" />
+                  )}
+                  {editingTemplateId ? "Save template" : "Create template"}
                 </Button>
+                {editingTemplateId ? (
+                  <Button
+                    variant="outline"
+                    onClick={resetTemplateForm}
+                    disabled={busy}
+                    className="w-full"
+                  >
+                    Cancel edit
+                  </Button>
+                ) : null}
+                <div className="border-t pt-4">
+                  <p className="mb-2 text-sm font-medium">Saved templates</p>
+                  {templates.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">
+                      No shift templates yet.
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {templates.map((template) => (
+                        <div
+                          key={template.id}
+                          className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2"
+                        >
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-medium">{template.name}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {String(template.start_local_time).slice(0, 5)} to {" "}
+                              {String(template.end_local_time).slice(0, 5)} · {" "}
+                              {template.unpaid_break_minutes} min break
+                            </p>
+                          </div>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => editTemplate(template)}
+                            disabled={busy}
+                          >
+                            <Pencil className="mr-1 h-3.5 w-3.5" />
+                            Edit
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </CardContent>
             </Card>
             <Card>
@@ -2029,15 +2079,21 @@ export function AttendanceAdminClient() {
                   onChange={(event) => setStationLabel(event.target.value)}
                 />
               </Field>
-              <Field label="Expiry seconds">
-                <Input
-                  type="number"
-                  min={15}
-                  max={300}
-                  value={ttlSeconds}
-                  onChange={(event) => setTtlSeconds(event.target.value)}
-                />
-              </Field>
+              {canManageQrExpiry ? (
+                <Field label="Expiry seconds">
+                  <Input
+                    type="number"
+                    min="1"
+                    max="3600"
+                    value={qrExpirySeconds}
+                    onChange={(event) => setQrExpirySeconds(event.target.value)}
+                  />
+                </Field>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  Each QR expires in 15 seconds.
+                </p>
+              )}
               <Button
                 onClick={createQrSession}
                 disabled={busy}
@@ -2114,18 +2170,6 @@ export function AttendanceAdminClient() {
         </TabsContent>
 
         <TabsContent value="devices" className="space-y-5">
-          <EntitlementGate
-            entitlement="attendance.mobile.enabled"
-            title="Unlock mobile attendance"
-            description="Let approved staff use their phone to clock in while keeping every attendance record verified."
-          >
-            <MobileDeviceTable
-              devices={mobileDevices}
-              staffProfiles={staffProfiles}
-              usersById={usersById}
-              onDecide={decideMobile}
-            />
-          </EntitlementGate>
           <EntitlementGate
             entitlement="attendance.biometric.enabled"
             title="Unlock biometric attendance"

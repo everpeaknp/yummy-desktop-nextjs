@@ -254,6 +254,8 @@ export type PermissionKey =
   // Attendance
   | "attendance.view"
   | "attendance.manage"
+  | "attendance.qr.generate"
+  | "attendance.qr.expiry.manage"
   | "attendance.device.manage"
   | "attendance.payroll.export"
   // Admin & Settings
@@ -356,6 +358,11 @@ export function hasPermission(
   )
     return true;
   const permissions = user.permissions ?? [];
+  if (
+    permission.startsWith("attendance.qr.") &&
+    permissions.includes("attendance.manage")
+  )
+    return true;
   if (permission.startsWith("hotel.") && permissions.includes("hotel.manage"))
     return true;
   if (
@@ -681,6 +688,7 @@ export const ROUTE_PERMISSIONS: Record<string, PermissionKey> = {
   "/finance/accounting/inventory": "inventory.accounting.view",
   "/finance/accounting": "finance.accounting.view",
   "/finance": "finance.income.view",
+  "/attendance/qr": "attendance.qr.generate",
   "/attendance": "attendance.manage",
   "/workforce": "admin.staff.view",
   // Admin

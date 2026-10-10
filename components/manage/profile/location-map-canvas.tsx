@@ -19,19 +19,16 @@ export type LocationMapCanvasProps = {
   apiRef?: MutableRefObject<LocationMapHandle | null>;
 };
 
-function attachBasemap(map: L.Map, isDark: boolean): L.TileLayer {
-  const primaryUrl = isDark
-    ? "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-    : "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png";
+function attachBasemap(map: L.Map): L.TileLayer {
+  const primaryUrl = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
 
-  const fallbackUrl = isDark
-    ? "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}"
-    : "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}";
+  const fallbackUrl =
+    "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}";
 
   let active = L.tileLayer(primaryUrl, {
-    attribution: "",
+    attribution: "&copy; OpenStreetMap contributors",
     maxZoom: 20,
-    subdomains: "abcd",
+    subdomains: "abc",
   }).addTo(map);
 
   let usedFallback = false;
@@ -85,7 +82,7 @@ export default function LocationMapCanvas({
       zoomControl: false,
     }).setView([lat, lng], 14);
 
-    tilesRef.current = attachBasemap(map, isDark);
+    tilesRef.current = attachBasemap(map);
 
     const marker = L.marker([lat, lng], { draggable: true }).addTo(map);
 

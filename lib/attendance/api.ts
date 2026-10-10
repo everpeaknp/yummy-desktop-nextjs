@@ -161,7 +161,7 @@ export const attendanceApi = {
         : `attendance-${dateFrom}-to-${dateTo}.csv`,
     };
   },
-  async createQrSession(payload: { station_label?: string; ttl_seconds: number }) {
+  async createQrSession(payload: { station_label?: string; ttl_seconds?: number }) {
     return unwrap<AttendanceQrSession>(await apiClient.post(AttendanceApis.createQrSession, payload));
   },
   async listDevices() {
