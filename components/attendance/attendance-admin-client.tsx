@@ -12,6 +12,8 @@ import {
   Copy,
   Download,
   Fingerprint,
+  LogIn,
+  LogOut,
   Loader2,
   MapPin,
   Pencil,
@@ -319,6 +321,7 @@ export function AttendanceAdminClient() {
   } | null>(null);
   const [deviceForm, setDeviceForm] = useState({
     name: "",
+    device_type: "zkteco_lan" as AttendanceDevice["device_type"],
     serial_number: "",
     ip_address: "",
     port: "4370",
@@ -329,6 +332,7 @@ export function AttendanceAdminClient() {
     staff_id: "",
     device_user_id: "",
   });
+  const [admsTestForm, setAdmsTestForm] = useState({ device_id: "", device_user_id: "" });
   const [templateForm, setTemplateForm] = useState({
     name: "",
     start_local_time: "09:00",
@@ -986,18 +990,33 @@ export function AttendanceAdminClient() {
     try {
       await attendanceApi.createDevice({
         name: deviceForm.name.trim(),
-        device_type: "zkteco_lan",
+        device_type: deviceForm.device_type,
         serial_number: deviceForm.serial_number.trim(),
-        ip_address: deviceForm.ip_address.trim() || null,
-        port: Number.parseInt(deviceForm.port, 10) || 4370,
+        ip_address: deviceForm.device_type === "zkteco_lan" ? deviceForm.ip_address.trim() || null : null,
+        port: deviceForm.device_type === "zkteco_lan" ? Number.parseInt(deviceForm.port, 10) || 4370 : null,
         timezone: deviceForm.timezone.trim() || "UTC",
         is_active: true,
       });
       setDeviceForm((current) => ({ ...current, name: "", serial_number: "" }));
       await loadAll();
-      toast.success("Device registered");
+      toast.success(deviceForm.device_type === "zkteco_cloud" ? "Cloud device registered. Map a staff code, then test a punch below." : "Device registered");
     } catch (error) {
       toast.error(errorMessage(error, "Failed to register device"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function sendAdmsTestPunch(clockIn: boolean) {
+    const device = devices.find((item) => item.id === Number(admsTestForm.device_id));
+    if (!device || !admsTestForm.device_user_id.trim()) return toast.error("Select a cloud device and enter a mapped device user code");
+    setBusy(true);
+    try {
+      await attendanceApi.sendAdmsTestPunch({ serial_number: device.serial_number, device_user_id: admsTestForm.device_user_id.trim(), clock_in: clockIn });
+      await loadAll();
+      toast.success(clockIn ? "ADMS clock-in sent" : "ADMS clock-out sent");
+    } catch (error) {
+      toast.error(errorMessage(error, "ADMS test punch failed. Check that ADMS is enabled on the test API."));
     } finally {
       setBusy(false);
     }
@@ -2153,6 +2172,15 @@ export function AttendanceAdminClient() {
                       placeholder="Main entrance scanner"
                     />
                   </Field>
+                  <Field label="Connection type">
+                    <Select value={deviceForm.device_type} onValueChange={(value: AttendanceDevice["device_type"]) => setDeviceForm((current) => ({ ...current, device_type: value }))}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="zkteco_lan">ZKTeco LAN connector</SelectItem>
+                        <SelectItem value="zkteco_cloud">ZKTeco ADMS cloud push</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </Field>
                   <Field label="Serial number">
                     <Input
                       value={deviceForm.serial_number}
@@ -2164,7 +2192,7 @@ export function AttendanceAdminClient() {
                       }
                     />
                   </Field>
-                  <div className="grid grid-cols-[minmax(0,1fr)_110px] gap-3">
+                  {deviceForm.device_type === "zkteco_lan" ? <div className="grid grid-cols-[minmax(0,1fr)_110px] gap-3">
                     <Field label="IP address">
                       <Input
                         value={deviceForm.ip_address}
@@ -2189,7 +2217,7 @@ export function AttendanceAdminClient() {
                         }
                       />
                     </Field>
-                  </div>
+                  </div> : <p className="text-xs text-muted-foreground">The terminal pushes attendance directly to Yummy. No LAN IP or connector pairing is needed.</p>}
                   <Field label="Timezone">
                     <TimezoneSelect
                       value={deviceForm.timezone}
@@ -2208,6 +2236,24 @@ export function AttendanceAdminClient() {
                   </Button>
                 </CardContent>
               </Card>
+              {devices.some((device) => device.device_type === "zkteco_cloud") ? (
+                <Card>
+                  <CardHeader><CardTitle>Test ADMS Punch</CardTitle><CardDescription>Simulate the push sent after a fingerprint scan.</CardDescription></CardHeader>
+                  <CardContent className="space-y-4">
+                    <Field label="Cloud device">
+                      <Select value={admsTestForm.device_id} onValueChange={(device_id) => setAdmsTestForm((current) => ({ ...current, device_id }))}>
+                        <SelectTrigger><SelectValue placeholder="Select cloud device" /></SelectTrigger>
+                        <SelectContent>{devices.filter((device) => device.device_type === "zkteco_cloud").map((device) => <SelectItem key={device.id} value={String(device.id)}>{device.name} · {device.serial_number}</SelectItem>)}</SelectContent>
+                      </Select>
+                    </Field>
+                    <Field label="Mapped device user code"><Input value={admsTestForm.device_user_id} onChange={(event) => setAdmsTestForm((current) => ({ ...current, device_user_id: event.target.value }))} placeholder="1001" inputMode="numeric" /></Field>
+                    <div className="grid grid-cols-2 gap-3">
+                      <Button onClick={() => void sendAdmsTestPunch(true)} disabled={busy || !admsTestForm.device_id}><LogIn className="mr-2 h-4 w-4" />Clock in</Button>
+                      <Button variant="outline" onClick={() => void sendAdmsTestPunch(false)} disabled={busy || !admsTestForm.device_id}><LogOut className="mr-2 h-4 w-4" />Clock out</Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ) : null}
               <Card>
                 <CardHeader>
                   <CardTitle>Map Staff User</CardTitle>
@@ -3047,7 +3093,9 @@ function DeviceTable({
                       </div>
                     </TableCell>
                     <TableCell className="min-w-[150px]">
-                      {device.ip_address || "No IP"}:{device.port || 4370}
+                      {device.device_type === "zkteco_cloud"
+                        ? "Cloud push"
+                        : `${device.ip_address || "No IP"}:${device.port || 4370}`}
                     </TableCell>
                     <TableCell>{formatDateTime(device.last_sync_at)}</TableCell>
                     <TableCell>
@@ -3057,13 +3105,13 @@ function DeviceTable({
                       />
                     </TableCell>
                     <TableCell className="text-right">
-                      <Button
+                      {device.device_type === "zkteco_lan" ? <Button
                         size="sm"
                         variant="outline"
                         onClick={() => onPair(device.id)}
                       >
                         Pair
-                      </Button>
+                      </Button> : <span className="text-sm text-muted-foreground">Push</span>}
                     </TableCell>
                   </TableRow>
                 ))

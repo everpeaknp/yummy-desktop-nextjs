@@ -175,6 +175,19 @@ export const attendanceApi = {
   async updateDevice(id: number, payload: Partial<AttendanceDevice>) {
     return unwrap<AttendanceDevice>(await apiClient.patch(AttendanceApis.updateDevice(id), payload));
   },
+  async sendAdmsTestPunch(payload: {
+    serial_number: string;
+    device_user_id: string;
+    clock_in: boolean;
+  }) {
+    const now = new Date();
+    const two = (value: number) => String(value).padStart(2, "0");
+    const timestamp = `${now.getFullYear()}-${two(now.getMonth() + 1)}-${two(now.getDate())} ${two(now.getHours())}:${two(now.getMinutes())}:${two(now.getSeconds())}`;
+    return apiClient.post(`/iclock/cdata.aspx?SN=${encodeURIComponent(payload.serial_number)}`, `${payload.device_user_id}\t${timestamp}\t${payload.clock_in ? "0" : "1"}\t15`, {
+      headers: { "Content-Type": "text/plain" },
+      responseType: "text",
+    });
+  },
   async listDeviceMappings(deviceId?: number) {
     return unwrap<StaffDeviceMapping[]>(await apiClient.get(AttendanceApis.listDeviceMappings(deviceId)));
   },
