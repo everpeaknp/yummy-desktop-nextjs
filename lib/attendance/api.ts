@@ -2,8 +2,6 @@ import apiClient from "@/lib/api-client";
 import { AttendanceApis } from "@/lib/api/endpoints";
 import type {
   AttendanceAudit,
-  AttendanceConnectorPair,
-  AttendanceConnectorPairingCode,
   AttendanceDevice,
   AttendanceEntry,
   AttendanceMobileDevice,
@@ -67,11 +65,21 @@ export const attendanceApi = {
   async updateShiftTemplate(id: number, payload: Partial<AttendanceShiftTemplate>) {
     return unwrap<AttendanceShiftTemplate>(await apiClient.patch(AttendanceApis.shiftTemplate(id), payload));
   },
+  async deleteShiftTemplate(id: number) {
+    return unwrap<void>(await apiClient.delete(AttendanceApis.shiftTemplate(id)));
+  },
   async listSchedules(staffId?: number) {
     return unwrap<AttendanceSchedule[]>(await apiClient.get(AttendanceApis.schedules(staffId)));
   },
   async createSchedule(payload: Partial<AttendanceSchedule>) {
     return unwrap<AttendanceSchedule>(await apiClient.post(AttendanceApis.createSchedule, payload));
+  },
+  async createWeeklySchedules(payload: {
+    staff_ids: number[];
+    effective_from: string;
+    assignments: Array<{ weekday: number; shift_template_id: number | null; is_day_off: boolean }>;
+  }) {
+    return unwrap<AttendanceSchedule[]>(await apiClient.post(AttendanceApis.createWeeklySchedules, payload));
   },
   async listLeaves(params: { staffId?: number; dateFrom?: string; dateTo?: string; status?: string } = {}) {
     return unwrap<AttendanceLeave[]>(
@@ -103,6 +111,9 @@ export const attendanceApi = {
   },
   async updateSchedule(id: number, payload: Partial<AttendanceSchedule>) {
     return unwrap<AttendanceSchedule>(await apiClient.patch(AttendanceApis.schedule(id), payload));
+  },
+  async deleteSchedule(id: number) {
+    return unwrap<void>(await apiClient.delete(AttendanceApis.schedule(id)));
   },
   async overview(dateFrom: string, dateTo: string) {
     return unwrap<AttendanceOverview>(await apiClient.get(AttendanceApis.overview + query({ date_from: dateFrom, date_to: dateTo })));
@@ -170,7 +181,15 @@ export const attendanceApi = {
       ),
     );
   },
-  async createQrSession(payload: { station_label?: string; ttl_seconds: number }) {
+  async finalizePayrollExport(dateFrom: string, dateTo: string) {
+    return unwrap<{ date_from: string; date_to: string; locked_entries: number }>(
+      await apiClient.post(AttendanceApis.finalizePayrollExport, {
+        date_from: dateFrom,
+        date_to: dateTo,
+      }),
+    );
+  },
+  async createQrSession(payload: { station_label?: string; ttl_seconds?: number }) {
     return unwrap<AttendanceQrSession>(await apiClient.post(AttendanceApis.createQrSession, payload));
   },
   async listDevices() {
@@ -181,6 +200,19 @@ export const attendanceApi = {
   },
   async updateDevice(id: number, payload: Partial<AttendanceDevice>) {
     return unwrap<AttendanceDevice>(await apiClient.patch(AttendanceApis.updateDevice(id), payload));
+  },
+  async sendAdmsTestPunch(payload: {
+    serial_number: string;
+    device_user_id: string;
+    clock_in: boolean;
+  }) {
+    const now = new Date();
+    const two = (value: number) => String(value).padStart(2, "0");
+    const timestamp = `${now.getFullYear()}-${two(now.getMonth() + 1)}-${two(now.getDate())} ${two(now.getHours())}:${two(now.getMinutes())}:${two(now.getSeconds())}`;
+    return apiClient.post(`/iclock/cdata.aspx?SN=${encodeURIComponent(payload.serial_number)}`, `${payload.device_user_id}\t${timestamp}\t${payload.clock_in ? "0" : "1"}\t15`, {
+      headers: { "Content-Type": "text/plain" },
+      responseType: "text",
+    });
   },
   async listDeviceMappings(deviceId?: number) {
     return unwrap<StaffDeviceMapping[]>(await apiClient.get(AttendanceApis.listDeviceMappings(deviceId)));
@@ -193,12 +225,6 @@ export const attendanceApi = {
   },
   async decideMobileDevice(id: number, action: "approve" | "reject" | "revoke", reason?: string) {
     return unwrap<AttendanceMobileDevice>(await apiClient.post(AttendanceApis.mobileDeviceDecision(id, action), { reason }));
-  },
-  async createConnectorPairingCode(payload: { device_id?: number; ttl_seconds?: number }) {
-    return unwrap<AttendanceConnectorPairingCode>(await apiClient.post(AttendanceApis.connectorPairingCodes, payload));
-  },
-  async pairConnector(payload: { code: string; connector_version?: string }) {
-    return unwrap<AttendanceConnectorPair>(await apiClient.post(AttendanceApis.connectorPair, payload));
   },
 };
 

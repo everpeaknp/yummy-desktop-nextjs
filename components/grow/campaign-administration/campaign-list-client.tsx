@@ -199,7 +199,7 @@ export function CampaignListClient() {
         </div>
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" size="sm" onClick={() => void load(true)} disabled={refreshing}><RefreshCw aria-hidden="true" className={cn("mr-2 h-4 w-4 motion-reduce:animate-none", refreshing && "animate-spin")} />{refreshing ? "Refreshing…" : "Refresh"}</Button>
-          {hasPermission(user, "grow.campaigns.manage") && <Button asChild size="sm"><Link href="/grow/campaigns/new"><Plus aria-hidden="true" className="mr-2 h-4 w-4" />Create Campaign</Link></Button>}
+          {hasPermission(user, "grow.campaigns.manage") && <Button asChild size="sm"><Link href="/grow/campaigns/new?goal=custom"><Plus aria-hidden="true" className="mr-2 h-4 w-4" />Create Campaign</Link></Button>}
         </div>
       </header>
 
@@ -244,7 +244,7 @@ export function CampaignListClient() {
               {tab === "attention" && !search && channel === "all" && goal === "all" ? <CheckCircle2 aria-hidden="true" className="h-10 w-10 text-emerald-600" /> : <CircleDashed aria-hidden="true" className="h-10 w-10 text-muted-foreground" />}
               <h2 className="mt-4 text-base font-semibold">{tab === "attention" && !search && channel === "all" && goal === "all" ? "Nothing Needs Attention" : "No Campaigns Found"}</h2>
               <p className="mt-2 max-w-md text-sm text-muted-foreground">{campaigns.length === 0 ? "Create your first campaign to start bringing customers back." : "Try another view or remove a filter."}</p>
-              {campaigns.length === 0 && hasPermission(user, "grow.campaigns.manage") && <Button asChild className="mt-5"><Link href="/grow/campaigns/new">Create Campaign</Link></Button>}
+              {campaigns.length === 0 && hasPermission(user, "grow.campaigns.manage") && <Button asChild className="mt-5"><Link href="/grow/campaigns/new?goal=custom">Create Campaign</Link></Button>}
             </div>
           )}
         </CardContent>

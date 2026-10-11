@@ -69,6 +69,11 @@ export interface GrowthOpportunitySummary {
   explanation?: string | null;
   suggested_action?: string | null;
   eligible_customer_count: number;
+  email_eligible_customer_count?: number;
+  sms_eligible_customer_count?: number;
+  recommended_channel?: "email" | "sms";
+  estimated_sms_credits?: number;
+  audience_customer_ids?: number[];
   readiness_status: GrowthReadinessStatus;
   data_status?: GrowthDataStatus;
   confidence?: "high" | "medium" | "low" | null;
@@ -202,6 +207,7 @@ export interface GrowthCampaignCreateInput {
   email_subject?: string | null;
   email_body_html?: string | null;
   email_template?: string | null;
+  personalization_kind?: "favourite_item" | null;
   creative_asset_id?: number | string | null;
   message_template_id?: number | string | null;
   audience_customer_ids?: number[];
@@ -216,6 +222,7 @@ export interface GrowthCampaignUpdateInput {
   email_subject?: string | null;
   email_body_html?: string | null;
   email_template?: string | null;
+  personalization_kind?: "favourite_item" | null;
   creative_asset_id?: number | string | null;
   message_template_id?: number | string | null;
   audience_customer_ids?: number[];

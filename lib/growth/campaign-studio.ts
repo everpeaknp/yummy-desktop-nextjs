@@ -6,6 +6,8 @@ import type {
   GrowthMessageTemplate,
   GrowthOfferInput,
   GrowthPlaybookCode,
+  GrowthOpportunitySummary,
+  GrowthSettings,
   GrowthSegmentCode,
 } from "@/lib/api/growth-types";
 
@@ -101,6 +103,94 @@ export function getCampaignPlaybook(
   const playbook = CAMPAIGN_PLAYBOOKS.find((candidate) => candidate.code === code);
   if (!playbook) throw new Error(`Unsupported Growth playbook: ${code}`);
   return playbook;
+}
+
+export interface SmartCampaignSuggestion {
+  key: "unused_points";
+  title: string;
+  audienceExplanation: string;
+  offerGuidance: string;
+  emailCopy: {
+    headline: string;
+    message: (restaurantName: string, offerText: string, validUntil: string) => string;
+  };
+}
+
+const SMART_CAMPAIGN_SUGGESTIONS: Record<string, SmartCampaignSuggestion> = {
+  unused_points: {
+    key: "unused_points",
+    title: "Customers with unused points",
+    audienceExplanation:
+      "These selected customers have loyalty points ready to use at your restaurant. Their normal consent and delivery checks still apply.",
+    offerGuidance:
+      "This is a points reminder, not an automatic discount. Choose a small thank-you offer only if it fits your margin; it will be sent alongside the reminder that their points are ready to use.",
+    emailCopy: {
+      headline: "Your points are ready to use",
+      message: (restaurantName, offerText, validUntil) =>
+        `Hi {{customer_name}}, you have Yummy points ready to use at ${restaurantName}. We have also prepared ${offerText} for your next visit. Valid until ${validUntil}. Your unique offer code is {{offer_code}}.`,
+    },
+  },
+};
+
+export function getSmartCampaignSuggestion(
+  key: string | null | undefined,
+): SmartCampaignSuggestion | null {
+  if (!key) return null;
+  return SMART_CAMPAIGN_SUGGESTIONS[key] ?? null;
+}
+
+/**
+ * Keeps the Growth overview and campaign studio aligned when a staff member
+ * accepts a data-backed recommendation. The selected people are always passed
+ * through the existing custom-audience safeguards.
+ */
+export function campaignRecommendationHref(
+  opportunity: GrowthOpportunitySummary,
+  channel: "email" | "sms",
+): string {
+  if (opportunity.action_route && opportunity.action_route !== "/grow/campaigns/new") {
+    return opportunity.action_route;
+  }
+
+  const params = new URLSearchParams({
+    goal: opportunity.audience_customer_ids?.length ? "custom" : opportunity.playbook_code,
+    channel,
+  });
+
+  if (opportunity.audience_customer_ids?.length) {
+    params.set("customers", opportunity.audience_customer_ids.join(","));
+    params.set("name", opportunity.title);
+  }
+  if (typeof opportunity.id === "string" && opportunity.id.startsWith("signal:")) {
+    params.set("signal", opportunity.id.slice("signal:".length));
+  }
+  if (opportunity.id === "signal:favourite_items") {
+    params.set("personalization", "favourite_item");
+  }
+
+  return `/grow/campaigns/new?${params.toString()}`;
+}
+
+export function recommendedCampaignChannel(
+  opportunity: GrowthOpportunitySummary,
+  settings: GrowthSettings | null,
+): "email" | "sms" {
+  if (
+    String(opportunity.id) === "signal:unused_points" &&
+    settings?.email_enabled &&
+    (opportunity.email_eligible_customer_count ?? 0) > 0
+  ) {
+    return "email";
+  }
+
+  const smsAvailable = Boolean(
+    settings?.sms_enabled && (opportunity.sms_eligible_customer_count ?? 0) > 0,
+  );
+  if (opportunity.recommended_channel === "sms" && smsAvailable) return "sms";
+  if (settings?.email_enabled && (opportunity.email_eligible_customer_count ?? 0) > 0) {
+    return "email";
+  }
+  return smsAvailable ? "sms" : "email";
 }
 
 export interface CampaignOfferDraft {
@@ -367,6 +457,7 @@ export function buildCampaignCreateInput({
   emailSubject,
   emailBodyHtml,
   emailTemplate,
+  personalizationKind,
   audienceCustomerIds = [],
 }: {
   name: string;
@@ -378,6 +469,7 @@ export function buildCampaignCreateInput({
   emailSubject?: string;
   emailBodyHtml?: string;
   emailTemplate?: string;
+  personalizationKind?: "favourite_item";
   audienceCustomerIds?: number[];
 }): GrowthCampaignCreateInput {
   const playbook = getCampaignPlaybook(playbookCode);
@@ -393,6 +485,9 @@ export function buildCampaignCreateInput({
     email_subject: channel === "email" ? (emailSubject || "").trim() : null,
     email_body_html: channel === "email" ? (emailBodyHtml || "").trim() : null,
     email_template: channel === "email" ? (emailTemplate || "").trim() || null : null,
+    ...(personalizationKind === "favourite_item"
+      ? { personalization_kind: "favourite_item" as const }
+      : {}),
     audience_customer_ids: playbook.code === "custom" ? audienceCustomerIds : [],
   };
 }

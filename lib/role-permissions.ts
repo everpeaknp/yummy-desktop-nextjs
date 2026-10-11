@@ -271,6 +271,8 @@ export type PermissionKey =
   | "attendance.view"
   | "attendance.clock"
   | "attendance.manage"
+  | "attendance.qr.generate"
+  | "attendance.qr.expiry.manage"
   | "attendance.device.manage"
   | "attendance.payroll.export"
   // Admin & Settings
@@ -500,23 +502,17 @@ export function hasPermission(
   const permissions = user.permissions ?? [];
   if (permission.startsWith("platform.")) {
     const effectivePlatform = new Set<PermissionKey>();
-    const pending = permissions.filter(
-      (key): key is PermissionKey =>
-        key.startsWith("platform.") &&
-        KNOWN_PERMISSION_KEYS.has(key as PermissionKey),
-    );
+    const pending = permissions.filter((key): key is PermissionKey => key.startsWith("platform.") && KNOWN_PERMISSION_KEYS.has(key as PermissionKey));
     while (pending.length) {
       const current = pending.pop()!;
       if (effectivePlatform.has(current)) continue;
       effectivePlatform.add(current);
-      pending.push(
-        ...(PERMISSION_IMPLICATIONS[current] ?? []).filter((key) =>
-          key.startsWith("platform."),
-        ),
-      );
+      pending.push(...(PERMISSION_IMPLICATIONS[current] ?? []).filter((key) => key.startsWith("platform.")));
     }
     return effectivePlatform.has(permission);
   }
+  if (permission.startsWith("attendance.qr.") && permissions.includes("attendance.manage")) return true;
+  if (permission.startsWith("hotel.") && permissions.includes("hotel.manage")) return true;
   if (roles.includes("admin"))
     return true;
   const effective = new Set<PermissionKey>();
@@ -963,6 +959,8 @@ export const ROUTE_PERMISSIONS: Record<string, PermissionKey> = {
   "/finance/sales": "finance.sales.view",
   "/finance/accounting/inventory": "inventory.accounting.view",
   "/finance/accounting": "finance.accounting.view",
+  "/attendance/qr": "attendance.qr.generate",
+  "/workforce": "admin.staff.view",
   // Admin
   "/staff/join-requests": "admin.staff.manage",
   "/staff": "admin.staff.view",
