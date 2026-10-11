@@ -74,6 +74,13 @@ export const attendanceApi = {
   async createSchedule(payload: Partial<AttendanceSchedule>) {
     return unwrap<AttendanceSchedule>(await apiClient.post(AttendanceApis.createSchedule, payload));
   },
+  async createWeeklySchedules(payload: {
+    staff_ids: number[];
+    effective_from: string;
+    assignments: Array<{ weekday: number; shift_template_id: number | null; is_day_off: boolean }>;
+  }) {
+    return unwrap<AttendanceSchedule[]>(await apiClient.post(AttendanceApis.createWeeklySchedules, payload));
+  },
   async listLeaves(params: { staffId?: number; dateFrom?: string; dateTo?: string; status?: string } = {}) {
     return unwrap<AttendanceLeave[]>(
       await apiClient.get(
@@ -104,6 +111,9 @@ export const attendanceApi = {
   },
   async updateSchedule(id: number, payload: Partial<AttendanceSchedule>) {
     return unwrap<AttendanceSchedule>(await apiClient.patch(AttendanceApis.schedule(id), payload));
+  },
+  async deleteSchedule(id: number) {
+    return unwrap<void>(await apiClient.delete(AttendanceApis.schedule(id)));
   },
   async overview(dateFrom: string, dateTo: string) {
     return unwrap<AttendanceOverview>(await apiClient.get(AttendanceApis.overview + query({ date_from: dateFrom, date_to: dateTo })));
@@ -163,6 +173,14 @@ export const attendanceApi = {
         ? decodeURIComponent(filenameMatch[1].replace(/"/g, ""))
         : `attendance-${dateFrom}-to-${dateTo}.csv`,
     };
+  },
+  async finalizePayrollExport(dateFrom: string, dateTo: string) {
+    return unwrap<{ date_from: string; date_to: string; locked_entries: number }>(
+      await apiClient.post(AttendanceApis.finalizePayrollExport, {
+        date_from: dateFrom,
+        date_to: dateTo,
+      }),
+    );
   },
   async createQrSession(payload: { station_label?: string; ttl_seconds?: number }) {
     return unwrap<AttendanceQrSession>(await apiClient.post(AttendanceApis.createQrSession, payload));

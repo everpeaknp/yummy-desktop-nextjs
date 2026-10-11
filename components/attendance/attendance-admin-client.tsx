@@ -46,6 +46,7 @@ import type {
 } from "@/lib/attendance/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Card,
   CardContent,
@@ -109,6 +110,16 @@ type StaffUser = {
   roles?: string[];
 };
 
+const WEEKDAY_NAMES = [
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+  "Sunday",
+];
+
 function staffRoleLabel(user?: StaffUser) {
   const raw =
     user?.primary_role ||
@@ -162,6 +173,29 @@ const todayIso = () => {
   const day = String(now.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
 };
+
+function weekMondayIso(value: string) {
+  const [year, month, day] = value.split("-").map(Number);
+  const local = new Date(year, month - 1, day);
+  local.setDate(local.getDate() - ((local.getDay() + 6) % 7));
+  return [local.getFullYear(), String(local.getMonth() + 1).padStart(2, "0"), String(local.getDate()).padStart(2, "0")].join("-");
+}
+
+function weekDates(mondayIso: string) {
+  const [year, month, day] = mondayIso.split("-").map(Number);
+  return WEEKDAY_NAMES.map((_, index) => {
+    const local = new Date(year, month - 1, day + index);
+    return [local.getFullYear(), String(local.getMonth() + 1).padStart(2, "0"), String(local.getDate()).padStart(2, "0")].join("-");
+  });
+}
+
+function firstApplicableDate(effectiveFrom: string, weekday: number) {
+  const [year, month, day] = effectiveFrom.split("-").map(Number);
+  const local = new Date(year, month - 1, day);
+  const offset = (weekday - ((local.getDay() + 6) % 7) + 7) % 7;
+  local.setDate(local.getDate() + offset);
+  return [local.getFullYear(), String(local.getMonth() + 1).padStart(2, "0"), String(local.getDate()).padStart(2, "0")].join("-");
+}
 
 function isOpenEntry(entry: AttendanceEntry) {
   return entry.status === "open" || !entry.clock_out_at;
@@ -287,6 +321,7 @@ export function AttendanceAdminClient() {
   const searchParams = useSearchParams();
   const user = useAuth((state) => state.user);
   const canManageQrExpiry = hasPermission(user, "attendance.qr.expiry.manage");
+  const canFinalizePayroll = hasPermission(user, "attendance.payroll.export");
   const attendanceAccess = useEntitlement("attendance.enabled", true);
   const mobileAttendanceAccess = useEntitlement("attendance.mobile.enabled", true);
   const biometricAttendanceAccess = useEntitlement("attendance.biometric.enabled", true);
@@ -342,6 +377,13 @@ export function AttendanceAdminClient() {
     shift_template_id: "",
     weekday: "1",
     effective_from: todayIso(),
+    is_day_off: false,
+  });
+  const [editingScheduleId, setEditingScheduleId] = useState<number | null>(null);
+  const [weeklyScheduleForm, setWeeklyScheduleForm] = useState({
+    staff_ids: [] as number[],
+    effective_from: weekMondayIso(todayIso()),
+    assignments: ["", "", "", "", "", "", ""],
   });
   const [leaveForm, setLeaveForm] = useState({
     staff_id: "",
@@ -359,6 +401,10 @@ export function AttendanceAdminClient() {
     notes: "",
   });
   const [busy, setBusy] = useState(false);
+  const weeklyScheduleDates = useMemo(
+    () => weekDates(weeklyScheduleForm.effective_from),
+    [weeklyScheduleForm.effective_from],
+  );
   const [settingsForm, setSettingsForm] = useState<AttendanceSettingsForm>({
     timezone: "Asia/Kathmandu",
     address: "",
@@ -717,19 +763,6 @@ export function AttendanceAdminClient() {
     toast.success(message);
   }
 
-  async function submitEntry(entry: AttendanceEntry) {
-    setBusy(true);
-    try {
-      await attendanceApi.submitEntry(entry.id, "Submitted from web");
-      await loadAll();
-      toast.success("Attendance submitted");
-    } catch (error) {
-      toast.error(errorMessage(error, "Failed to submit attendance"));
-    } finally {
-      setBusy(false);
-    }
-  }
-
   async function approveEntry(entry: AttendanceEntry) {
     const approved = Number.parseInt(
       window.prompt(
@@ -815,7 +848,7 @@ export function AttendanceAdminClient() {
       });
       setCorrectionEntry(null);
       await loadAll();
-      toast.success("Attendance corrected and returned to draft");
+      toast.success("Attendance recalculated");
     } catch (error) {
       toast.error(errorMessage(error, "Failed to correct attendance"));
     } finally {
@@ -856,6 +889,45 @@ export function AttendanceAdminClient() {
     });
   }
 
+  async function finalizePayrollPeriod() {
+    if (
+      !window.confirm(
+        `Finalize approved attendance from ${dateFrom} to ${dateTo}? Finalized records are locked and cannot be edited.`,
+      )
+    ) {
+      return;
+    }
+    setBusy(true);
+    try {
+      const result = await attendanceApi.finalizePayrollExport(dateFrom, dateTo);
+      await loadAll();
+      toast.success(
+        result.locked_entries
+          ? `${result.locked_entries} attendance record${result.locked_entries === 1 ? "" : "s"} finalized for payroll`
+          : "No approved attendance records to finalize",
+      );
+    } catch (error) {
+      toast.error(errorMessage(error, "Failed to finalize attendance for payroll"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function reopenEntry(entry: AttendanceEntry) {
+    const reason = window.prompt("Why does this approved record need review?");
+    if (!reason) return;
+    setBusy(true);
+    try {
+      await attendanceApi.reopenEntry(entry.id, reason);
+      await loadAll();
+      toast.success("Attendance moved to review");
+    } catch (error) {
+      toast.error(errorMessage(error, "Failed to reopen attendance"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function editTemplate(template: AttendanceShiftTemplate) {
     setEditingTemplateId(template.id);
     setTemplateForm({
@@ -892,23 +964,55 @@ export function AttendanceAdminClient() {
     }
   }
 
-  async function createSchedule() {
-    if (!scheduleForm.shift_template_id)
+  function resetScheduleForm() {
+    setEditingScheduleId(null);
+    setScheduleForm({
+      staff_id: "default",
+      shift_template_id: "",
+      weekday: "1",
+      effective_from: todayIso(),
+      is_day_off: false,
+    });
+  }
+
+  function editSchedule(schedule: AttendanceSchedule) {
+    setEditingScheduleId(schedule.id);
+    setScheduleForm({
+      staff_id: schedule.staff_id ? String(schedule.staff_id) : "default",
+      shift_template_id: schedule.shift_template_id
+        ? String(schedule.shift_template_id)
+        : "",
+      weekday: String(schedule.weekday),
+      effective_from: schedule.effective_from,
+      is_day_off: schedule.is_day_off,
+    });
+  }
+
+  async function saveSchedule() {
+    if (!scheduleForm.is_day_off && !scheduleForm.shift_template_id)
       return toast.error("Select a shift template");
     setBusy(true);
     try {
-      await attendanceApi.createSchedule({
+      const payload = {
         staff_id:
           scheduleForm.staff_id === "default"
             ? null
             : Number(scheduleForm.staff_id),
-        shift_template_id: Number(scheduleForm.shift_template_id),
+        shift_template_id: scheduleForm.is_day_off
+          ? null
+          : Number(scheduleForm.shift_template_id),
         weekday: Number(scheduleForm.weekday),
         effective_from: scheduleForm.effective_from,
-        is_day_off: false,
-      });
+        is_day_off: scheduleForm.is_day_off,
+      };
+      if (editingScheduleId) {
+        await attendanceApi.updateSchedule(editingScheduleId, payload);
+      } else {
+        await attendanceApi.createSchedule(payload);
+      }
+      resetScheduleForm();
       await loadAll();
-      toast.success("Schedule saved");
+      toast.success(editingScheduleId ? "Schedule updated" : "Schedule saved");
     } catch (error) {
       toast.error(errorMessage(error, "Failed to save schedule"));
     } finally {
@@ -1034,6 +1138,54 @@ export function AttendanceAdminClient() {
       toast.success(clockIn ? "ADMS clock-in sent" : "ADMS clock-out sent");
     } catch (error) {
       toast.error(errorMessage(error, "ADMS test punch failed. Check that ADMS is enabled on the test API."));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function toggleWeeklyStaff(staffId: number, checked: boolean) {
+    setWeeklyScheduleForm((current) => ({
+      ...current,
+      staff_ids: checked
+        ? [...current.staff_ids, staffId]
+        : current.staff_ids.filter((id) => id !== staffId),
+    }));
+  }
+
+  async function saveWeeklySchedule() {
+    if (weeklyScheduleForm.staff_ids.length === 0) {
+      return toast.error("Select at least one staff member");
+    }
+    setBusy(true);
+    try {
+      await attendanceApi.createWeeklySchedules({
+        staff_ids: weeklyScheduleForm.staff_ids,
+        effective_from: weeklyScheduleForm.effective_from,
+        assignments: weeklyScheduleForm.assignments.map((templateId, weekday) => ({
+          weekday,
+          shift_template_id: templateId ? Number(templateId) : null,
+          is_day_off: !templateId,
+        })),
+      });
+      await loadAll();
+      toast.success("Weekly schedules saved");
+    } catch (error) {
+      toast.error(errorMessage(error, "Failed to save weekly schedules"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function deleteSchedule(schedule: AttendanceSchedule) {
+    if (!window.confirm("Delete this schedule rule?")) return;
+    setBusy(true);
+    try {
+      await attendanceApi.deleteSchedule(schedule.id);
+      if (editingScheduleId === schedule.id) resetScheduleForm();
+      await loadAll();
+      toast.success("Schedule rule deleted");
+    } catch (error) {
+      toast.error(errorMessage(error, "Failed to delete schedule rule"));
     } finally {
       setBusy(false);
     }
@@ -1239,9 +1391,9 @@ export function AttendanceAdminClient() {
                 entries={activeEntries}
                 staffProfiles={staffProfiles}
                 usersById={usersById}
-                onSubmit={submitEntry}
                 onApprove={approveEntry}
                 onReject={rejectEntry}
+                onReopen={reopenEntry}
                 onCorrect={openCorrection}
               />
             </div>
@@ -1261,9 +1413,9 @@ export function AttendanceAdminClient() {
                 )}
                 staffProfiles={staffProfiles}
                 usersById={usersById}
-                onSubmit={submitEntry}
                 onApprove={approveEntry}
                 onReject={rejectEntry}
+                onReopen={reopenEntry}
                 onCorrect={openCorrection}
               />
             </div>
@@ -1273,16 +1425,26 @@ export function AttendanceAdminClient() {
         <TabsContent value="timesheets">
           <WorkforceSection
             title="Timesheets"
-            description="Approve payable hours before payroll snapshot. Open entries stay visible even when they started earlier."
+            description="Review exceptions only. Finalize approved attendance when the payroll period is ready to lock."
             actions={
-              <Button
-                variant="outline"
-                disabled={busy}
-                onClick={() => void exportTimesheets()}
-              >
-                <Download className="mr-2 h-4 w-4" />
-                Export CSV
-              </Button>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant="outline"
+                  disabled={busy}
+                  onClick={() => void exportTimesheets()}
+                >
+                  <Download className="mr-2 h-4 w-4" />
+                  Export CSV
+                </Button>
+                {canFinalizePayroll ? (
+                  <Button
+                    disabled={busy}
+                    onClick={() => void finalizePayrollPeriod()}
+                  >
+                    Finalize payroll period
+                  </Button>
+                ) : null}
+              </div>
             }
             contentClassName="overflow-hidden rounded-xl border"
           >
@@ -1291,9 +1453,9 @@ export function AttendanceAdminClient() {
                 entries={entries}
                 staffProfiles={staffProfiles}
                 usersById={usersById}
-                onSubmit={submitEntry}
                 onApprove={approveEntry}
                 onReject={rejectEntry}
+                onReopen={reopenEntry}
                 onCorrect={openCorrection}
               />
             </div>
@@ -1739,9 +1901,90 @@ export function AttendanceAdminClient() {
             </Card>
             <Card>
               <CardHeader>
-                <CardTitle>Schedule Rule</CardTitle>
+                <CardTitle>Weekly schedule</CardTitle>
                 <CardDescription>
-                  Assign default weekly shifts or staff overrides.
+                  Set one recurring Mondayâ€“Sunday roster for selected staff. A newer week automatically replaces the prior version.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <Field label="Staff">
+                  <div className="max-h-48 space-y-2 overflow-y-auto rounded-md border p-3">
+                    {staffProfiles.map((profile) => (
+                      <label key={profile.id} className="flex cursor-pointer items-center gap-2 text-sm">
+                        <Checkbox
+                          checked={weeklyScheduleForm.staff_ids.includes(profile.id)}
+                          onCheckedChange={(checked) =>
+                            toggleWeeklyStaff(profile.id, checked === true)
+                          }
+                        />
+                        {staffLabel(profile, usersById)}
+                      </label>
+                    ))}
+                    {staffProfiles.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">No staff profiles available.</p>
+                    ) : null}
+                  </div>
+                </Field>
+                <Field label="Week starting Monday">
+                  <Input
+                    type="date"
+                    value={weeklyScheduleForm.effective_from}
+                    onChange={(event) =>
+                      setWeeklyScheduleForm((current) => ({
+                        ...current,
+                        effective_from: weekMondayIso(event.target.value),
+                      }))
+                    }
+                  />
+                </Field>
+                <div className="space-y-3">
+                  {WEEKDAY_NAMES.map((day, weekday) => (
+                    <div key={day} className="grid grid-cols-[110px_minmax(0,1fr)] items-center gap-3">
+                      <div>
+                        <Label>{day}</Label>
+                        <p className="text-xs text-muted-foreground">{weeklyScheduleDates[weekday]}</p>
+                      </div>
+                      <Select
+                        value={weeklyScheduleForm.assignments[weekday] || "off"}
+                        onValueChange={(value) =>
+                          setWeeklyScheduleForm((current) => ({
+                            ...current,
+                            assignments: current.assignments.map((item, index) =>
+                              index === weekday ? (value === "off" ? "" : value) : item,
+                            ),
+                          }))
+                        }
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="off">Day off</SelectItem>
+                          {templates.map((template) => (
+                            <SelectItem key={template.id} value={String(template.id)}>
+                              {template.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  ))}
+                </div>
+                <Button
+                  onClick={saveWeeklySchedule}
+                  disabled={busy || templates.length === 0 || staffProfiles.length === 0}
+                  className="w-full"
+                >
+                  <Check className="mr-2 h-4 w-4" />
+                  Apply weekly schedule
+                </Button>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader>
+                <CardTitle>Weekly exception</CardTitle>
+                <CardDescription>
+                  Override one recurring weekday. Use the weekly roster above for normal staff schedules.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -1770,7 +2013,19 @@ export function AttendanceAdminClient() {
                     </SelectContent>
                   </Select>
                 </Field>
-                <Field label="Template">
+                <div className="flex items-center justify-between rounded-lg border p-3">
+                  <div>
+                    <Label>Day off</Label>
+                    <p className="text-xs text-muted-foreground">No shift is expected on this weekday.</p>
+                  </div>
+                  <Switch
+                    checked={scheduleForm.is_day_off}
+                    onCheckedChange={(checked) =>
+                      setScheduleForm((current) => ({ ...current, is_day_off: checked }))
+                    }
+                  />
+                </div>
+                <Field label="Shift template">
                   <Select
                     value={scheduleForm.shift_template_id}
                     onValueChange={(value) =>
@@ -1780,7 +2035,7 @@ export function AttendanceAdminClient() {
                       }))
                     }
                   >
-                    <SelectTrigger>
+                  <SelectTrigger disabled={scheduleForm.is_day_off}>
                       <SelectValue placeholder="Select shift" />
                     </SelectTrigger>
                     <SelectContent>
@@ -1794,20 +2049,30 @@ export function AttendanceAdminClient() {
                 </Field>
                 <div className="grid grid-cols-2 gap-3">
                   <Field label="Weekday">
-                    <Input
-                      type="number"
-                      min={0}
-                      max={6}
+                    <Select
                       value={scheduleForm.weekday}
-                      onChange={(event) =>
+                      onValueChange={(value) =>
                         setScheduleForm((current) => ({
                           ...current,
-                          weekday: event.target.value,
+                          weekday: value,
                         }))
                       }
-                    />
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select weekday" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="0">Monday</SelectItem>
+                        <SelectItem value="1">Tuesday</SelectItem>
+                        <SelectItem value="2">Wednesday</SelectItem>
+                        <SelectItem value="3">Thursday</SelectItem>
+                        <SelectItem value="4">Friday</SelectItem>
+                        <SelectItem value="5">Saturday</SelectItem>
+                        <SelectItem value="6">Sunday</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </Field>
-                  <Field label="Effective from">
+                  <Field label="Starts on">
                     <Input
                       type="date"
                       value={scheduleForm.effective_from}
@@ -1818,16 +2083,33 @@ export function AttendanceAdminClient() {
                         }))
                       }
                     />
+                    <p className="text-xs text-muted-foreground">
+                      Applies every selected weekday from the first matching date on or after this date.
+                    </p>
                   </Field>
                 </div>
                 <Button
-                  onClick={createSchedule}
+                  onClick={saveSchedule}
                   disabled={busy || templates.length === 0}
                   className="w-full"
                 >
-                  <Plus className="mr-2 h-4 w-4" />
-                  Save schedule
+                  {editingScheduleId ? (
+                    <Pencil className="mr-2 h-4 w-4" />
+                  ) : (
+                    <Plus className="mr-2 h-4 w-4" />
+                  )}
+                  {editingScheduleId ? "Save changes" : "Save schedule"}
                 </Button>
+                {editingScheduleId ? (
+                  <Button
+                    variant="outline"
+                    onClick={resetScheduleForm}
+                    disabled={busy}
+                    className="w-full"
+                  >
+                    Cancel edit
+                  </Button>
+                ) : null}
               </CardContent>
             </Card>
           </div>
@@ -1836,6 +2118,8 @@ export function AttendanceAdminClient() {
             templates={templates}
             staffProfiles={staffProfiles}
             usersById={usersById}
+            onEdit={editSchedule}
+            onDelete={deleteSchedule}
           />
         </TabsContent>
 
@@ -2383,8 +2667,8 @@ export function AttendanceAdminClient() {
           <DialogHeader>
             <DialogTitle>Correct attendance time</DialogTitle>
             <DialogDescription>
-              The record will return to draft and must be reviewed before
-              payroll.
+              Your reason is recorded in the audit trail. Clean corrected
+              records are approved automatically; exceptions return to review.
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-2 sm:grid-cols-2">
@@ -2670,17 +2954,17 @@ function TimesheetTable({
   entries,
   staffProfiles,
   usersById,
-  onSubmit,
   onApprove,
   onReject,
+  onReopen,
   onCorrect,
 }: {
   entries: AttendanceEntry[];
   staffProfiles: StaffProfile[];
   usersById: Map<number, StaffUser>;
-  onSubmit: (entry: AttendanceEntry) => void;
   onApprove: (entry: AttendanceEntry) => void;
   onReject: (entry: AttendanceEntry) => void;
+  onReopen: (entry: AttendanceEntry) => void;
   onCorrect: (entry: AttendanceEntry) => void;
 }) {
   return (
@@ -2715,7 +2999,9 @@ function TimesheetTable({
                         : "secondary"
                     }
                   >
-                    {attendanceApprovalLabel(entry.approval_status)}
+                    {entry.clock_out_at
+                      ? attendanceApprovalLabel(entry.approval_status)
+                      : "Awaiting clock-out"}
                   </Badge>
                 </div>
                 <p className="mt-3 text-sm">
@@ -2740,7 +3026,20 @@ function TimesheetTable({
                   </p>
                 ) : null}
                 <div className="mt-3 flex flex-wrap gap-2">
-                  {entry.approval_status !== "payroll_exported" ? (
+                  {entry.approval_status === "approved" ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => onReopen(entry)}
+                    >
+                      <Pencil className="mr-1 h-3 w-3" />
+                      Review
+                    </Button>
+                  ) : null}
+                  {[
+                    "pending",
+                    "needs_correction",
+                  ].includes(entry.approval_status) ? (
                     <Button
                       size="sm"
                       variant="outline"
@@ -2750,22 +3049,15 @@ function TimesheetTable({
                       Correct
                     </Button>
                   ) : null}
-                  {entry.approval_status === "draft" ? (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => onSubmit(entry)}
-                    >
-                      Submit
-                    </Button>
-                  ) : null}
                   {entry.approval_status === "pending" ? (
                     <Button size="sm" onClick={() => onApprove(entry)}>
                       <Check className="mr-1 h-3 w-3" />
                       Approve
                     </Button>
                   ) : null}
-                  {entry.approval_status === "pending" ? (
+                  {["pending", "needs_correction", "approved"].includes(
+                    entry.approval_status,
+                  ) ? (
                     <Button
                       size="sm"
                       variant="outline"
@@ -2837,7 +3129,9 @@ function TimesheetTable({
                             : "secondary"
                         }
                       >
-                        {attendanceApprovalLabel(entry.approval_status)}
+                        {entry.clock_out_at
+                          ? attendanceApprovalLabel(entry.approval_status)
+                          : "Awaiting clock-out"}
                       </Badge>
                       {entry.exception_code ? (
                         <div className="mt-1 text-xs text-destructive">
@@ -2847,7 +3141,20 @@ function TimesheetTable({
                     </TableCell>
                     <TableCell className="min-w-[260px] text-right">
                       <div className="flex justify-end gap-2">
-                        {entry.approval_status !== "payroll_exported" ? (
+                        {entry.approval_status === "approved" ? (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => onReopen(entry)}
+                          >
+                            <Pencil className="mr-1 h-3 w-3" />
+                            Review
+                          </Button>
+                        ) : null}
+                        {[
+                          "pending",
+                          "needs_correction",
+                        ].includes(entry.approval_status) ? (
                           <Button
                             size="sm"
                             variant="outline"
@@ -2857,22 +3164,15 @@ function TimesheetTable({
                             Correct
                           </Button>
                         ) : null}
-                        {entry.approval_status === "draft" ? (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => onSubmit(entry)}
-                          >
-                            Submit
-                          </Button>
-                        ) : null}
                         {entry.approval_status === "pending" ? (
                           <Button size="sm" onClick={() => onApprove(entry)}>
                             <Check className="mr-1 h-3 w-3" />
                             Approve
                           </Button>
                         ) : null}
-                        {entry.approval_status === "pending" ? (
+                        {["pending", "needs_correction", "approved"].includes(
+                          entry.approval_status,
+                        ) ? (
                           <Button
                             size="sm"
                             variant="outline"
@@ -2900,11 +3200,15 @@ function ScheduleTable({
   templates,
   staffProfiles,
   usersById,
+  onEdit,
+  onDelete,
 }: {
   schedules: AttendanceSchedule[];
   templates: AttendanceShiftTemplate[];
   staffProfiles: StaffProfile[];
   usersById: Map<number, StaffUser>;
+  onEdit: (schedule: AttendanceSchedule) => void;
+  onDelete: (schedule: AttendanceSchedule) => void;
 }) {
   const weekdayNames = [
     "Monday",
@@ -2920,7 +3224,7 @@ function ScheduleTable({
       <CardHeader>
         <CardTitle>Schedule Rules</CardTitle>
         <CardDescription>
-          Restaurant default rules and staff overrides.
+          Recurring rules. Each row shows the first calendar date it applies.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -2957,7 +3261,7 @@ function ScheduleTable({
                         </p>
                       </div>
                       <Badge variant="outline" className="shrink-0">
-                        {item.effective_from}
+                        Starts {firstApplicableDate(item.effective_from, item.weekday)}
                       </Badge>
                     </div>
                     {item.effective_to ? (
@@ -2965,6 +3269,15 @@ function ScheduleTable({
                         Ends {item.effective_to}
                       </p>
                     ) : null}
+                    <div className="mt-3 flex gap-2">
+                      <Button size="sm" variant="outline" onClick={() => onEdit(item)}>
+                        <Pencil className="mr-1 h-3.5 w-3.5" />
+                        Edit
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => onDelete(item)}>
+                        Delete
+                      </Button>
+                    </div>
                   </div>
                 );
               })}
@@ -2976,7 +3289,8 @@ function ScheduleTable({
                     <TableHead>Staff</TableHead>
                     <TableHead>Weekday</TableHead>
                     <TableHead>Shift</TableHead>
-                    <TableHead>Effective</TableHead>
+                    <TableHead>Applies</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -3005,7 +3319,22 @@ function ScheduleTable({
                               "Shift #" + item.shift_template_id}
                         </TableCell>
                         <TableCell>
-                          {item.effective_from} to {item.effective_to || "open"}
+                          <p>Every {weekdayNames[item.weekday]}</p>
+                          <p className="text-xs text-muted-foreground">
+                            First {firstApplicableDate(item.effective_from, item.weekday)}
+                            {item.effective_to ? ` â€¢ through ${item.effective_to}` : " â€¢ ongoing"}
+                          </p>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-2">
+                            <Button size="sm" variant="outline" onClick={() => onEdit(item)}>
+                              <Pencil className="mr-1 h-3.5 w-3.5" />
+                              Edit
+                            </Button>
+                            <Button size="sm" variant="outline" onClick={() => onDelete(item)}>
+                              Delete
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     );

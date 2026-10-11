@@ -2295,6 +2295,7 @@ export const AttendanceApis = {
   correctEntry: (id: number) => "/attendance/entries/" + id + "/correction",
   audit: (id: number) => "/attendance/entries/" + id + "/audit",
   exportCsv: "/attendance/export.csv",
+  finalizePayrollExport: "/attendance/payroll-export/finalize",
   shiftTemplates: "/attendance/shift-templates",
   shiftTemplate: (id: number) => "/attendance/shift-templates/" + id,
   schedules: (staffId?: number) =>
@@ -2302,6 +2303,7 @@ export const AttendanceApis = {
       ? "/attendance/schedules?staff_id=" + staffId
       : "/attendance/schedules",
   createSchedule: "/attendance/schedules",
+  createWeeklySchedules: "/attendance/schedules/weekly",
   schedule: (id: number) => "/attendance/schedules/" + id,
   leaves: "/attendance/leaves",
   leaveDecision: (id: number, action: "approve" | "reject" | "cancel") =>
