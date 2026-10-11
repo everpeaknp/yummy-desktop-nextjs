@@ -79,6 +79,9 @@ export type MyAttendanceStatus = {
   latest_entry: AttendanceEntry | null;
 };
 
+export type AttendanceScheduleDay = { date: string; kind: "shift" | "day_off" | "leave" | "holiday"; label: string; detail: string | null };
+export type AttendanceScheduleWeek = { staff_id: number; staff_name: string; days: AttendanceScheduleDay[] };
+
 export type AttendanceOverview = {
   date_from: string;
   date_to: string;
@@ -196,6 +199,18 @@ export type AttendanceSchedule = {
   is_day_off: boolean;
   created_at: string;
   updated_at: string;
+};
+
+export type AttendanceScheduleAudit = {
+  id: number;
+  restaurant_id: number;
+  schedule_id: number | null;
+  event: string;
+  actor_id: number | null;
+  actor_name: string | null;
+  old_value: Record<string, unknown> | null;
+  new_value: Record<string, unknown> | null;
+  created_at: string;
 };
 
 export type AttendanceLeave = {

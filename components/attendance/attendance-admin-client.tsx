@@ -88,6 +88,7 @@ import { FieldInfo } from "@/components/ui/field-info";
 import LocationPicker from "@/components/manage/profile/location-picker";
 import { forwardGeocode, reverseGeocode } from "@/lib/geocode";
 import { attendanceRadiusLabel } from "./attendance-policy";
+import TeamSchedule from "@/app/(dashboard)/attendance/schedule/page";
 import {
   attendanceApprovalLabel,
   attendanceExceptionLabel,
@@ -454,6 +455,8 @@ export function AttendanceAdminClient() {
       }));
     }
   }, [searchParams]);
+
+  const changeTab = useCallback((value: string) => setActiveTab(value), []);
 
   const usersById = useMemo(
     () => new Map(staffUsers.map((user) => [user.id, user])),
@@ -1319,11 +1322,11 @@ export function AttendanceAdminClient() {
 
       <Tabs
         value={activeTab}
-        onValueChange={setActiveTab}
+        onValueChange={changeTab}
         className="space-y-5"
       >
         <div className="lg:hidden">
-          <Select value={activeTab} onValueChange={setActiveTab}>
+          <Select value={activeTab} onValueChange={changeTab}>
             <SelectTrigger className="h-11 w-full rounded-xl">
               <SelectValue />
             </SelectTrigger>
@@ -1767,8 +1770,11 @@ export function AttendanceAdminClient() {
           </Card>
         </TabsContent>
 
+        <TabsContent value="schedules" className="space-y-5">
+          <TeamSchedule />
+        </TabsContent>
         <TabsContent
-          value="schedules"
+          value="legacy-schedules"
           className="grid gap-5 xl:grid-cols-[420px_minmax(0,1fr)]"
         >
           <div className="space-y-5">
@@ -3210,6 +3216,21 @@ function ScheduleTable({
   onEdit: (schedule: AttendanceSchedule) => void;
   onDelete: (schedule: AttendanceSchedule) => void;
 }) {
+  const [showRules, setShowRules] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+  const today = todayIso();
+  const currentSchedules = Array.from(
+    schedules
+      .filter((item) => item.effective_from <= today && (!item.effective_to || item.effective_to >= today))
+      .reduce((items, item) => {
+        const key = `${item.staff_id ?? "default"}-${item.weekday}`;
+        const existing = items.get(key);
+        if (!existing || `${item.effective_from}-${item.id}` > `${existing.effective_from}-${existing.id}`) items.set(key, item);
+        return items;
+      }, new Map<string, AttendanceSchedule>())
+      .values(),
+  );
+  const displayedSchedules = showHistory ? schedules : currentSchedules;
   const weekdayNames = [
     "Monday",
     "Tuesday",
@@ -3222,20 +3243,27 @@ function ScheduleTable({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Schedule Rules</CardTitle>
-        <CardDescription>
-          Recurring rules. Each row shows the first calendar date it applies.
-        </CardDescription>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <CardTitle>{showHistory ? "Schedule history" : "Current recurring rules"}</CardTitle>
+            <CardDescription>
+              {showHistory
+                ? "Previous and future rule versions. Use this only when auditing or correcting a schedule."
+                : "Only rules active today. Use Team schedule to plan the operational week."}
+            </CardDescription>
+          </div>
+          <div className="flex gap-2"><Button size="sm" variant="outline" asChild><Link href="/attendance/schedule">Team schedule</Link></Button>{showRules ? <Button size="sm" variant="outline" onClick={() => setShowHistory((value) => !value)}>{showHistory ? "Hide history" : `History (${Math.max(0, schedules.length - currentSchedules.length)})`}</Button> : null}<Button size="sm" variant="outline" onClick={() => setShowRules((value) => !value)}>{showRules ? "Hide rules" : "View rules"}</Button></div>
+        </div>
       </CardHeader>
       <CardContent>
-        {schedules.length === 0 ? (
+        {!showRules ? <div className="rounded-xl border border-dashed p-5 text-sm text-muted-foreground">Use <Link className="font-medium text-primary underline" href="/attendance/schedule">Team schedule</Link> to plan the week. Rule details and historical versions stay hidden until you need to audit or edit them.</div> : displayedSchedules.length === 0 ? (
           <div className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">
-            No schedule rules yet.
+            {showHistory ? "No schedule history." : "No recurring rules are active today."}
           </div>
         ) : (
           <>
             <div className="space-y-2 lg:hidden">
-              {schedules.map((item) => {
+              {displayedSchedules.map((item) => {
                 const template = templates.find(
                   (t) => t.id === item.shift_template_id,
                 );
@@ -3294,7 +3322,7 @@ function ScheduleTable({
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {schedules.map((item) => {
+                  {displayedSchedules.map((item) => {
                     const template = templates.find(
                       (t) => t.id === item.shift_template_id,
                     );

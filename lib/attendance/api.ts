@@ -11,6 +11,7 @@ import type {
   AttendanceOverview,
   AttendanceQrSession,
   AttendanceSchedule,
+  AttendanceScheduleAudit,
   AttendanceSettings,
   AttendanceShiftTemplate,
   BaseResponse,
@@ -65,6 +66,30 @@ export const attendanceApi = {
   async updateShiftTemplate(id: number, payload: Partial<AttendanceShiftTemplate>) {
     return unwrap<AttendanceShiftTemplate>(await apiClient.patch(AttendanceApis.shiftTemplate(id), payload));
   },
+  async myLeaves() {
+    return unwrap<AttendanceLeave[]>(await apiClient.get(AttendanceApis.myLeaves));
+  },
+  async myHolidays(params: { dateFrom?: string; dateTo?: string } = {}) {
+    return unwrap<AttendanceHoliday[]>(
+      await apiClient.get(AttendanceApis.myHolidays + query({ date_from: params.dateFrom, date_to: params.dateTo })),
+    );
+  },
+  async myPayroll() {
+    return unwrap<Record<string, unknown>>(await apiClient.get(AttendanceApis.myPayroll));
+  },
+  async mySchedule(weekStart: string) {
+    return unwrap<import("./types").AttendanceScheduleWeek[]>(await apiClient.get(AttendanceApis.mySchedule(weekStart)));
+  },
+  async teamSchedule(weekStart: string) {
+    return unwrap<import("./types").AttendanceScheduleWeek[]>(await apiClient.get(AttendanceApis.teamSchedule(weekStart)));
+  },
+  async submitMobilePunch(payload: { qr_token: string; latitude: number; longitude: number; device_label?: string }) {
+    return unwrap<AttendanceEntry>(await apiClient.post(AttendanceApis.mobilePunch, {
+      ...payload,
+      biometric_confirmed: false,
+      device_identifier: navigator.userAgent,
+    }));
+  },
   async deleteShiftTemplate(id: number) {
     return unwrap<void>(await apiClient.delete(AttendanceApis.shiftTemplate(id)));
   },
@@ -73,6 +98,9 @@ export const attendanceApi = {
   },
   async createSchedule(payload: Partial<AttendanceSchedule>) {
     return unwrap<AttendanceSchedule>(await apiClient.post(AttendanceApis.createSchedule, payload));
+  },
+  async listScheduleAudit() {
+    return unwrap<AttendanceScheduleAudit[]>(await apiClient.get(AttendanceApis.scheduleAudit));
   },
   async createWeeklySchedules(payload: {
     staff_ids: number[];
