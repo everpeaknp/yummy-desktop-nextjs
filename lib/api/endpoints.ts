@@ -2294,6 +2294,7 @@ export const AttendanceApis = {
   teamSchedule: (weekStart: string) => `/attendance/schedule-view?week_start=${weekStart}`,
   mobilePunch: "/attendance/mobile-punch",
   entries: "/attendance/entries",
+  staffReport: (dateFrom: string, dateTo: string) => `/attendance/reports/staff?date_from=${dateFrom}&date_to=${dateTo}`,
   submitEntry: (id: number) => "/attendance/entries/" + id + "/submit",
   approveEntry: (id: number) => "/attendance/entries/" + id + "/approve",
   rejectEntry: (id: number) => "/attendance/entries/" + id + "/reject",

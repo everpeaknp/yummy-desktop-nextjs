@@ -83,6 +83,9 @@ export const attendanceApi = {
   async teamSchedule(weekStart: string) {
     return unwrap<import("./types").AttendanceScheduleWeek[]>(await apiClient.get(AttendanceApis.teamSchedule(weekStart)));
   },
+  async staffReport(dateFrom: string, dateTo: string) {
+    return unwrap<import("./types").AttendanceStaffReport[]>(await apiClient.get(AttendanceApis.staffReport(dateFrom, dateTo)));
+  },
   async submitMobilePunch(payload: { qr_token: string; latitude: number; longitude: number; device_label?: string }) {
     return unwrap<AttendanceEntry>(await apiClient.post(AttendanceApis.mobilePunch, {
       ...payload,

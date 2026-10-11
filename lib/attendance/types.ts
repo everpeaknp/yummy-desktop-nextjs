@@ -79,8 +79,15 @@ export type MyAttendanceStatus = {
   latest_entry: AttendanceEntry | null;
 };
 
-export type AttendanceScheduleDay = { date: string; kind: "shift" | "day_off" | "leave" | "holiday"; label: string; detail: string | null };
+export type AttendanceScheduleDay = {
+  date: string;
+  kind: "shift" | "day_off" | "leave" | "holiday";
+  label: string;
+  detail: string | null;
+  attendance_outcome?: "present" | "absent" | "review" | null;
+};
 export type AttendanceScheduleWeek = { staff_id: number; staff_name: string; days: AttendanceScheduleDay[] };
+export type AttendanceStaffReport = { staff_id: number; staff_name: string; present_days: number; pending_entries: number; regular_minutes: number; overtime_minutes: number };
 
 export type AttendanceOverview = {
   date_from: string;

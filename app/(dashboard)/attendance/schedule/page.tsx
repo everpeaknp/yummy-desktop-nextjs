@@ -10,7 +10,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { attendanceApi } from "@/lib/attendance/api";
-import type { AttendanceScheduleAudit, AttendanceScheduleWeek, AttendanceShiftTemplate } from "@/lib/attendance/types";
+import type { AttendanceScheduleAudit, AttendanceScheduleWeek, AttendanceShiftTemplate, AttendanceStaffReport } from "@/lib/attendance/types";
 
 const DAY_OFF = "day_off";
 const weekDays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
@@ -43,6 +43,9 @@ export default function TeamSchedule() {
   const [rows, setRows] = useState<AttendanceScheduleWeek[]>([]);
   const [templates, setTemplates] = useState<AttendanceShiftTemplate[]>([]);
   const [scheduleAudit, setScheduleAudit] = useState<AttendanceScheduleAudit[]>([]);
+  const [report, setReport] = useState<AttendanceStaffReport[]>([]);
+  const [reportFrom, setReportFrom] = useState(() => `${localDateKey(new Date()).slice(0, 7)}-01`);
+  const [reportTo, setReportTo] = useState(() => localDateKey(new Date()));
   const [selectedStaff, setSelectedStaff] = useState<number[]>([]);
   const [assignments, setAssignments] = useState<string[]>(Array(7).fill(DAY_OFF));
   const [templateForm, setTemplateForm] = useState<TemplateForm>(emptyTemplate);
@@ -72,6 +75,10 @@ export default function TeamSchedule() {
   }, [week]);
 
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    if (reportFrom > reportTo) return;
+    void attendanceApi.staffReport(reportFrom, reportTo).then(setReport).catch(() => setReport([]));
+  }, [reportFrom, reportTo]);
 
   const dates = rows[0]?.days.map((day) => day.date) || Array.from({ length: 7 }, (_, index) => {
     const date = new Date(`${week}T00:00:00`);
@@ -216,6 +223,11 @@ export default function TeamSchedule() {
         </table>
       </section>
 
+      <Card>
+        <CardHeader><div className="flex flex-wrap items-end justify-between gap-3"><div><CardTitle>Attendance report</CardTitle><CardDescription>Approved attendance by staff for the selected period. Pending entries need review before they count as present.</CardDescription></div><div className="flex flex-wrap gap-2"><label className="text-sm font-medium">From<Input aria-label="Report start date" type="date" value={reportFrom} max={reportTo} onChange={(event) => setReportFrom(event.target.value)} /></label><label className="text-sm font-medium">To<Input aria-label="Report end date" type="date" value={reportTo} min={reportFrom} max={today} onChange={(event) => setReportTo(event.target.value)} /></label></div></div></CardHeader>
+        <CardContent className="overflow-x-auto"><table className="w-full min-w-[680px] text-sm"><thead><tr className="border-b text-left text-muted-foreground"><th className="p-2">Staff</th><th className="p-2">Present days</th><th className="p-2">Regular hours</th><th className="p-2">Overtime</th><th className="p-2">Pending</th></tr></thead><tbody>{report.map((item) => <tr key={item.staff_id} className="border-b last:border-0"><td className="p-2 font-medium">{item.staff_name}</td><td className="p-2">{item.present_days}</td><td className="p-2">{(item.regular_minutes / 60).toFixed(1)}h</td><td className="p-2">{(item.overtime_minutes / 60).toFixed(1)}h</td><td className="p-2">{item.pending_entries || "—"}</td></tr>)}</tbody></table></CardContent>
+      </Card>
+
       <div className="grid gap-5 xl:grid-cols-[1.3fr_0.7fr]">
         <Card>
           <CardHeader><CardTitle>Shift templates</CardTitle><CardDescription>Reusable hours for the roster. Changing a template does not rewrite completed attendance.</CardDescription></CardHeader>
@@ -249,7 +261,12 @@ function ScheduleCell({ day, templates, disabled, locked, onChange }: { day: Att
   const isOverride = day.kind === "leave" || day.kind === "holiday";
   const template = templates.find((item) => item.name === day.label);
   if (isOverride) return <div className={`rounded-md border p-2 ${day.kind === "leave" ? "border-amber-300 bg-amber-50 dark:bg-amber-950/20" : "border-emerald-300 bg-emerald-50 dark:bg-emerald-950/20"}`}><p className="font-medium">{day.label}</p><p className="mt-0.5 text-xs text-muted-foreground">{day.detail || "Protected override"}</p></div>;
-  if (locked) return <div className="rounded-md border bg-muted/40 p-2"><p className="font-medium">{day.label}</p><p className="mt-0.5 text-xs text-muted-foreground">Historical schedule</p></div>;
+  if (locked) {
+    const outcome = day.attendance_outcome;
+    const tone = outcome === "present" ? "border-emerald-300 bg-emerald-50 dark:bg-emerald-950/20" : outcome === "absent" ? "border-rose-300 bg-rose-50 dark:bg-rose-950/20" : outcome === "review" ? "border-amber-300 bg-amber-50 dark:bg-amber-950/20" : "bg-muted/40";
+    const label = outcome === "present" ? "Present" : outcome === "absent" ? "Absent" : outcome === "review" ? "Pending review" : "No attendance recorded";
+    return <div className={`rounded-md border p-2 ${tone}`}><p className="font-medium">{day.label}</p><p className="mt-0.5 text-xs text-muted-foreground">{label}{day.detail ? ` · ${day.detail}` : ""}</p></div>;
+  }
   return <select aria-label={`Schedule for ${day.date}`} className="min-h-16 w-full rounded-md border bg-background px-2 text-sm text-foreground" disabled={disabled} value={day.kind === "day_off" ? DAY_OFF : template ? String(template.id) : DAY_OFF} onChange={(event) => onChange(event.target.value)}><option value={DAY_OFF}>Day off</option>{templates.map((item) => <option key={item.id} value={String(item.id)}>{item.name}</option>)}</select>;
 }
 
