@@ -27,7 +27,7 @@ export function getOrderDiscountLabel(order: {
   manual_discount_amount?: number | null;
 }): string {
   const offerName = order.growth_offer_name?.trim();
-  if (offerName) return `Grow offer: ${offerName}`;
+  if (offerName) return `Grow: ${offerName}`;
   if (order.growth_offer_id || order.growth_campaign_id) return "Grow offer";
   if (Number(order.manual_discount_amount || 0) > 0) return "Manual discount";
   return "Discount";
