@@ -121,8 +121,26 @@ export interface GrowthCampaignResultSummary {
   opt_out_count: number;
   profitability_status?: "verified" | "unverified" | "not_applicable";
   limitations?: string[];
+  recipients?: GrowthCampaignRecipientResult[];
   date_from?: string | null;
   date_to?: string | null;
+}
+
+export interface GrowthCampaignRecipientResult {
+  customer_id?: number | null;
+  customer_name: string;
+  channel: GrowthChannelCode;
+  destination_masked: string;
+  eligibility_status: string;
+  exclusion_reason?: string | null;
+  delivery_state: string;
+  redemption_state: string;
+  favourite_item?: string | null;
+  frozen_at: string;
+  sent_at?: string | null;
+  delivered_at?: string | null;
+  read_at?: string | null;
+  redeemed_at?: string | null;
 }
 
 export interface GrowthOverviewSummary {

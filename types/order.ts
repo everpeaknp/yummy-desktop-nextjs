@@ -88,6 +88,9 @@ export interface Order {
   tax_total: number;
   service_charge: number;
   discount_total: number;
+  growth_campaign_id?: number | null;
+  growth_offer_id?: number | null;
+  growth_offer_name?: string | null;
   manual_discount_amount: number;
   grand_total: number;
   created_at: string;
@@ -164,6 +167,9 @@ export interface OrderBill {
   tax_total: number;
   service_charge: number;
   discount_total: number;
+  growth_campaign_id?: number | null;
+  growth_offer_id?: number | null;
+  growth_offer_name?: string | null;
   manual_discount_amount: number;
   grand_total: number;
   total_paid: number;

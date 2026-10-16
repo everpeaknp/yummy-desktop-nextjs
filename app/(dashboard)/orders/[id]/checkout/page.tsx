@@ -94,7 +94,7 @@ import {
   customerPanValidationMessage,
   optionalCustomerText,
 } from "@/lib/customer-fiscal";
-import { getRecordedOrderDiscount } from "@/lib/order-totals";
+import { getOrderDiscountLabel, getRecordedOrderDiscount } from "@/lib/order-totals";
 import {
   canPostRoomOrderToFolio,
   requiresRoomOrderKotFulfillment,
@@ -243,6 +243,9 @@ interface OrderBill {
   tax_total: number;
   service_charge: number;
   discount_total: number;
+  growth_campaign_id?: number | null;
+  growth_offer_id?: number | null;
+  growth_offer_name?: string | null;
   manual_discount_amount: number;
   grand_total: number;
   total_paid: number;
@@ -264,6 +267,9 @@ interface OrderMeta {
   customer_name?: string;
   customer_phone?: string;
   customer_id?: number;
+  growth_campaign_id?: number | null;
+  growth_offer_id?: number | null;
+  growth_offer_name?: string | null;
   staff_order_for_id?: number | null;
   number_of_guests?: number;
   notes?: string;
@@ -2780,9 +2786,12 @@ export default function CheckoutPage() {
   const discountStaffMember = orderMeta?.staff_order_for_id
     ? staffOptions.find((s) => s.id === orderMeta.staff_order_for_id)
     : undefined;
-  const discountLabel = orderMeta?.staff_order_for_id
-    ? `Staff discount${discountStaffMember ? ` (${staffDisplayName(discountStaffMember)})` : ""}`
-    : "Discount";
+  const discountLabel = getOrderDiscountLabel(bill.growth_offer_name ? bill : orderMeta || bill);
+  const displayDiscountLabel = discountLabel !== "Discount"
+    ? discountLabel
+    : orderMeta?.staff_order_for_id
+      ? `Staff discount${discountStaffMember ? ` (${staffDisplayName(discountStaffMember)})` : ""}`
+      : discountLabel;
   const displayBillItems = bill.items.map((item) => {
     const overrides = itemOverrides[item.id] || {};
     const displayItem = {
@@ -3346,8 +3355,8 @@ export default function CheckoutPage() {
                 <div className="flex justify-between text-sm items-center">
                   <div className="flex items-center gap-1.5">
                     <Percent className="h-3.5 w-3.5 text-emerald-600" />
-                    <span className="text-emerald-600 font-medium">
-                      {discountLabel}
+                    <span className="min-w-0 break-words text-emerald-600 font-medium">
+                      {displayDiscountLabel}
                     </span>
                     {!orderEditLocked &&
                       !displayIsFullyPaid &&

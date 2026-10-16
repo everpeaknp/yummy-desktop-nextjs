@@ -113,7 +113,7 @@ import type {
 } from "@/types/order";
 import { toast } from "sonner";
 import { usePosBillingPermissions } from "@/hooks/use-pos-billing-permissions";
-import { getRecordedOrderDiscount } from "@/lib/order-totals";
+import { getOrderDiscountLabel, getRecordedOrderDiscount } from "@/lib/order-totals";
 import { KotEmbeddedTicketCard } from "@/components/kitchen/kot-ticket-card";
 import { SalesDocumentDetailSheet } from "@/components/finance/transaction-detail/sales-document-detail-sheet";
 import { useMobileAppBarTitle } from "@/components/layout/mobile-app-bar-title";
@@ -1331,8 +1331,8 @@ function OrderBillSummary({
 
         {computedDiscount > 0 && (
           <div className="flex justify-between text-sm">
-            <span className="font-medium text-emerald-600 dark:text-emerald-400">
-              Discount
+            <span className="min-w-0 break-words font-medium text-emerald-600 dark:text-emerald-400">
+              {getOrderDiscountLabel(order)}
             </span>
             <span className="tabular-nums font-medium text-emerald-600 dark:text-emerald-400">
               -{formatCurrency(computedDiscount)}

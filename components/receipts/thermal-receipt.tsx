@@ -5,7 +5,7 @@ import QRCode from "qrcode";
 import { ReceiptData } from "@/types/order";
 import { numberToWords } from "@/lib/utils/number-to-words";
 import { cn } from "@/lib/utils";
-import { getRecordedOrderDiscount } from "@/lib/order-totals";
+import { getOrderDiscountLabel, getRecordedOrderDiscount } from "@/lib/order-totals";
 
 interface ThermalReceiptProps {
   data: ReceiptData;
@@ -492,7 +492,7 @@ function renderBlock(
           )}
           {config.show_discount !== false && computedDiscount > 0 && (
             <div className="flex justify-between">
-              <span>{config.discount_label || "Discount"}</span>
+              <span>{config.discount_label || getOrderDiscountLabel(order)}</span>
               <span>-NPR {computedDiscount.toFixed(2)}</span>
             </div>
           )}

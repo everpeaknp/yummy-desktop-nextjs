@@ -219,6 +219,7 @@ export function CampaignDetailClient({ campaignId }: { campaignId: string }) {
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [scheduleLocal, setScheduleLocal] = useState("");
   const [scheduleConfirmed, setScheduleConfirmed] = useState(false);
+  const [showAllRecipients, setShowAllRecipients] = useState(false);
 
   const permissions = useMemo(
     () => ({
@@ -716,6 +717,109 @@ export function CampaignDetailClient({ campaignId }: { campaignId: string }) {
 {/* Template Preview - Show what customers will see */}
       {selectedTemplate && (
         <TemplatePreview campaign={campaign} template={selectedTemplate} />
+      )}
+
+      {results && (
+        <Card className="dc-card">
+          <CardHeader className="border-b pb-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <CardTitle className="dc-card-title flex items-center gap-2">
+                  <Users aria-hidden="true" className="h-4 w-4 text-primary" />
+                  Campaign recipients
+                </CardTitle>
+                <CardDescription className="mt-1 text-xs">
+                  The customer list frozen for this campaign, including each delivery outcome.
+                </CardDescription>
+              </div>
+              <Badge variant="outline">
+                {results.recipients?.length ?? 0} {(results.recipients?.length ?? 0) === 1 ? "customer" : "customers"}
+              </Badge>
+            </div>
+          </CardHeader>
+          <CardContent className="p-0">
+            {!results.recipients ? (
+              <div className="p-5">
+                <p className="text-sm font-medium">Recipient details are unavailable</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  The campaign totals loaded, but the server did not return the frozen customer list. Update and restart the backend, then refresh this page.
+                </p>
+              </div>
+            ) : results.recipients.length === 0 ? (
+              <p className="p-5 text-sm text-muted-foreground">
+                No frozen recipients are available for this campaign.
+              </p>
+            ) : (
+              <ul className="divide-y" aria-label="Campaign recipients">
+                {results.recipients
+                  .slice(0, showAllRecipients ? undefined : 8)
+                  .map((recipient, index) => {
+                    const outcome = recipient.redeemed_at
+                      ? "Redeemed"
+                      : recipient.delivery_state.replaceAll("_", " ");
+                    const eventTime =
+                      recipient.redeemed_at ??
+                      recipient.read_at ??
+                      recipient.delivered_at ??
+                      recipient.sent_at;
+                    return (
+                      <li
+                        key={`${recipient.customer_id ?? "deleted"}-${recipient.channel}-${index}`}
+                        className="grid gap-3 p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
+                      >
+                        <div className="flex min-w-0 items-start gap-3">
+                          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-semibold" aria-hidden="true">
+                            {recipient.customer_name.trim().charAt(0).toUpperCase() || "?"}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-semibold">{recipient.customer_name}</p>
+                            <p className="truncate text-xs text-muted-foreground">
+                              {recipient.channel.toUpperCase()} · {recipient.destination_masked}
+                            </p>
+                            {recipient.favourite_item && (
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                Favourite item: <span className="font-medium text-foreground">{recipient.favourite_item}</span>
+                              </p>
+                            )}
+                            {recipient.exclusion_reason && (
+                              <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">
+                                {recipient.exclusion_reason.replaceAll("_", " ")}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3 sm:justify-end">
+                          {eventTime && (
+                            <span className="text-xs text-muted-foreground">{formatDate(eventTime)}</span>
+                          )}
+                          <Badge
+                            variant="outline"
+                            className={cn(
+                              "capitalize",
+                              recipient.redeemed_at || ["delivered", "read"].includes(recipient.delivery_state)
+                                ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+                                : recipient.delivery_state === "failed"
+                                  ? "border-destructive/40 bg-destructive/10 text-destructive"
+                                  : "border-border bg-muted text-foreground",
+                            )}
+                          >
+                            {outcome}
+                          </Badge>
+                        </div>
+                      </li>
+                    );
+                  })}
+              </ul>
+            )}
+            {(results.recipients?.length ?? 0) > 8 && (
+              <div className="border-t p-3 text-center">
+                <Button variant="ghost" size="sm" onClick={() => setShowAllRecipients((value) => !value)}>
+                  {showAllRecipients ? "Show fewer" : `Show all ${results.recipients?.length ?? 0} customers`}
+                </Button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
       )}
 
       {/* Campaign Performance Analytics */}
