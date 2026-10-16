@@ -22,6 +22,7 @@ import { assignPaymentChartColors, paymentInstrumentKey } from "@/lib/payment-ch
 import { completeRevenueSources, revenueSourceColor } from "@/lib/dashboard-source-mix"
 import { addTrailingMovingAverage, formatAttentionType, formatDashboardDuration, formatPaymentInstrumentLabel } from "@/lib/dashboard-display-utils"
 import { DashboardPromoCarousel } from "@/components/dashboard/dashboard-promo-carousel"
+import { DashboardTutorialVideo } from "@/components/dashboard/dashboard-tutorial-video"
 
 type DataRow = Record<string, unknown>
 type DashboardProps = {
@@ -208,8 +209,8 @@ export function FigmaExecutiveDashboard({
     { label: "Avg. Order Value", value: financialSummary.averageOrderValue, delta: financialSummary.averageOrderValueDelta },
   ]
 
-  return <div className="hidden md:block">
-    <main className="dashboard-executive mx-auto w-full max-w-[1600px] space-y-4 bg-[#faf9f6] px-5 pb-12 pt-6 text-foreground dark:bg-background xl:px-8">
+  return <div className="hidden w-full min-w-0 md:block">
+    <main className="dashboard-executive mx-auto w-full min-w-0 max-w-[1600px] space-y-4 bg-[#faf9f6] px-5 pb-12 pt-6 text-foreground dark:bg-background xl:px-8">
       <header className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">{greeting}, {userName || "there"}</h1>
@@ -228,8 +229,13 @@ export function FigmaExecutiveDashboard({
         {canViewAnalytics ? <Metric label="Sales" value={amount(metrics.netSales, currency)} detail="Selected period" tone="green" /> : null}
       </section>
 
-      <section aria-label="Promotions">
-        <DashboardPromoCarousel variant="desktop" />
+      <section aria-label="Promotional content" className="grid min-w-0 grid-cols-1 gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(300px,1fr)]">
+        <section aria-label="Promotions" className="min-w-0">
+          <DashboardPromoCarousel variant="desktop" />
+        </section>
+        <section aria-label="Yummy introduction video" className="h-[clamp(180px,13vw,240px)] min-w-0 overflow-hidden rounded-2xl border border-border/80 bg-transparent shadow-sm">
+          <DashboardTutorialVideo />
+        </section>
       </section>
 
       <section aria-label="Dashboard operations" className={`grid items-start gap-5 ${canViewAnalytics ? "xl:grid-cols-[minmax(0,1.8fr)_minmax(300px,0.9fr)]" : "grid-cols-1"}`}>

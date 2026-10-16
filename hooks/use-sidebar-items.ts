@@ -31,8 +31,9 @@ import {
   Truck,
   BookOpenCheck,
   BadgeDollarSign,
-  Sprout,
+  ChartNoAxesCombined,
   Megaphone,
+  ContactRound,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import {
@@ -89,9 +90,9 @@ const RESTAURANT_ICON_MAP: Record<string, LucideIcon> = {
   "/finance/setup": Settings,
   "/finance/operations": Banknote,
   "/customers": Users,
-  "/grow": Sprout,
+  "/grow": ChartNoAxesCombined,
   "/grow/campaigns": Megaphone,
-  "/grow/subscribers": Users,
+  "/grow/subscribers": ContactRound,
   "/attendance": Fingerprint,
   "/staff": Users,
   "/workforce": Briefcase,

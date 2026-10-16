@@ -116,7 +116,7 @@ export function PublicGrowthPreferencesClient({ signedToken }: { signedToken: st
   };
 
   return (
-    <main className="min-h-screen bg-gradient-to-br from-primary/10 via-background to-emerald-500/10 p-4 sm:p-8">
+    <main className="min-h-screen bg-muted/30 p-4 sm:p-8">
       <div className="mx-auto flex min-h-[calc(100vh-4rem)] max-w-xl items-center justify-center">
         {loading ? (
           <div className="text-center">
@@ -124,7 +124,7 @@ export function PublicGrowthPreferencesClient({ signedToken }: { signedToken: st
             <p className="mt-3 text-sm text-muted-foreground">Loading your communication preference…</p>
           </div>
         ) : loadError ? (
-          <Card className="w-full rounded-3xl shadow-xl">
+          <Card className="w-full rounded-2xl shadow-sm">
             <CardContent className="p-8 text-center">
               <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-3xl bg-muted text-muted-foreground">
                 <AlertCircle className="h-8 w-8" />
@@ -153,13 +153,13 @@ export function PublicGrowthPreferencesClient({ signedToken }: { signedToken: st
             </CardContent>
           </Card>
         ) : preferences ? (
-          <Card className="w-full overflow-hidden rounded-3xl shadow-xl">
-            <div className="bg-gradient-to-r from-primary/15 to-emerald-500/15 p-7 text-center">
-              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-3xl bg-background text-primary shadow-sm">
+          <Card className="w-full overflow-hidden rounded-2xl shadow-sm">
+            <div className="border-b border-border/80 bg-gradient-to-br from-orange-50 via-background to-amber-50/50 p-7 text-center dark:from-orange-950/20 dark:via-card dark:to-amber-950/10">
+              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10 text-primary">
                 <MonitorCog className="h-8 w-8" />
               </div>
               <p className="mt-4 text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">Yummy Grow preferences</p>
-              <h1 className="mt-2 text-2xl font-black">{preferences.restaurant_name}</h1>
+              <h1 className="mt-2 text-2xl font-bold">{preferences.restaurant_name}</h1>
             </div>
             <CardContent className="space-y-5 p-7 sm:p-8">
               {actionError && (

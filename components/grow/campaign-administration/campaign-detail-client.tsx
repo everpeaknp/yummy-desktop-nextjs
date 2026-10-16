@@ -29,6 +29,7 @@ import {
 import { toast } from "sonner";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { GrowPageHeader } from "@/components/grow/grow-page-header";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -180,7 +181,7 @@ function Metric({
   return (
     <div className={cn("rounded-xl border p-4", metricToneStyles[tone])}>
       <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">{label}</p>
-      <p className="mt-1 text-xl font-black">{value}</p>
+      <p className="mt-1 text-xl font-bold">{value}</p>
       {detail ? <p className="mt-1 text-xs text-muted-foreground">{detail}</p> : null}
     </div>
   );
@@ -465,26 +466,13 @@ export function CampaignDetailClient({ campaignId }: { campaignId: string }) {
   }
 
   return (
-    <main className="mx-auto flex w-full max-w-[1500px] flex-col gap-6 px-4 pb-20" data-tour="grow-campaign-detail">
-      {/* Header */}
-      <header className="flex flex-col gap-4 border-b border-border pb-6 md:flex-row md:items-end md:justify-between">
-        <div className="space-y-1">
-          <div className="flex items-center gap-3 mb-2">
-            <Link href="/grow/campaigns" className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-primary focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-              <ArrowLeft aria-hidden="true" className="h-4 w-4" />
-              Campaigns
-            </Link>
-          </div>
-          <div className="flex items-center gap-3 flex-wrap">
-            <h1 className="text-pretty text-3xl font-black tracking-tight">{campaign.name}</h1>
-            <Badge variant="outline" className={cn("text-xs font-semibold", statusStyles[campaign.status])}>{campaignStatusLabels[campaign.status]}</Badge>
-          </div>
-          <p className="text-sm text-muted-foreground">
-            {campaign.channel === "email" ? "Email" : "SMS"} · {segmentLabels[campaign.segment_code] || "Selected customers"}
-            {campaign.scheduled_at && ` · ${formatDate(campaign.scheduled_at)}`}
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-3">
+    <main className="mx-auto flex w-full max-w-[1500px] flex-col gap-4 px-4 pb-20 sm:gap-6" data-tour="grow-campaign-detail">
+      <GrowPageHeader
+        backLink={{ href: "/grow/campaigns", label: "Campaigns" }}
+        title={<span className="flex flex-wrap items-center gap-2">{campaign.name}<Badge variant="outline" className={cn("text-xs font-semibold", statusStyles[campaign.status])}>{campaignStatusLabels[campaign.status]}</Badge></span>}
+        description={<>{campaign.channel === "email" ? "Email" : "SMS"} · {segmentLabels[campaign.segment_code] || "Selected customers"}{campaign.scheduled_at && ` · ${formatDate(campaign.scheduled_at)}`}</>}
+        actions={
+          <>
           <Button
             variant="outline"
             size="sm"
@@ -525,8 +513,9 @@ export function CampaignDetailClient({ campaignId }: { campaignId: string }) {
               <XCircle className="h-4 w-4" />Cancel
             </Button>
           )}
-        </div>
-      </header>
+          </>
+        }
+      />
 
       <section className={cn("flex flex-col gap-4 rounded-2xl border p-5 sm:flex-row sm:items-center sm:justify-between", campaign.status === "failed" ? "border-destructive/30 bg-destructive/5" : campaign.status === "paused" ? "border-amber-500/30 bg-amber-500/5" : "border-primary/20 bg-primary/[0.035]")} aria-labelledby="campaign-next-step">
         <div>
@@ -611,7 +600,7 @@ export function CampaignDetailClient({ campaignId }: { campaignId: string }) {
             </div>
           </CardHeader>
           <CardContent className="pt-4 space-y-3">
-            <div className="grid grid-cols-3 gap-2 text-xs">
+            <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-3">
               <div className="rounded-lg border border-black/[0.08] dark:border-white/10 bg-card p-2">
                 <p className="text-[10px] uppercase tracking-wider text-muted-foreground">{frozen ? "Approved List" : "Saved List"}</p>
                 <p className="mt-1 font-bold text-xs">{formatCount(campaign.audience_count)}</p>
@@ -620,7 +609,7 @@ export function CampaignDetailClient({ campaignId }: { campaignId: string }) {
                 <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Can Receive Now</p>
                 <p className="mt-1 font-bold text-xs">{audience ? formatCount(audience.included_count) : "—"}</p>
               </div>
-              <div className="rounded-lg border border-black/[0.08] dark:border-white/10 bg-card p-2">
+              <div className="col-span-2 rounded-lg border border-black/[0.08] dark:border-white/10 bg-card p-2 sm:col-span-1">
                 <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Cannot Receive</p>
                 <p className="mt-1 font-bold text-xs">{audience ? formatCount(audience.excluded_count) : "—"}</p>
               </div>

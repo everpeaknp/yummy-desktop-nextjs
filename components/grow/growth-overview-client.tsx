@@ -11,6 +11,7 @@ import {
   Mail,
   Megaphone,
   MessageSquareText,
+  QrCode,
   RefreshCw,
   Settings,
   Sprout,
@@ -39,6 +40,7 @@ import { campaignStatusLabels } from "@/lib/growth/campaign-administration";
 import { campaignRecommendationHref, recommendedCampaignChannel } from "@/lib/growth/campaign-studio";
 import { hasPermission } from "@/lib/role-permissions";
 import { cn } from "@/lib/utils";
+import { GrowPageHeader } from "@/components/grow/grow-page-header";
 
 const statusClasses: Record<GrowthCampaignStatus, string> = {
   draft: "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300",
@@ -109,15 +111,13 @@ function readinessName(domain: GrowthReadinessDomain): string {
 
 function OverviewSkeleton() {
   return (
-    <div className="mx-auto flex w-full max-w-[1500px] flex-col gap-6 px-4 pb-20" aria-label="Loading Grow home">
-      <Skeleton className="h-28 rounded-2xl" />
+    <div className="mx-auto flex w-full max-w-[1500px] flex-col gap-4 px-4 pb-20" aria-label="Loading Grow home">
+      <Skeleton className="h-20 rounded-2xl" />
       <div className="grid gap-4 md:grid-cols-3">
         {[0, 1, 2].map((item) => <Skeleton key={item} className="h-32 rounded-2xl" />)}
       </div>
-      <div className="grid gap-6 xl:grid-cols-[1.4fr_0.6fr]">
-        <Skeleton className="h-80 rounded-2xl" />
-        <Skeleton className="h-80 rounded-2xl" />
-      </div>
+      <Skeleton className="h-64 rounded-2xl" />
+      <Skeleton className="h-48 rounded-2xl" />
     </div>
   );
 }
@@ -131,6 +131,7 @@ export function GrowthOverviewClient() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showAllOpportunities, setShowAllOpportunities] = useState(false);
 
   const load = useCallback(async (background = false) => {
     background ? setRefreshing(true) : setLoading(true);
@@ -188,15 +189,9 @@ export function GrowthOverviewClient() {
   if (loading) return <OverviewSkeleton />;
 
   return (
-    <main className="mx-auto flex w-full max-w-[1500px] flex-col gap-6 px-4 pb-20" data-tour="grow-overview">
-      <header className="flex flex-col gap-4 border-b border-border pb-6 md:flex-row md:items-end md:justify-between">
-        <div className="max-w-2xl">
-          <h1 className="text-pretty text-3xl font-black tracking-tight">Grow</h1>
-          <p className="mt-2 text-pretty text-sm leading-6 text-muted-foreground">
-            Bring customers back with timely offers and see what works.
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
+    <main className="mx-auto flex w-full max-w-[1500px] flex-col gap-4 px-4 pb-20" data-tour="grow-overview">
+      <GrowPageHeader title="Grow overview" description="Bring customers back with timely offers and see what works." actions={
+        <>
           <Button variant="outline" size="sm" onClick={() => void load(true)} disabled={refreshing}>
             <RefreshCw aria-hidden="true" className={cn("mr-2 h-4 w-4 motion-reduce:animate-none", refreshing && "animate-spin")} />
             {refreshing ? "Refreshing…" : "Refresh"}
@@ -206,11 +201,16 @@ export function GrowthOverviewClient() {
               <Link href="/grow/settings"><Settings aria-hidden="true" className="mr-2 h-4 w-4" />Setup</Link>
             </Button>
           )}
+          {hasPermission(user, "grow.settings.manage") && (
+            <Button asChild variant="outline" size="sm">
+              <Link href="/grow/settings#grow-customer-signups"><QrCode aria-hidden="true" className="mr-2 h-4 w-4" />Get sign-up QR</Link>
+            </Button>
+          )}
           {hasPermission(user, "grow.campaigns.manage") && (
             <Button asChild size="sm"><Link href="/grow/campaigns/new?goal=custom"><Megaphone aria-hidden="true" className="mr-2 h-4 w-4" />Create Campaign</Link></Button>
           )}
-        </div>
-      </header>
+        </>
+      } />
 
       {error && (
         <Alert className="border-destructive/30 bg-destructive/5">
@@ -222,17 +222,17 @@ export function GrowthOverviewClient() {
         </Alert>
       )}
 
-      <section className="grid gap-4 md:grid-cols-3" aria-label="Grow at a glance">
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3" aria-label="Grow at a glance">
         <Card className="border-border/80 shadow-none">
           <CardContent className="flex items-center gap-4 p-5">
             <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary"><Users aria-hidden="true" className="h-5 w-5" /></span>
-            <div><p className="text-sm text-muted-foreground">Customers You Can Reach</p><p className="mt-1 text-2xl font-black tabular-nums">{count(summary.consented_customer_count)}</p><p className="mt-1 text-xs text-muted-foreground">From {count(summary.identified_customer_count)} known customers</p></div>
+            <div><p className="text-sm text-muted-foreground">Customers You Can Reach</p><p className="mt-1 text-2xl font-bold tabular-nums">{count(summary.consented_customer_count)}</p><p className="mt-1 text-xs text-muted-foreground">From {count(summary.identified_customer_count)} known customers</p></div>
           </CardContent>
         </Card>
         <Card className="border-border/80 shadow-none">
           <CardContent className="flex items-center gap-4 p-5">
             <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-violet-500/10 text-violet-600 dark:text-violet-300"><WalletCards aria-hidden="true" className="h-5 w-5" /></span>
-            <div className="min-w-0 flex-1"><p className="text-sm text-muted-foreground">SMS Credits</p><p className="mt-1 text-2xl font-black tabular-nums">{count(wallet?.available_credits)}</p><Link href="/grow/settings#grow-sms-credits" className="mt-1 inline-block text-xs font-semibold text-primary underline-offset-4 hover:underline focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">Add Credits</Link></div>
+            <div className="min-w-0 flex-1"><p className="text-sm text-muted-foreground">SMS Credits</p><p className="mt-1 text-2xl font-bold tabular-nums">{count(wallet?.available_credits)}</p><Link href="/grow/settings#grow-sms-credits" className="mt-1 inline-block text-xs font-semibold text-primary underline-offset-4 hover:underline focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">Add Credits</Link></div>
           </CardContent>
         </Card>
         <Card className="border-border/80 shadow-none">
@@ -247,76 +247,97 @@ export function GrowthOverviewClient() {
         </Card>
       </section>
 
-      <section className="grid items-start gap-6 xl:grid-cols-[1.35fr_0.65fr]">
-        <Card className="overflow-hidden border-primary/20 bg-primary/[0.035] shadow-none">
-          <CardHeader className="pb-3">
-            <div className="flex items-center gap-2 text-sm font-semibold text-primary"><Sprout aria-hidden="true" className="h-4 w-4" />Smart campaign suggestions</div>
-            <CardDescription>Suggestions based on completed visits and current marketing permission—not predictions.</CardDescription>
+      <section aria-label="Campaign suggestions" className="space-y-4">
+        <Card className="overflow-hidden border-primary/20 shadow-sm">
+          <CardHeader className="border-b border-primary/10 bg-primary/[0.035] py-4">
+            <div className="flex items-start gap-3">
+              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary"><Sprout aria-hidden="true" className="h-4 w-4" /></span>
+              <div><CardTitle className="text-base">Your next opportunity</CardTitle><CardDescription className="mt-1">Ideas use completed visits and customer permissions. You choose what to send.</CardDescription></div>
+            </div>
           </CardHeader>
-          <CardContent className="pb-6">
+          <CardContent className="p-4 sm:p-5">
             {opportunity ? (
-              <div>
-                <div className="grid gap-6 lg:grid-cols-[1fr_auto] lg:items-end">
-                  <div>
-                    <Badge variant="outline" className="mb-3 border-primary/25 bg-background text-primary">Best next move</Badge>
-                    <CardTitle className="text-pretty text-2xl">{opportunity.title}</CardTitle>
-                    <CardDescription className="mt-3 max-w-2xl text-sm leading-6">{friendlyOpportunity(opportunity.explanation || opportunity.suggested_action || "Create a timely offer for these customers.")}</CardDescription>
-                    <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-sm">
-                      <span className="font-semibold tabular-nums"><Mail aria-hidden="true" className="mr-2 inline h-4 w-4 text-primary" />{count(opportunity.email_eligible_customer_count)} by email</span>
-                      <span className="font-semibold tabular-nums"><MessageSquareText aria-hidden="true" className="mr-2 inline h-4 w-4 text-primary" />{count(opportunity.sms_eligible_customer_count)} by SMS</span>
-                      {(opportunity.sms_eligible_customer_count ?? 0) > 0 && <span className="text-muted-foreground tabular-nums">At least {count(opportunity.estimated_sms_credits)} SMS credits</span>}
-                    </div>
+              <div className="grid gap-4 lg:grid-cols-[minmax(0,1.05fr)_minmax(20rem,0.95fr)]">
+                <div className="flex flex-col items-start rounded-xl border border-primary/15 bg-primary/[0.025] p-4 sm:p-5">
+                  <Badge variant="outline" className="mb-3 border-primary/25 bg-background text-primary">Recommended next</Badge>
+                  <CardTitle className="text-pretty text-xl">{opportunity.title}</CardTitle>
+                  <CardDescription className="mt-2 max-w-2xl text-sm leading-5">{friendlyOpportunity(opportunity.explanation || opportunity.suggested_action || "Create a timely offer for these customers.")}</CardDescription>
+                  <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5 text-xs font-medium">
+                    <span className="tabular-nums"><Mail aria-hidden="true" className="mr-1.5 inline h-3.5 w-3.5 text-primary" />{count(opportunity.email_eligible_customer_count)} can receive email</span>
+                    <span className="tabular-nums"><MessageSquareText aria-hidden="true" className="mr-1.5 inline h-3.5 w-3.5 text-primary" />{count(opportunity.sms_eligible_customer_count)} can receive SMS</span>
+                    {(opportunity.sms_eligible_customer_count ?? 0) > 0 && <span className="text-muted-foreground tabular-nums">{count(opportunity.estimated_sms_credits)} SMS credits needed</span>}
                   </div>
                   {hasPermission(user, "grow.campaigns.manage") && (opportunity.eligible_customer_count > 0
-                    ? <Button asChild><Link href={campaignRecommendationHref(opportunity, featuredChannel)}>Review Campaign<ArrowRight aria-hidden="true" className="ml-2 h-4 w-4" /></Link></Button>
-                    : <Button disabled>Not Ready to Send</Button>)}
+                    ? <Button asChild className="mt-4 min-h-10"><Link href={campaignRecommendationHref(opportunity, featuredChannel)}>Review this idea<ArrowRight aria-hidden="true" className="ml-2 h-4 w-4" /></Link></Button>
+                    : <Button className="mt-4" disabled>No eligible customers yet</Button>)}
                 </div>
+
                 {opportunities.length > 1 && (
-                  <div className="mt-6 divide-y divide-border border-t border-border" aria-label="More campaign opportunities">
-                    {opportunities.slice(1).map((item) => {
-                      const channel = recommendedCampaignChannel(item, settings);
-                      return (
-                        <div key={item.id} className="grid gap-3 py-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
-                          <div className="min-w-0">
-                            <p className="font-semibold">{item.title}</p>
-                            <p className="mt-1 text-sm leading-5 text-muted-foreground">{friendlyOpportunity(item.explanation || item.suggested_action || "Review this customer opportunity.")}</p>
-                            <p className="mt-2 text-xs text-muted-foreground tabular-nums">
-                              {count(item.email_eligible_customer_count)} email · {count(item.sms_eligible_customer_count)} SMS
-                              {(item.sms_eligible_customer_count ?? 0) > 0 ? ` · at least ${count(item.estimated_sms_credits)} SMS credits` : ""}
-                            </p>
+                  <div className="min-w-0">
+                    <h2 className="mb-2 text-sm font-semibold">Other campaign ideas</h2>
+                    <div className="divide-y divide-border rounded-xl border bg-background px-4">
+                      {(showAllOpportunities ? opportunities.slice(1) : opportunities.slice(1, 3)).map((item) => {
+                        const channel = recommendedCampaignChannel(item, settings);
+                        return (
+                          <div key={item.id} className="flex items-center gap-3 py-3">
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-sm font-semibold">{item.title}</p>
+                              <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">{friendlyOpportunity(item.explanation || item.suggested_action || "Review this customer opportunity.")}</p>
+                              <p className="mt-1 truncate text-xs text-muted-foreground">{count(item.email_eligible_customer_count)} email · {count(item.sms_eligible_customer_count)} SMS eligible{(item.sms_eligible_customer_count ?? 0) > 0 ? ` · ${count(item.estimated_sms_credits)} credits` : ""}</p>
+                            </div>
+                            {hasPermission(user, "grow.campaigns.manage") && (item.eligible_customer_count > 0
+                              ? <Button asChild variant="outline" size="sm" className="shrink-0"><Link href={campaignRecommendationHref(item, channel)}>Review</Link></Button>
+                              : <Button variant="outline" size="sm" disabled className="shrink-0">Not ready</Button>)}
                           </div>
-                          {hasPermission(user, "grow.campaigns.manage") && (item.eligible_customer_count > 0
-                            ? <Button asChild variant="outline" size="sm"><Link href={campaignRecommendationHref(item, channel)}>Review<ArrowRight aria-hidden="true" className="ml-2 h-4 w-4" /></Link></Button>
-                            : <Button variant="outline" size="sm" disabled>Not ready</Button>)}
+                        );
+                      })}
+                      {opportunities.length > 3 && (
+                        <div className="py-2 text-center">
+                          <Button type="button" variant="ghost" size="sm" onClick={() => setShowAllOpportunities((current) => !current)}>
+                            {showAllOpportunities ? "Show fewer ideas" : `Show ${opportunities.length - 3} more ideas`}
+                          </Button>
                         </div>
-                      );
-                    })}
+                      )}
+                    </div>
                   </div>
                 )}
               </div>
             ) : (
-              <div className="py-4">
-                <CardTitle className="text-xl">No smart suggestion right now</CardTitle>
-                <CardDescription className="mt-2 max-w-xl leading-6">Your customers may not match a visit pattern yet, or they may have received an offer recently. You can still create a campaign for everyone who can receive it or select customers yourself.</CardDescription>
-                <div className="mt-4 flex flex-wrap gap-3">
-                  {hasPermission(user, "grow.campaigns.manage") && <Button asChild><Link href="/grow/campaigns/new?goal=custom">Create Campaign<ArrowRight aria-hidden="true" className="ml-2 h-4 w-4" /></Link></Button>}
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div><CardTitle className="text-base">No suggestion right now</CardTitle><CardDescription className="mt-1 max-w-2xl leading-5">Your customers may not match a visit pattern yet, or may have received an offer recently. You can still build a campaign yourself.</CardDescription></div>
+                <div className="flex shrink-0 flex-wrap gap-2">
+                  {hasPermission(user, "grow.campaigns.manage") && <Button asChild><Link href="/grow/campaigns/new?goal=custom">Create Campaign</Link></Button>}
                   <Button asChild variant="outline"><Link href="/grow/subscribers">View Customers</Link></Button>
                 </div>
               </div>
             )}
           </CardContent>
         </Card>
+      </section>
 
-        <Card className="border-border/80 shadow-none">
-          <CardHeader><CardTitle className="text-lg">Needs Your Attention</CardTitle><CardDescription>Campaigns waiting for the next step</CardDescription></CardHeader>
-          <CardContent className="space-y-1">
-            {attentionCampaigns.length ? attentionCampaigns.slice(0, 4).map((campaign) => (
-              <Link key={campaign.id} href={`/grow/campaigns/${campaign.id}`} className="group flex items-center gap-3 rounded-lg px-2 py-3 hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-muted">{campaign.channel === "email" ? <Mail aria-hidden="true" className="h-4 w-4" /> : <MessageSquareText aria-hidden="true" className="h-4 w-4" />}</span>
-                <span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold">{campaign.name}</span><span className="block text-xs text-muted-foreground">{nextAction[campaign.status] || campaignStatusLabels[campaign.status]}</span></span>
-                <ArrowRight aria-hidden="true" className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-0.5 motion-reduce:transform-none" />
-              </Link>
-            )) : <div className="py-8 text-center"><CheckCircle2 aria-hidden="true" className="mx-auto h-8 w-8 text-emerald-600" /><p className="mt-3 text-sm font-semibold">Nothing Needs Attention</p><p className="mt-1 text-xs text-muted-foreground">Your campaigns are up to date.</p></div>}
+      <section aria-label="Campaigns needing attention" className="space-y-4">
+        <Card className="border-border/80 shadow-sm">
+          <CardHeader className="flex-row items-center justify-between gap-3 space-y-0 py-4">
+            <div><CardTitle className="text-base">Needs Your Attention</CardTitle><CardDescription className="mt-1">Campaigns waiting for your next step</CardDescription></div>
+            <Button asChild variant="ghost" size="sm" className="shrink-0"><Link href="/grow/campaigns">All campaigns<ArrowRight aria-hidden="true" className="ml-1.5 h-4 w-4" /></Link></Button>
+          </CardHeader>
+          <CardContent className="pt-0">
+            {attentionCampaigns.length ? (
+              <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+                {attentionCampaigns.slice(0, 4).map((campaign) => (
+                  <Link key={campaign.id} href={`/grow/campaigns/${campaign.id}`} className="group flex min-w-0 items-center gap-3 rounded-xl border p-3 transition-colors hover:border-primary/30 hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                    <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-muted">{campaign.channel === "email" ? <Mail aria-hidden="true" className="h-4 w-4" /> : <MessageSquareText aria-hidden="true" className="h-4 w-4" />}</span>
+                    <span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold">{campaign.name}</span><span className="mt-0.5 block truncate text-xs text-muted-foreground">{nextAction[campaign.status] || campaignStatusLabels[campaign.status]}</span></span>
+                    <ArrowRight aria-hidden="true" className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 motion-reduce:transform-none" />
+                  </Link>
+                ))}
+              </div>
+            ) : (
+              <div className="flex items-center gap-3 rounded-xl bg-emerald-500/[0.04] px-4 py-3">
+                <CheckCircle2 aria-hidden="true" className="h-5 w-5 shrink-0 text-emerald-600" />
+                <div><p className="text-sm font-semibold">You’re all caught up</p><p className="text-xs text-muted-foreground">There are no campaigns waiting for a decision.</p></div>
+              </div>
+            )}
           </CardContent>
         </Card>
       </section>
@@ -340,9 +361,9 @@ export function GrowthOverviewClient() {
           <CardContent>
             {results.length ? <>
               <div className="grid grid-cols-2 gap-x-6 gap-y-5">
-                <div><p className="text-xs text-muted-foreground">Delivered</p><p className="mt-1 text-2xl font-black tabular-nums">{count(delivered)}</p><p className="text-xs text-muted-foreground">of {count(sent)} sent</p></div>
-                <div><p className="text-xs text-muted-foreground">Offers Used</p><p className="mt-1 text-2xl font-black tabular-nums">{count(redeemed)}</p><p className="text-xs text-muted-foreground">linked redemptions</p></div>
-                <div className="col-span-2 border-t border-border pt-4"><p className="text-xs text-muted-foreground">Sales Linked to Offers</p><p className="mt-1 text-2xl font-black tabular-nums">{money(revenue)}</p></div>
+                <div><p className="text-xs text-muted-foreground">Delivered</p><p className="mt-1 text-2xl font-bold tabular-nums">{count(delivered)}</p><p className="text-xs text-muted-foreground">of {count(sent)} sent</p></div>
+                <div><p className="text-xs text-muted-foreground">Offers Used</p><p className="mt-1 text-2xl font-bold tabular-nums">{count(redeemed)}</p><p className="text-xs text-muted-foreground">linked redemptions</p></div>
+                <div className="col-span-2 border-t border-border pt-4"><p className="text-xs text-muted-foreground">Sales Linked to Offers</p><p className="mt-1 text-2xl font-bold tabular-nums">{money(revenue)}</p></div>
               </div>
               <Button asChild variant="outline" className="mt-5 w-full"><Link href="/grow/campaigns">View Campaign Results</Link></Button>
             </> : <div className="py-10 text-center"><CircleDollarSign aria-hidden="true" className="mx-auto h-8 w-8 text-muted-foreground" /><p className="mt-3 text-sm font-semibold">Results Will Appear Here</p><p className="mt-1 text-xs text-muted-foreground">You will see delivery and offer use after a campaign is sent.</p></div>}

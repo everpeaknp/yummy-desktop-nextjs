@@ -35,6 +35,7 @@ import {
 import { useAuth } from "@/hooks/use-auth";
 import { growthApi } from "@/lib/api/growth";
 import { cn } from "@/lib/utils";
+import { GrowPageHeader } from "@/components/grow/grow-page-header";
 import { toast } from "sonner";
 import { hasPermission } from "@/lib/role-permissions";
 import apiClient from "@/lib/api-client";
@@ -382,41 +383,37 @@ export function SubscribersClient() {
   };
 
   return (
-    <main className="mx-auto flex w-full max-w-[1500px] flex-col gap-6 px-4 pb-20">
-      <header className="flex flex-col gap-4 border-b border-border pb-6 md:flex-row md:items-end md:justify-between">
-        <div className="space-y-1">
-          <h1 className="text-pretty text-3xl font-black tracking-tight">Customers</h1>
-          <p className="max-w-2xl text-sm text-muted-foreground">
-            See who can receive offers and update a customer&apos;s contact permission.
-          </p>
-        </div>
+    <main className="mx-auto flex w-full max-w-[1500px] flex-col gap-4 px-4 pb-20 sm:gap-6">
+      <GrowPageHeader title="Customers" description="See who can receive offers and update a customer’s contact permission." actions={
+        <>
         <Button variant="outline" size="sm" onClick={() => void loadSubscribers()} disabled={loading} className="gap-2 self-start md:self-auto">
           <RefreshCw aria-hidden="true" className={cn("h-4 w-4", loading && "animate-spin")} />
           Refresh customers
         </Button>
-      </header>
+        </>
+      } />
 
-      <section className="grid overflow-hidden rounded-2xl border border-border bg-card sm:grid-cols-2 lg:grid-cols-4" aria-label="Customer reach summary">
+      <section className="grid grid-cols-2 overflow-hidden rounded-2xl border border-border bg-card lg:grid-cols-4" aria-label="Customer reach summary">
         {[
           ["All customers", stats.customers, "People in your customer list"],
           ["Can receive offers", stats.total, "Email, SMS, or both"],
           ["SMS", stats.sms, "Can receive text offers"],
           ["Email", stats.email, "Can receive email offers"],
         ].map(([label, value, detail], index) => (
-          <div key={label} className={cn("p-5", index > 0 && "border-t border-border sm:border-l sm:border-t-0", index === 2 && "sm:border-l-0 sm:border-t lg:border-l lg:border-t-0")}>
-            <p className="text-sm font-medium text-muted-foreground">{label}</p>
-            <p className="mt-2 text-3xl font-black tabular-nums">{value}</p>
-            <p className="mt-1 text-xs text-muted-foreground">{detail}</p>
+          <div key={label} className={cn("min-w-0 p-3 sm:p-5", index > 1 && "border-t border-border", index % 2 === 1 && "border-l border-border", "lg:border-t-0", index > 0 && "lg:border-l", index === 2 && "lg:border-l")}>
+            <p className="text-xs font-medium leading-4 text-muted-foreground sm:text-sm">{label}</p>
+            <p className="mt-1.5 text-2xl font-bold tabular-nums sm:mt-2 sm:text-3xl">{value}</p>
+            <p className="mt-1 text-[11px] leading-4 text-muted-foreground sm:text-xs">{detail}</p>
           </div>
         ))}
       </section>
 
       {/* Subscribers List */}
       <Card>
-        <CardHeader>
+        <CardHeader className="gap-3 p-4 sm:p-6">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
-              <CardTitle>Customer list</CardTitle>
+              <CardTitle className="text-lg leading-snug sm:text-xl">Customer list</CardTitle>
               <CardDescription>
                 Showing {filteredSubscribers.length ? startIndex + 1 : 0}-{Math.min(endIndex, filteredSubscribers.length)} of {filteredSubscribers.length} customers
               </CardDescription>
@@ -487,7 +484,7 @@ export function SubscribersClient() {
             </div>
           )}
         </CardHeader>
-        <CardContent>
+        <CardContent className="p-4 pt-0 sm:p-6 sm:pt-0">
           {loading ? (
             <div className="space-y-3">
               {[...Array(5)].map((_, i) => (
@@ -508,7 +505,49 @@ export function SubscribersClient() {
               <p className="mt-1 text-xs text-muted-foreground">{searchQuery || channelFilter !== "all" ? "Try another search or choose Everyone." : "Customers will appear after their first completed order."}</p>
             </div>
           ) : (
-            <div className="overflow-x-auto rounded-lg border">
+            <>
+            <div className="space-y-3 md:hidden" aria-label="Customers">
+              {paginatedSubscribers.map((subscriber) => (
+                <article key={subscriber.customer_id} className="rounded-xl border bg-card p-4 shadow-sm">
+                  <div className="flex items-start gap-3">
+                    {canManageConsent && (
+                      <Checkbox
+                        className="mt-1"
+                        checked={selectedCustomerIds.has(subscriber.customer_id)}
+                        onCheckedChange={(checked) => toggleCustomerSelection(subscriber.customer_id, checked === true)}
+                        aria-label={`Select ${subscriber.name}`}
+                      />
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <h3 className="truncate font-semibold">{subscriber.name}</h3>
+                          <p className="mt-0.5 text-xs text-muted-foreground">{getLanguageLabel(subscriber.preferred_language)}</p>
+                        </div>
+                        {canManageConsent && (
+                          <Button variant="outline" size="sm" className="min-h-10 shrink-0 gap-1.5" onClick={() => openConsentDialog(subscriber)}>
+                            <PencilLine aria-hidden="true" className="h-3.5 w-3.5" />Edit
+                          </Button>
+                        )}
+                      </div>
+                      <div className="mt-3 space-y-1.5 text-sm text-muted-foreground">
+                        {subscriber.phone ? <p className="flex min-w-0 items-center gap-2"><Phone aria-hidden="true" className="h-4 w-4 shrink-0" /><span className="break-all">{subscriber.phone}</span></p> : null}
+                        {subscriber.email ? <p className="flex min-w-0 items-center gap-2"><MdEmail aria-hidden="true" className="h-4 w-4 shrink-0" /><span className="break-all">{subscriber.email}</span></p> : null}
+                        {!subscriber.phone && !subscriber.email ? <p>No contact details</p> : null}
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <ConsentBadge channel="Email" status={subscriber.email_status} />
+                        <ConsentBadge channel="SMS" status={subscriber.sms_status} />
+                      </div>
+                    </div>
+                  </div>
+                  <p className="mt-3 border-t pt-2 text-xs text-muted-foreground">
+                    Permission added {subscriber.created_at ? new Date(subscriber.created_at).toLocaleDateString() : "—"}
+                  </p>
+                </article>
+              ))}
+            </div>
+            <div className="hidden overflow-x-auto rounded-lg border md:block">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -608,11 +647,12 @@ export function SubscribersClient() {
                 </TableBody>
               </Table>
             </div>
+            </>
           )}
 
           {/* Pagination */}
           {filteredSubscribers.length > itemsPerPage && (
-            <div className="flex items-center justify-between pt-4 border-t">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4">
               <p className="text-sm text-muted-foreground">
                 Page {currentPage} of {totalPages}
               </p>

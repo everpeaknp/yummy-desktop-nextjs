@@ -60,7 +60,7 @@ function MetricCard({ icon, label, value, detail, trend }: MetricCardProps) {
           </div>
           <div>
             <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{label}</p>
-            <p className="text-lg font-black tracking-tight tabular-nums mt-0.5">{value}</p>
+            <p className="text-lg font-bold tracking-tight tabular-nums mt-0.5">{value}</p>
           </div>
         </div>
         {trend && (

@@ -55,24 +55,26 @@ export function DashboardPromoCarousel({ variant = "mobile" }: { variant?: "mobi
   const actionType = activeBanner.action_type || "none";
   const actionValue = activeBanner.action_value?.trim() || "";
   const canOpen = actionType !== "none" && Boolean(actionValue);
-  const frameClassName = `relative isolate w-full overflow-hidden border border-border/80 bg-muted ${variant === "desktop" ? "h-40 rounded-2xl xl:h-44" : "aspect-[3.2/1] max-h-44 min-h-28 rounded-xl"}`;
+  const frameClassName = `relative isolate w-full overflow-hidden border border-border/80 bg-muted ${variant === "desktop" ? "h-[clamp(180px,13vw,240px)] rounded-2xl" : "aspect-[3.2/1] max-h-44 min-h-28 rounded-xl"}`;
   const bannerArtwork = (
     <>
-      <Image
-        src={activeImage}
-        alt=""
-        aria-hidden="true"
-        fill
-        sizes="100vw"
-        className="-z-10 scale-110 object-cover opacity-60 blur-xl"
-      />
+      {variant === "mobile" ? (
+        <Image
+          src={activeImage}
+          alt=""
+          aria-hidden="true"
+          fill
+          sizes="100vw"
+          className="-z-10 scale-110 object-cover opacity-60 blur-xl"
+        />
+      ) : null}
       <Image
         key={activeBanner.id}
         src={activeImage}
         alt={activeBanner.alt_text}
         fill
-        sizes="(max-width: 768px) 100vw, 1600px"
-        className="object-contain p-1 drop-shadow-md"
+        sizes={variant === "desktop" ? "(min-width: 1280px) 66vw, 100vw" : "100vw"}
+        className={variant === "desktop" ? "object-fill" : "object-contain p-1 drop-shadow-md"}
         priority={activeIndex === 0}
       />
     </>

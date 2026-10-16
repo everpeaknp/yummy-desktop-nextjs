@@ -506,9 +506,12 @@ export function Sidebar() {
             collapsed ? "flex-col gap-2 py-3 px-2" : "h-14 px-3.5",
           )}
         >
-          <div
+          <Link
+            href="/settings/business-profile"
+            aria-label="Open restaurant profile settings"
+            title="Restaurant profile settings"
             className={cn(
-              "flex items-center min-w-0 flex-1",
+              "flex min-w-0 flex-1 items-center rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
               collapsed ? "justify-center" : "gap-2.5",
             )}
           >
@@ -545,7 +548,7 @@ export function Sidebar() {
                 </div>
               </div>
             )}
-          </div>
+          </Link>
 
           <div
             className={cn(

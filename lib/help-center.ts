@@ -53,6 +53,30 @@ export async function fetchHelpCenter(): Promise<HelpCenterData> {
   return response.data.data as HelpCenterData;
 }
 
+/**
+ * The Admin dashboard creates and edits tutorials through `/tutorial-videos`.
+ * Read that same collection first so the dashboard reflects the exact published
+ * record, including its main-video flag. The Help Center aggregate remains a
+ * compatibility fallback for deployments where the collection route is gated.
+ */
+export async function fetchDashboardTutorialVideos(): Promise<HelpVideo[]> {
+  try {
+    const response = await apiClient.get("/tutorial-videos");
+    const data = response.data?.data;
+    const videos = Array.isArray(data) ? data : data?.items;
+    if (Array.isArray(videos) && videos.length > 0) return videos as HelpVideo[];
+  } catch {
+    // Continue to the public Help Center endpoint for roles without collection access.
+  }
+
+  try {
+    const content = await fetchHelpCenter();
+    return Array.isArray(content?.videos) ? content.videos : [];
+  } catch {
+    return [];
+  }
+}
+
 export function youtubeVideoId(url: string): string | null {
   try {
     const parsed = new URL(url);

@@ -4,11 +4,11 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertCircle,
-  ArrowLeft,
   ArrowRight,
   CalendarClock,
   CheckCircle2,
   CircleDashed,
+  SlidersHorizontal,
   Clock3,
   Mail,
   MessageSquareText,
@@ -24,6 +24,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/hooks/use-auth";
 import { growthApi } from "@/lib/api/growth";
@@ -31,6 +32,7 @@ import type { GrowthCampaign, GrowthCampaignStatus } from "@/lib/api/growth-type
 import { campaignStatusLabels } from "@/lib/growth/campaign-administration";
 import { hasPermission } from "@/lib/role-permissions";
 import { cn } from "@/lib/utils";
+import { GrowPageHeader } from "@/components/grow/grow-page-header";
 
 type WorkflowTab = "attention" | "scheduled" | "sent" | "drafts" | "all";
 type ChannelFilter = "all" | "email" | "sms";
@@ -114,6 +116,7 @@ export function CampaignListClient() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [urlReady, setUrlReady] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const pageSize = 10;
 
   const load = useCallback(async (background = false) => {
@@ -190,37 +193,52 @@ export function CampaignListClient() {
   if (loading) return <CampaignListSkeleton />;
 
   return (
-    <main className="mx-auto flex w-full max-w-[1400px] flex-col gap-6 px-4 pb-20" data-tour="grow-campaigns">
-      <header className="flex flex-col gap-4 border-b border-border pb-6 md:flex-row md:items-end md:justify-between">
-        <div>
-          <Link href="/grow" className="mb-3 inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-primary focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><ArrowLeft aria-hidden="true" className="h-4 w-4" />Grow Home</Link>
-          <h1 className="text-pretty text-3xl font-black tracking-tight">Campaigns</h1>
-          <p className="mt-2 text-sm text-muted-foreground">See what needs action, what is scheduled, and how sent campaigns performed.</p>
-        </div>
-        <div className="flex flex-wrap gap-2">
+    <main className="mx-auto flex w-full max-w-[1500px] flex-col gap-4 px-4 pb-20 sm:gap-6" data-tour="grow-campaigns">
+      <GrowPageHeader title="Campaigns" description="See what needs action, what is scheduled, and how sent campaigns performed." actions={
+        <>
           <Button variant="outline" size="sm" onClick={() => void load(true)} disabled={refreshing}><RefreshCw aria-hidden="true" className={cn("mr-2 h-4 w-4 motion-reduce:animate-none", refreshing && "animate-spin")} />{refreshing ? "Refreshing…" : "Refresh"}</Button>
           {hasPermission(user, "grow.campaigns.manage") && <Button asChild size="sm"><Link href="/grow/campaigns/new?goal=custom"><Plus aria-hidden="true" className="mr-2 h-4 w-4" />Create Campaign</Link></Button>}
-        </div>
-      </header>
+        </>
+      } />
 
       {error && <Alert className="border-destructive/30 bg-destructive/5"><AlertCircle aria-hidden="true" className="h-4 w-4 text-destructive" /><AlertTitle>Campaigns Could Not Load</AlertTitle><AlertDescription className="flex flex-wrap items-center justify-between gap-3"><span>{error}</span><Button variant="outline" size="sm" onClick={() => void load()}>Try Again</Button></AlertDescription></Alert>}
 
-      <nav aria-label="Campaign views" className="flex gap-1 overflow-x-auto border-b border-border">
+      <nav aria-label="Campaign views" className="hidden md:flex md:gap-0 md:overflow-x-auto md:border-b md:border-border">
         {(Object.keys(tabLabels) as WorkflowTab[]).map((item) => (
-          <button key={item} type="button" onClick={() => { setTab(item); setPage(1); }} aria-current={tab === item ? "page" : undefined} className={cn("flex shrink-0 items-center gap-2 border-b-2 px-3 py-3 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", tab === item ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground")}>
-            {tabLabels[item]}<span className={cn("rounded-full px-2 py-0.5 text-xs tabular-nums", tab === item ? "bg-primary/10 text-primary" : "bg-muted")}>{counts[item]}</span>
+          <button key={item} type="button" onClick={() => { setTab(item); setPage(1); }} aria-current={tab === item ? "page" : undefined} className={cn("flex min-h-11 min-w-0 shrink-0 items-center justify-between gap-2 border-b-2 px-3 py-3 text-left text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", tab === item ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground")}>
+            <span className="truncate">{tabLabels[item]}</span><span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[11px] tabular-nums sm:text-xs", tab === item ? "bg-primary/10 text-primary" : "bg-muted")}>{counts[item]}</span>
           </button>
         ))}
       </nav>
 
+      <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2 md:hidden">
+        <Select value={tab} onValueChange={(value) => { setTab(value as WorkflowTab); setPage(1); }}>
+          <SelectTrigger aria-label="Campaign status" className="min-w-0"><SelectValue /></SelectTrigger>
+          <SelectContent>{(Object.keys(tabLabels) as WorkflowTab[]).map((item) => <SelectItem key={item} value={item}>{tabLabels[item]} · {counts[item]}</SelectItem>)}</SelectContent>
+        </Select>
+        <Button type="button" variant="outline" className="gap-2" onClick={() => setFiltersOpen(true)}><SlidersHorizontal aria-hidden="true" className="h-4 w-4" />Filters{(channel !== "all" || goal !== "all") && <span className="rounded-full bg-primary/10 px-1.5 text-xs text-primary">{Number(channel !== "all") + Number(goal !== "all")}</span>}</Button>
+      </div>
+
+      <Sheet open={filtersOpen} onOpenChange={setFiltersOpen}>
+        <SheetContent side="bottom" aria-label="Campaign filters" className="max-h-[85dvh] overflow-y-auto rounded-t-2xl px-4 pb-[calc(env(safe-area-inset-bottom)+1rem)]">
+          <SheetHeader className="mb-5 pr-8 text-left"><SheetTitle>Campaign filters</SheetTitle><SheetDescription>Choose which campaigns to show and how to sort them.</SheetDescription></SheetHeader>
+          <div className="space-y-4">
+            <div className="space-y-2 text-sm font-medium">Channel<Select value={channel} onValueChange={(value) => { setChannel(value as ChannelFilter); setPage(1); }}><SelectTrigger aria-label="Filter by channel" className="w-full"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All Channels</SelectItem><SelectItem value="email">Email</SelectItem><SelectItem value="sms">SMS</SelectItem></SelectContent></Select></div>
+            <div className="space-y-2 text-sm font-medium">Campaign goal<Select value={goal} onValueChange={(value) => { setGoal(value as GoalFilter); setPage(1); }}><SelectTrigger aria-label="Filter by campaign goal" className="w-full"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All Campaign Goals</SelectItem><SelectItem value="second_visit">Bring Back New Customers</SelectItem><SelectItem value="win_back">Re-engage Inactive Customers</SelectItem><SelectItem value="slow_day">Fill a Quiet Period</SelectItem><SelectItem value="custom">Selected Customers</SelectItem></SelectContent></Select></div>
+            <div className="space-y-2 text-sm font-medium">Sort by<Select value={sortBy} onValueChange={(value) => { setSortBy(value as SortBy); setPage(1); }}><SelectTrigger aria-label="Sort campaigns" className="w-full"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="updated_desc">Recently Updated</SelectItem><SelectItem value="scheduled_asc">Sending Soonest</SelectItem></SelectContent></Select></div>
+            <Button type="button" className="w-full" onClick={() => setFiltersOpen(false)}>Show {visible.length} campaigns</Button>
+          </div>
+        </SheetContent>
+      </Sheet>
+
       <Card className="border-border/80 shadow-none">
-        <CardHeader className="gap-4 border-b border-border">
+        <CardHeader className="gap-3 border-b border-border p-4 sm:gap-4 sm:p-6">
           <div><CardTitle className="text-lg">{tabLabels[tab]}</CardTitle><CardDescription className="mt-1">{tab === "attention" ? "Campaigns waiting for your next decision" : tab === "scheduled" ? "Upcoming and currently sending campaigns" : tab === "sent" ? "Completed and canceled campaigns" : tab === "drafts" ? "Campaigns you have started but not sent for approval" : "Every campaign at this restaurant"}</CardDescription></div>
           <div className="grid gap-2 md:grid-cols-[minmax(15rem,1fr)_11rem_14rem_11rem]">
-            <div className="relative"><Search aria-hidden="true" className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input aria-label="Search campaigns" name="campaign-search" autoComplete="off" placeholder="Search campaigns…" value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} className="pl-9" /></div>
-            <Select value={channel} onValueChange={(value) => { setChannel(value as ChannelFilter); setPage(1); }}><SelectTrigger aria-label="Filter by channel"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All Channels</SelectItem><SelectItem value="email">Email</SelectItem><SelectItem value="sms">SMS</SelectItem></SelectContent></Select>
-            <Select value={goal} onValueChange={(value) => { setGoal(value as GoalFilter); setPage(1); }}><SelectTrigger aria-label="Filter by campaign goal"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All Campaign Goals</SelectItem><SelectItem value="second_visit">Bring Back New Customers</SelectItem><SelectItem value="win_back">Re-engage Inactive Customers</SelectItem><SelectItem value="slow_day">Fill a Quiet Period</SelectItem><SelectItem value="custom">Selected Customers</SelectItem></SelectContent></Select>
-            <Select value={sortBy} onValueChange={(value) => { setSortBy(value as SortBy); setPage(1); }}><SelectTrigger aria-label="Sort campaigns"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="updated_desc">Recently Updated</SelectItem><SelectItem value="scheduled_asc">Sending Soonest</SelectItem></SelectContent></Select>
+            <div className="relative min-w-0"><Search aria-hidden="true" className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input aria-label="Search campaigns" name="campaign-search" autoComplete="off" placeholder="Search campaigns…" value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} className="pl-9" /></div>
+            <div className="hidden min-w-0 md:block"><Select value={channel} onValueChange={(value) => { setChannel(value as ChannelFilter); setPage(1); }}><SelectTrigger aria-label="Filter by channel" className="min-w-0"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All Channels</SelectItem><SelectItem value="email">Email</SelectItem><SelectItem value="sms">SMS</SelectItem></SelectContent></Select></div>
+            <div className="hidden min-w-0 md:block"><Select value={goal} onValueChange={(value) => { setGoal(value as GoalFilter); setPage(1); }}><SelectTrigger aria-label="Filter by campaign goal" className="min-w-0"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All Campaign Goals</SelectItem><SelectItem value="second_visit">Bring Back New Customers</SelectItem><SelectItem value="win_back">Re-engage Inactive Customers</SelectItem><SelectItem value="slow_day">Fill a Quiet Period</SelectItem><SelectItem value="custom">Selected Customers</SelectItem></SelectContent></Select></div>
+            <div className="hidden min-w-0 md:block"><Select value={sortBy} onValueChange={(value) => { setSortBy(value as SortBy); setPage(1); }}><SelectTrigger aria-label="Sort campaigns" className="min-w-0"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="updated_desc">Recently Updated</SelectItem><SelectItem value="scheduled_asc">Sending Soonest</SelectItem></SelectContent></Select></div>
           </div>
         </CardHeader>
 

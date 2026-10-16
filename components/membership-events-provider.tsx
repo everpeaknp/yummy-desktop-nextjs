@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useNotificationStore } from "@/hooks/use-notifications";
+import { getWebSocketReconnectDelay, warnWebSocketUnavailableOnce } from "@/lib/websocket-reconnect";
 import {
   dispatchMembershipEvent,
   isMembershipEvent,
@@ -41,6 +42,7 @@ export function MembershipEventsProvider() {
     let active = true;
     let reconnectTimer: number | undefined;
     let pingTimer: number | undefined;
+    let reconnectAttempt = 0;
 
     const connect = () => {
       if (!active) return;
@@ -58,6 +60,7 @@ export function MembershipEventsProvider() {
       const socket = new WebSocket(`${wsBase()}/ws/notifications?${params}`);
       socketRef.current = socket;
       socket.onopen = () => {
+        reconnectAttempt = 0;
         if (pingTimer) window.clearInterval(pingTimer);
         pingTimer = window.setInterval(() => {
           if (socket.readyState === WebSocket.OPEN) {
@@ -90,16 +93,23 @@ export function MembershipEventsProvider() {
       socket.onclose = () => {
         if (socketRef.current === socket) socketRef.current = null;
         if (pingTimer) window.clearInterval(pingTimer);
-        if (active) reconnectTimer = window.setTimeout(connect, 5_000);
+        if (active) reconnectTimer = window.setTimeout(connect, getWebSocketReconnectDelay(++reconnectAttempt));
       };
-      socket.onerror = () => socket.close();
+      socket.onerror = () => {
+        warnWebSocketUnavailableOnce("Notifications");
+        socket.close();
+      };
     };
 
     connect();
     const reconnectWhenVisible = () => {
       if (document.visibilityState !== "visible") return;
       const socket = socketRef.current;
-      if (!socket || socket.readyState === WebSocket.CLOSED) connect();
+      if (!socket || socket.readyState === WebSocket.CLOSED) {
+        if (reconnectTimer) window.clearTimeout(reconnectTimer);
+        reconnectTimer = undefined;
+        connect();
+      }
     };
     document.addEventListener("visibilitychange", reconnectWhenVisible);
 

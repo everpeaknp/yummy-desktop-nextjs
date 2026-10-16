@@ -16,6 +16,16 @@ const props = {
 afterEach(cleanup);
 
 describe("dashboard protected controls", () => {
+  it("keeps the desktop promotions carousel within the left two-thirds of its row", () => {
+    render(<FigmaExecutiveDashboard {...props} />);
+    expect(screen.getByRole("region", { name: "Promotions" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Yummy introduction video" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Yummy product introduction video"))
+      .toHaveAttribute("poster", "/assets/yummy-tutorial-poster.svg?v=2");
+    expect(screen.getByLabelText("Yummy product introduction video")).toHaveAttribute("controls");
+    expect(screen.getByLabelText("Yummy product introduction video")).toHaveStyle({ objectFit: "fill" });
+  });
+
   it("hides staff, shift log links, and export for a limited dashboard viewer", () => {
     render(<FigmaExecutiveDashboard {...props} />);
     expect(screen.queryByText("Floor staff on duty")).not.toBeInTheDocument();

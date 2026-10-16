@@ -5,7 +5,6 @@ import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
-  ArrowLeft,
   ArrowRight,
   CheckCircle2,
   ChevronLeft,
@@ -35,6 +34,7 @@ import { toast } from "sonner";
 import { CampaignPosterPreview, templateColors } from "@/components/grow/campaign-studio/poster-preview";
 import { PosterEditorClient } from "@/components/grow/campaign-studio/poster-editor/PosterEditorClient";
 import { EmailPreview } from "@/components/grow/campaign-studio/email-preview";
+import { GrowPageHeader } from "@/components/grow/grow-page-header";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -754,7 +754,7 @@ export function CampaignStudioClient() {
       return;
     }
     if (step === 1 && playbookCode === "custom" && !customAudienceAll && !audienceCustomerIds.length) {
-      setPageError("Select at least one eligible customer, or choose all eligible subscribers.");
+      setPageError("Select at least one eligible customer to continue.");
       return;
     }
     if (step === 2 && !offerValidation.valid) {
@@ -1025,22 +1025,12 @@ export function CampaignStudioClient() {
   );
 
   return (
-    <main className="mx-auto flex w-full max-w-[1500px] flex-col gap-6 overflow-x-hidden px-4 pb-32">
-      {/* Header */}
-      <header className="flex flex-col gap-4 border-b border-border pb-6 md:flex-row md:items-end md:justify-between">
-        <div className="space-y-1">
-          <div className="flex items-center gap-3 mb-2">
-            <Link href="/grow" className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-primary focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-              <ArrowLeft aria-hidden="true" className="h-4 w-4" />
-              Grow
-            </Link>
-          </div>
-          <h1 className="text-pretty text-3xl font-black tracking-tight">Create a Campaign</h1>
-          <p className="text-sm text-muted-foreground">
-            Choose customers, build an offer, prepare the message, and send it for approval.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-3">
+    <main className="mx-auto flex w-full max-w-[1500px] flex-col gap-4 overflow-x-hidden px-4 pb-20 sm:gap-6">
+      <GrowPageHeader
+        backLink={{ href: "/grow/campaigns", label: "Campaigns" }}
+        title="Create a Campaign"
+        description="Choose customers, build an offer, prepare the message, and send it for approval."
+        actions={
           <Badge variant="outline" className={cn(
             "text-xs font-semibold gap-1.5",
             savedCampaign?.status === "review" 
@@ -1053,14 +1043,14 @@ export function CampaignStudioClient() {
               <><CheckCircle2 className="h-3.5 w-3.5" />Awaiting review</>
             ) : savedCampaign ? (
               <><Save className="h-3.5 w-3.5" />Draft saved</>
-            ) : (
-              <><FilePenLine className="h-3.5 w-3.5" />Unsaved</>
-            )}
+          ) : (
+            <><FilePenLine className="h-3.5 w-3.5" />Unsaved</>
+          )}
           </Badge>
-        </div>
-      </header>
+        }
+      />
 
-      <nav className="dc-card p-4" aria-label="Campaign steps">
+      <nav className="dc-card p-2 sm:p-4" aria-label="Campaign steps">
         <div className="flex items-center justify-between gap-2">
           {studioSteps.map((item, index) => {
             const Icon = item.icon;
@@ -1069,13 +1059,13 @@ export function CampaignStudioClient() {
             const completed = item.step < step;
             
             return (
-              <div key={item.step} className="flex flex-1 items-center">
+              <div key={item.step} className="flex min-w-0 flex-1 items-center">
                 <button
                   type="button"
                   disabled={!accessible || isReadOnly}
                   onClick={() => changeStep(item.step)}
                   className={cn(
-                    "flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                    "flex min-h-11 w-full min-w-0 items-center justify-center gap-2 rounded-lg px-1 py-2 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:justify-start sm:px-3",
                     active 
                       ? "bg-primary text-primary-foreground" 
                       : "hover:bg-muted",
@@ -1116,7 +1106,7 @@ export function CampaignStudioClient() {
                   <ArrowRight
                     aria-hidden="true"
                     className={cn(
-                      "mx-1 h-4 w-4 shrink-0 transition-colors",
+                      "mx-0.5 h-3 w-3 shrink-0 transition-colors sm:mx-1 sm:h-4 sm:w-4",
                       completed ? "text-primary" : "text-muted-foreground/30"
                     )} 
                   />
@@ -1435,12 +1425,12 @@ export function CampaignStudioClient() {
                   <div className="grid grid-cols-2 gap-3">
                     <div className="rounded-xl border border-border bg-muted p-4">
                       <Users className="h-5 w-5" />
-                      <p className="mt-3 text-3xl font-black">{audience.included_count.toLocaleString("en-NP")}</p>
+                      <p className="mt-3 text-3xl font-bold">{audience.included_count.toLocaleString("en-NP")}</p>
                       <p className="text-xs font-semibold text-muted-foreground">Can receive it</p>
                     </div>
                     <div className="rounded-xl border border-border bg-muted p-4">
                       <ShieldCheck className="h-5 w-5" />
-                      <p className="mt-3 text-3xl font-black">{audience.excluded_count.toLocaleString("en-NP")}</p>
+                      <p className="mt-3 text-3xl font-bold">{audience.excluded_count.toLocaleString("en-NP")}</p>
                       <p className="text-xs font-semibold text-muted-foreground">Cannot receive</p>
                     </div>
                   </div>
@@ -1546,7 +1536,7 @@ export function CampaignStudioClient() {
             <Card>
               <CardHeader><CardTitle>Maximum Cost</CardTitle><CardDescription>Total cost if all customers use this offer</CardDescription></CardHeader>
               <CardContent>
-                <p className="text-4xl font-black">{formatMoney(offerValidation.maximum_exposure)}</p>
+                <p className="text-4xl font-bold">{formatMoney(offerValidation.maximum_exposure)}</p>
                 <p className="mt-3 text-sm font-semibold">{formatCampaignOffer(offer)}</p>
                 {audience && offer.redemption_limit > audience.included_count && (
                   <Alert className="mt-4 rounded-xl border-amber-500/40 bg-amber-500/5">
@@ -1736,9 +1726,9 @@ export function CampaignStudioClient() {
                       <p className="mt-1 text-xs text-muted-foreground">Based on the current message and customers who can receive it.</p>
                     </div>
                     <div className="grid grid-cols-2 divide-x sm:grid-cols-3">
-                      <div className="p-4"><p className="text-xs text-muted-foreground">Customers</p><p className="mt-1 text-xl font-black tabular-nums">{smsEstimate?.recipient_count.toLocaleString("en-NP") ?? "—"}</p></div>
-                      <div className="p-4"><p className="text-xs text-muted-foreground">Credits Needed</p><p className="mt-1 text-xl font-black tabular-nums">{smsEstimate?.required_credits.toLocaleString("en-NP") ?? "—"}</p></div>
-                      <div className="col-span-2 border-t p-4 sm:col-span-1 sm:border-t-0"><p className="text-xs text-muted-foreground">Available</p><p className="mt-1 text-xl font-black tabular-nums">{smsWallet?.available_credits.toLocaleString("en-NP") ?? "Unavailable"}</p></div>
+                      <div className="p-4"><p className="text-xs text-muted-foreground">Customers</p><p className="mt-1 text-xl font-bold tabular-nums">{smsEstimate?.recipient_count.toLocaleString("en-NP") ?? "—"}</p></div>
+                      <div className="p-4"><p className="text-xs text-muted-foreground">Credits Needed</p><p className="mt-1 text-xl font-bold tabular-nums">{smsEstimate?.required_credits.toLocaleString("en-NP") ?? "—"}</p></div>
+                      <div className="col-span-2 border-t p-4 sm:col-span-1 sm:border-t-0"><p className="text-xs text-muted-foreground">Available</p><p className="mt-1 text-xl font-bold tabular-nums">{smsWallet?.available_credits.toLocaleString("en-NP") ?? "Unavailable"}</p></div>
                     </div>
                   </div>
                   {smsCreditShortfall !== null && smsCreditShortfall > 0 ? (
@@ -1950,7 +1940,7 @@ export function CampaignStudioClient() {
       )}
 
       {!isReadOnly && step < 4 && (
-        <div className="flex items-center justify-between border-t pt-5">
+        <div className="flex items-center justify-between gap-2 border-t pt-4 sm:pt-5">
           <Button variant="outline" disabled={step === 1} onClick={() => changeStep((step - 1) as StudioStep)}><ChevronLeft className="mr-2 h-4 w-4" />Back</Button>
           <div className="hidden items-center gap-2 text-xs text-muted-foreground sm:flex"><Eye className="h-4 w-4" />Your progress is saved on this device.</div>
           <Button onClick={continueFromCurrentStep}>{step === 1 ? "Set Offer" : step === 2 ? "Prepare Message" : "Review Campaign"}<ArrowRight className="ml-2 h-4 w-4" /></Button>

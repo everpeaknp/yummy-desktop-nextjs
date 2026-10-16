@@ -5,7 +5,6 @@ import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import {
   Bell,
-  User,
   Menu,
   LogOut,
   Store,
@@ -57,33 +56,6 @@ import {
 } from "@/components/layout/mobile-app-bar-title";
 import { MobileAppBar } from "@/components/patterns/navigation/mobile-app-bar";
 import { HelpCenterDialog } from "@/components/onboarding/help-center-dialog";
-
-function formatRoleLabel(role: string) {
-  return role.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
-}
-
-function getVisibleRoleLabels(
-  user: { role?: string | null; roles?: string[] | null } | null | undefined,
-) {
-  const rawRoles = (user?.roles || []).filter(
-    (role) => role && !role.startsWith("__user_"),
-  );
-  const normalized = Array.from(
-    new Set(rawRoles.map((role) => role.toLowerCase())),
-  );
-
-  const platformOnly = normalized.filter(
-    (role) => role === "platform_staff" || role === "superadmin",
-  );
-  const restaurantRoles = normalized.filter(
-    (role) => role !== "platform_staff" && role !== "superadmin",
-  );
-
-  const effective = restaurantRoles.length ? restaurantRoles : platformOnly;
-  if (effective.length) return effective.map(formatRoleLabel).join(", ");
-
-  return formatRoleLabel(user?.role || "Manager");
-}
 
 function mobileAppBarBackHref(pathname: string) {
   const orderChild = pathname.match(
@@ -240,7 +212,8 @@ export const Header = memo(function Header() {
     >
       {isDashboard ? (
         <Link
-          href={getHomeRouteForUser(user)}
+          href="/settings/business-profile"
+          aria-label="Open restaurant profile settings"
           className="flex min-w-0 items-center gap-2 text-sm font-semibold tracking-tight text-foreground lg:hidden"
         >
           <span className="relative flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full border border-border bg-primary/10 text-primary">
@@ -524,13 +497,6 @@ export const Header = memo(function Header() {
           <div className="hidden sm:block" data-tour="navbar-theme">
             <ModeToggle />
           </div>
-        </div>
-
-        <div className="h-6 w-px bg-border mx-1 hidden md:block" />
-        <div
-          className="hidden items-center gap-2 pl-1 sm:flex"
-          data-tour="navbar-user"
-        >
           {canLeaveRestaurant && (
             <Button
               variant="ghost"
@@ -544,42 +510,8 @@ export const Header = memo(function Header() {
               </Link>
             </Button>
           )}
-          <div className="relative h-8 w-8 min-w-8 rounded-full bg-primary/10 flex items-center justify-center text-primary overflow-hidden border border-border/50">
-            {user?.photo_url ? (
-              <Image
-                src={getImageUrl(user.photo_url)}
-                alt={user.full_name || "Profile"}
-                className="object-cover"
-                fill
-                unoptimized
-              />
-            ) : user?.full_name && !user.full_name.includes("@") ? (
-              <span className="text-xs font-bold">
-                {user.full_name.charAt(0).toUpperCase()}
-              </span>
-            ) : restaurant?.profile_picture ? (
-              <Image
-                src={getImageUrl(restaurant.profile_picture)}
-                alt="Profile"
-                className="object-cover"
-                fill
-                unoptimized
-              />
-            ) : (
-              <User className="h-5 w-5" />
-            )}
-          </div>
-          <div className="hidden md:block">
-            <p className="text-sm font-medium leading-tight">
-              {user?.full_name && !user.full_name.includes("@")
-                ? user.full_name
-                : "Admin User"}
-            </p>
-            <p className="text-xs text-muted-foreground leading-tight">
-              {getVisibleRoleLabels(user)}
-            </p>
-          </div>
         </div>
+
       </div>
       <HelpCenterDialog open={helpOpen} onOpenChange={setHelpOpen} />
     </header>

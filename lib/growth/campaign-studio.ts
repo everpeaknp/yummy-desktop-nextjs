@@ -91,9 +91,9 @@ export const CAMPAIGN_PLAYBOOKS: readonly CampaignPlaybookDefinition[] = [
     segment: "all",
     title: "Choose your audience",
     shortTitle: "Custom audience",
-    description: "Reach every eligible subscriber, or select specific customers yourself.",
+    description: "Reach every eligible customer, or select specific customers yourself.",
     observedFact: "This audience is chosen by you; consent and delivery safeguards still apply.",
-    audienceLabel: "Eligible subscribers",
+    audienceLabel: "Eligible customers",
   },
 ] as const;
 

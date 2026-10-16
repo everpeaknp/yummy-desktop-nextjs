@@ -26,6 +26,11 @@ const financeReportRouteTitles: Array<
   .map((report) => [report.href, report.label, "detail", "/finance/reports"]);
 
 const routeTitles: Array<[string, string, MobileNavigationLevel?, string?]> = [
+  ["/grow/campaigns/new", "Create campaign", "detail", "/grow/campaigns"],
+  ["/grow/campaigns", "Campaigns", "secondary", "/grow"],
+  ["/grow/subscribers", "Customers", "secondary", "/grow"],
+  ["/grow/settings", "Grow settings", "secondary", "/grow"],
+  ["/grow", "Grow", "top-level"],
   ["/orders/new", "New order", "detail", "/orders"],
   ["/orders/history", "Order history", "secondary", "/orders"],
   ["/orders", "Orders", "top-level"],

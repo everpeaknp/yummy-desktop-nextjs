@@ -3,6 +3,7 @@
 import { create } from "zustand";
 import { useEffect, useRef, useCallback } from "react";
 import { NotificationApis } from "@/lib/api/endpoints";
+import { getWebSocketReconnectDelay, warnWebSocketUnavailableOnce } from "@/lib/websocket-reconnect";
 import { useAuth } from "@/hooks/use-auth";
 
 // ── Types ────────────────────────────────────────────────────────────
@@ -357,6 +358,7 @@ export function useNotifications() {
   useEffect(() => {
     if (!user || !restaurantId) return;
     let alive = true;
+    let kotReconnectAttempt = 0;
 
     fetchUnreadCount();
 
@@ -377,6 +379,7 @@ export function useNotifications() {
       kotWsRef.current = ws;
 
       ws.onopen = () => {
+        kotReconnectAttempt = 0;
         if (timersRef.current.kotPing) clearInterval(timersRef.current.kotPing);
         timersRef.current.kotPing = setInterval(() => {
           if (ws.readyState === WebSocket.OPEN) try { ws.send("ping"); } catch { }
@@ -445,11 +448,14 @@ export function useNotifications() {
         }
       };
 
-      ws.onerror = () => { };
+      ws.onerror = () => warnWebSocketUnavailableOnce("KOT updates");
       ws.onclose = () => {
         if (timersRef.current.kotPing) { clearInterval(timersRef.current.kotPing); timersRef.current.kotPing = undefined; }
         kotWsRef.current = null;
-        if (alive) timersRef.current.kotReconnect = setTimeout(connectKotWs, 5000);
+        if (alive) {
+          const delay = getWebSocketReconnectDelay(++kotReconnectAttempt);
+          timersRef.current.kotReconnect = setTimeout(connectKotWs, delay);
+        }
       };
     };
 
@@ -459,7 +465,13 @@ export function useNotifications() {
     const onVisible = () => {
       if (document.visibilityState === "visible" && alive) {
         fetchUnreadCount();
-        if (!kotWsRef.current || kotWsRef.current.readyState !== WebSocket.OPEN) connectKotWs();
+        if (!kotWsRef.current || kotWsRef.current.readyState === WebSocket.CLOSED) {
+          if (timersRef.current.kotReconnect) {
+            clearTimeout(timersRef.current.kotReconnect);
+            timersRef.current.kotReconnect = undefined;
+          }
+          connectKotWs();
+        }
       }
     };
     document.addEventListener("visibilitychange", onVisible);

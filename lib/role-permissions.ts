@@ -843,7 +843,7 @@ export const SIDEBAR_ROLE_MAP: SidebarItemDef[] = [
     requiredPermission: "grow.view",
   },
   {
-    title: "Subscribers",
+    title: "Customers",
     href: "/grow/subscribers",
     allowedRoles: ADMIN_MANAGER,
     requiredPermission: "grow.view",
