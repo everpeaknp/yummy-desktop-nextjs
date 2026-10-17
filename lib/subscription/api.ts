@@ -14,6 +14,10 @@ function restaurantContext(path: string, restaurantId?: number | null): string {
 }
 
 export const subscriptionApi = {
+  async requestAddonQuote(addonCode: string, restaurantId?: number | null) {
+    const response = await apiClient.post(restaurantContext("/subscriptions/addon-quote-requests", restaurantId), { addon_code: addonCode });
+    return response.data.data;
+  },
   async getCatalog() {
     const response = await apiClient.get(SubscriptionApis.catalog);
     return normalizeSubscriptionCatalog(response.data);

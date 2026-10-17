@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import Image from "next/image";
 import { format } from "date-fns";
 import QRCode from "qrcode";
@@ -51,12 +51,12 @@ import { useSubscriptionStore } from "@/hooks/use-subscription";
 import { subscriptionApi } from "@/lib/subscription/api";
 import { getApiErrorMessage } from "@/lib/api-error-message";
 import {
-  billingIntervals,
   currentPlanDisplayName,
   formatPrice,
   planBillingSavings,
+  planBillingIntervals,
   planFeatures,
-  planMarketingBadge,
+  planFeatureComparison,
   priceTypeLabel,
   pricesForInterval,
   subscriptionPeriodEnd,
@@ -215,11 +215,13 @@ export default function PremiumPage() {
   const refreshAll = useSubscriptionStore((state) => state.refreshAll);
   const requestUpgrade = useSubscriptionStore((state) => state.requestUpgrade);
 
-  const intervals = useMemo(() => billingIntervals(catalog), [catalog]);
-  const [selectedInterval, setSelectedInterval] = useState(12);
+  const [selectedIntervals, setSelectedIntervals] = useState<Record<string, number>>({});
+  const [selectedMobilePlan, setSelectedMobilePlan] = useState("pro");
   const [requestingPlan, setRequestingPlan] = useState<string | null>(null);
   const [savedRequestPlan, setSavedRequestPlan] = useState<string | null>(null);
-  const [selectedAddonCodes, setSelectedAddonCodes] = useState<string[]>([]);
+  const [selectedAddonCodes] = useState<string[]>([]);
+  const [requestingQuote, setRequestingQuote] = useState<string | null>(null);
+  const [sentQuotes, setSentQuotes] = useState<string[]>([]);
   const [contactDraft, setContactDraft] = useState<ContactDraft | null>(null);
   const [contactForm, setContactForm] = useState<ContactFormState>({
     fullName: "",
@@ -238,16 +240,16 @@ export default function PremiumPage() {
   const checkoutPrn = fonepayCheckout?.prn;
   const checkoutStatus = fonepayCheckout?.status;
 
+  const selectedIntervalFor = (plan: Pick<SubscriptionPlan, "code" | "current_version">): number | null => {
+    const intervals = planBillingIntervals(plan);
+    const selected = selectedIntervals[plan.code];
+    if (selected && intervals.includes(selected)) return selected;
+    return intervals.includes(12) ? 12 : intervals[0] ?? null;
+  };
+
   useEffect(() => {
     void refreshAll({ restaurantId: restaurant?.id ?? null });
   }, [refreshAll, restaurant?.id]);
-
-  useEffect(() => {
-    if (!intervals.length) return;
-    if (!intervals.includes(selectedInterval)) {
-      setSelectedInterval(intervals.includes(12) ? 12 : intervals[0]);
-    }
-  }, [intervals, selectedInterval]);
 
   useEffect(() => {
     const payload = fonepayCheckout?.qr_payload?.qrMessage;
@@ -306,7 +308,7 @@ export default function PremiumPage() {
 
   const startPlanPurchase = async () => {
     if (!purchasePlan) return;
-    const pricing = pricesForInterval(purchasePlan, selectedInterval);
+    const pricing = pricesForInterval(purchasePlan, selectedIntervalFor(purchasePlan));
     if (!pricing.billingIntervalMonths) return;
     setPaymentBusy(true);
     try {
@@ -413,13 +415,24 @@ export default function PremiumPage() {
   const currentStatus = current?.subscription?.status || current?.plan_state || restaurant?.plan_state;
   const periodEnd = formatDate(subscriptionPeriodEnd(current) || restaurant?.subscription?.current_period_end);
   const catalogUpdated = formatCatalogVersion(catalog?.catalog_version);
-  const planVersion = current?.subscription?.plan_version;
   const activeAddons = current?.addons ?? [];
-  const purchasePricing = purchasePlan ? pricesForInterval(purchasePlan, selectedInterval) : null;
+  const paidPlans = [...(catalog?.plans ?? [])]
+    .filter((plan) => plan.code.toLowerCase() !== "free")
+    .sort((a, b) => {
+      const order: Record<string, number> = { basic: 0, pro: 1, premium: 2 };
+      return (order[a.code.toLowerCase()] ?? 99) - (order[b.code.toLowerCase()] ?? 99);
+    });
+  const mainPlans = paidPlans.filter((plan) => ["basic", "pro", "premium"].includes(plan.code.toLowerCase()));
+  const otherPlans = paidPlans.filter((plan) => !["basic", "pro", "premium"].includes(plan.code.toLowerCase()));
+  const freePlan = catalog?.plans.find((plan) => plan.code.toLowerCase() === "free") ?? null;
+  const effectiveMobilePlan = mainPlans.some((plan) => plan.code.toLowerCase() === selectedMobilePlan)
+    ? selectedMobilePlan
+    : mainPlans.find((plan) => plan.code.toLowerCase() === "pro")?.code.toLowerCase() ?? mainPlans[0]?.code.toLowerCase();
+  const purchasePricing = purchasePlan ? pricesForInterval(purchasePlan, selectedIntervalFor(purchasePlan)) : null;
   const purchasePrice = purchasePricing?.initial ?? purchasePricing?.renewal ?? null;
 
   const planContactDraft = (plan: SubscriptionPlan): ContactDraft => {
-    const pricing = pricesForInterval(plan, selectedInterval);
+    const pricing = pricesForInterval(plan, selectedIntervalFor(plan));
     const billingIntervalMonths =
       currentCode === plan.code && selectedAddonCodes.length > 0
         ? current?.subscription?.billing_interval_months ?? pricing.billingIntervalMonths
@@ -508,7 +521,7 @@ export default function PremiumPage() {
 
     setRequestingPlan(plan.code);
     try {
-      const pricing = pricesForInterval(plan, selectedInterval);
+      const pricing = pricesForInterval(plan, selectedIntervalFor(plan));
       const billingIntervalMonths =
         currentCode === plan.code && selectedAddons.length > 0
           ? current?.subscription?.billing_interval_months ?? pricing.billingIntervalMonths
@@ -526,6 +539,20 @@ export default function PremiumPage() {
       toast.error(getApiErrorMessage(error, "Unable to save the plan request. Please try again."));
     } finally {
       setRequestingPlan(null);
+    }
+  };
+
+  const requestAddonQuote = async (code: string) => {
+    if (requestingQuote || sentQuotes.includes(code)) return;
+    setRequestingQuote(code);
+    try {
+      await subscriptionApi.requestAddonQuote(code, restaurant?.id ?? null);
+      setSentQuotes((previous) => [...previous, code]);
+      toast.success("Quote requested. The Yummy team will contact you directly.");
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "Could not request a quote. Please try again."));
+    } finally {
+      setRequestingQuote(null);
     }
   };
 
@@ -550,47 +577,31 @@ export default function PremiumPage() {
         </Button>
       </div>
 
-      <Card className="border-primary/15 bg-primary/[0.025] shadow-none">
-        <CardContent className="space-y-4 p-5 md:p-6">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-            <div className="min-w-0 space-y-2">
-              <p className="text-sm font-medium text-muted-foreground">
-                Your current plan
-              </p>
-              <div className="flex flex-wrap items-center gap-2">
+      <Card className="overflow-hidden border-border/70 shadow-none">
+        <CardContent className="p-0">
+          <div className="grid gap-4 p-5 md:grid-cols-[minmax(0,1fr)_auto] md:items-center md:px-6">
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-muted-foreground">Your current plan</p>
+              <div className="mt-1 flex flex-wrap items-center gap-2">
                 <h2 className="text-xl font-semibold tracking-tight md:text-2xl">
                   {currentLoading && !current
                     ? "Loading plan…"
                     : currentPlanDisplayName(current, restaurant)}
                 </h2>
-                {currentStatus ? (
-                  <Badge variant={statusBadgeVariant(currentStatus)}>
-                    {statusLabel(currentStatus)}
-                  </Badge>
-                ) : null}
+                {currentStatus ? <Badge variant={statusBadgeVariant(currentStatus)}>{statusLabel(currentStatus)}</Badge> : null}
               </div>
-              <p className="text-sm text-muted-foreground">
-                {[
-                  periodEnd ? `Period ends ${periodEnd}` : null,
-                  planVersion != null ? `Version ${planVersion}` : null,
-                  activeAddons.length
-                    ? `${activeAddons.length} add-on${activeAddons.length === 1 ? "" : "s"}`
-                    : "No add-ons",
-                ]
-                  .filter(Boolean)
-                  .join(" · ")}
+              <p className="mt-1 text-sm text-muted-foreground">
+                {periodEnd ? `Access until ${periodEnd}` : "Access period not available"}
+                {activeAddons.length ? ` · ${activeAddons.length} add-on${activeAddons.length === 1 ? "" : "s"}` : " · No add-ons"}
               </p>
             </div>
-            {catalogUpdated ? (
-              <p className="shrink-0 text-xs text-muted-foreground sm:pt-1">
-                Updated {catalogUpdated}
-              </p>
-            ) : null}
+            <div className="flex flex-wrap items-center gap-3 md:justify-end">
+              {catalogUpdated ? <span className="text-xs text-muted-foreground">Updated {catalogUpdated}</span> : null}
+            </div>
           </div>
-
-          <details>
-            <summary className="w-fit cursor-pointer list-none rounded-lg border bg-background px-3 py-2 text-sm font-semibold transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-              View current usage
+          <details className="border-t px-5 py-3 md:px-6">
+            <summary className="w-fit cursor-pointer rounded-lg text-sm font-semibold text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
+              Usage & limits
             </summary>
             <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
               {usageLoading ? <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin text-muted-foreground motion-reduce:animate-none" /> : null}
@@ -611,29 +622,11 @@ export default function PremiumPage() {
       )}
 
       <section className="space-y-5">
-        <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+        <div>
           <div>
             <h2 className="text-2xl font-semibold tracking-tight">Choose your plan</h2>
-            <p className="mt-1 text-sm text-muted-foreground">See the essential differences first. Review every included feature before buying.</p>
+            <p className="mt-1 text-sm text-muted-foreground">Compare the essentials, choose a billing period, and pay securely.</p>
           </div>
-          {intervals.length > 0 && (
-            <div className="inline-flex w-fit rounded-xl border bg-muted/40 p-1">
-              {intervals.map((months) => (
-                <button
-                  key={months}
-                  type="button"
-                  onClick={() => setSelectedInterval(months)}
-                  aria-pressed={selectedInterval === months}
-                  className={cn(
-                    "rounded-lg px-4 py-2 text-sm font-semibold transition",
-                    selectedInterval === months ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  {intervalLabel(months)}
-                </button>
-              ))}
-            </div>
-          )}
         </div>
 
         {catalogError && !catalog ? (
@@ -647,20 +640,49 @@ export default function PremiumPage() {
           </Alert>
         ) : catalogLoading && !catalog ? (
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {Array.from({ length: 6 }).map((_, index) => (
+            {Array.from({ length: 3 }).map((_, index) => (
               <div key={index} className="h-[480px] animate-pulse rounded-2xl border bg-muted/30 motion-reduce:animate-none" />
             ))}
           </div>
         ) : (
           <>
+          {mainPlans.length > 1 ? (
+            <div className="grid grid-cols-3 rounded-xl border bg-muted/35 p-1 md:hidden" role="tablist" aria-label="Subscription plans">
+              {mainPlans.map((plan) => {
+                const code = plan.code.toLowerCase();
+                const selected = code === effectiveMobilePlan;
+                return (
+                  <button
+                    key={plan.code}
+                    type="button"
+                    role="tab"
+                    aria-selected={selected}
+                    onClick={() => setSelectedMobilePlan(code)}
+                    className={cn(
+                      "min-h-11 rounded-lg px-2 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2",
+                      selected ? "bg-background text-foreground shadow-sm" : "text-muted-foreground",
+                      code === "pro" && "border border-primary/45",
+                    )}
+                  >
+                    {code === "pro" ? <Crown aria-hidden="true" className="mr-1 inline h-4 w-4 text-primary" /> : null}
+                    {plan.name}
+                  </button>
+                );
+              })}
+            </div>
+          ) : null}
           <div className="grid items-stretch gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {catalog?.plans.map((plan) => {
+            {mainPlans.map((plan) => {
+              const planIntervals = planBillingIntervals(plan);
+              const selectedInterval = selectedIntervalFor(plan);
               const prices = pricesForInterval(plan, selectedInterval);
               const primaryPrice = prices.initial ?? prices.renewal;
               const renewal = prices.initial ? prices.renewal : null;
-              const features = planFeatures(plan);
+              const comparison = planFeatureComparison(plan, catalog?.plans ?? []);
+              const features = comparison.features;
               const isCurrent = currentCode === plan.code;
-              const isFreePlan = plan.code.toLowerCase() === "free";
+              const isFreePlan = false;
+              const isRecommended = plan.code.toLowerCase() === "pro";
               const canRequest =
                 !isFreePlan && (
                   (isCurrent && selectedAddonCodes.length > 0) ||
@@ -669,31 +691,32 @@ export default function PremiumPage() {
                 );
               const isRequesting = requestingPlan === plan.code && requestLoading;
               const showContact = savedRequestPlan === plan.code;
-              const badge = planMarketingBadge(plan);
               const savings = selectedInterval === 12 ? planBillingSavings(plan) : null;
 
               return (
                 <Card
                   key={String(plan.id)}
                   className={cn(
-                    "relative flex h-full min-h-[470px] flex-col overflow-hidden rounded-2xl border-border/70 bg-card shadow-sm transition-[transform,border-color,box-shadow] duration-200 hover:-translate-y-0.5 hover:border-primary/35 hover:shadow-md motion-reduce:transform-none motion-reduce:transition-none",
-                    isCurrent && "border-2 border-primary/80 shadow-md shadow-primary/5",
-                    badge && !isCurrent && "border-primary/35",
+                    "relative h-full min-h-[540px] flex-col overflow-hidden rounded-3xl border-border/70 bg-card shadow-sm transition-transform duration-200 hover:-translate-y-1 hover:shadow-md motion-reduce:transform-none motion-reduce:transition-none",
+                    plan.code.toLowerCase() === effectiveMobilePlan ? "flex" : "hidden md:flex",
+                    isRecommended && "border-primary/45 shadow-md shadow-primary/5",
                   )}
                 >
-                  <div
-                    className={cn(
-                      "shrink-0 px-4 py-1.5 text-center text-[11px] font-bold uppercase tracking-widest",
-                      isCurrent || badge ? "bg-primary text-primary-foreground" : "invisible",
-                    )}
-                    aria-hidden={!isCurrent && !badge}
-                  >
-                    {isCurrent ? "Current plan" : badge || "Plan"}
-                  </div>
-                  <CardHeader className="shrink-0 space-y-2 pb-4 pt-5">
-                    <CardTitle className="flex items-center justify-between gap-3 text-2xl font-semibold tracking-tight">
-                      <span className="truncate">{plan.name}</span>
-                      {prices.quoteOnly ? <Badge variant="outline">Custom</Badge> : null}
+                  <CardHeader className="min-h-[128px] shrink-0 space-y-3 px-6 pb-5 pt-6">
+                    <CardTitle className="flex min-w-0 flex-wrap items-center justify-between gap-2 text-2xl font-semibold tracking-tight">
+                      <span className="flex min-w-0 items-center gap-3">
+                        {isRecommended ? (
+                          <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm shadow-primary/25">
+                            <Crown aria-hidden="true" className="size-5" />
+                          </span>
+                        ) : null}
+                        <span className="min-w-0 truncate">{plan.name}</span>
+                      </span>
+                      <span className="flex flex-wrap items-center gap-2">
+                        {isRecommended ? <Badge className="shrink-0 px-3 py-1 text-xs">Recommended</Badge> : null}
+                        {isCurrent ? <Badge variant="outline">Current plan</Badge> : null}
+                        {prices.quoteOnly ? <Badge variant="outline">Custom</Badge> : null}
+                      </span>
                     </CardTitle>
                     {(plan.current_version?.subtitle || plan.description) ? (
                       <p className="line-clamp-2 text-sm leading-relaxed text-muted-foreground">
@@ -701,11 +724,42 @@ export default function PremiumPage() {
                       </p>
                     ) : null}
                   </CardHeader>
-                  <CardContent className="flex flex-1 flex-col gap-5 pt-0">
-                    <div
-                      className="flex min-h-[148px] shrink-0 flex-col justify-between rounded-xl border border-border/60 bg-gradient-to-br from-muted/40 via-background to-background p-5"
-                    >
-                      {prices.quoteOnly ? (
+                  <CardContent className="flex flex-1 flex-col gap-5 px-6 pb-6 pt-0">
+                    <div className="flex min-h-11 items-center">
+                      {!isFreePlan && planIntervals.length > 1 && selectedInterval !== null ? (
+                      <div className="inline-flex rounded-xl border bg-muted/35 p-1" role="group" aria-label={`${plan.name} billing period`}>
+                        {planIntervals.map((months) => (
+                          <button
+                            key={months}
+                            type="button"
+                            onClick={() => setSelectedIntervals((current) => ({ ...current, [plan.code]: months }))}
+                            aria-pressed={selectedInterval === months}
+                            className={cn(
+                              "min-h-11 rounded-lg px-4 py-2 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2",
+                              selectedInterval === months ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+                            )}
+                          >
+                            {intervalLabel(months)}
+                          </button>
+                        ))}
+                      </div>
+                      ) : selectedInterval !== null ? (
+                        <div className="inline-flex min-h-11 items-center rounded-xl border border-border/70 px-4 text-sm font-semibold text-muted-foreground">
+                          {intervalLabel(selectedInterval)} billing
+                        </div>
+                      ) : null}
+                    </div>
+                    <div className="flex min-h-[180px] shrink-0 flex-col justify-between border-y border-border/70 py-5">
+                      {isFreePlan ? (
+                        <>
+                          <div>
+                            <p className="text-4xl font-semibold tracking-[-0.035em] tabular-nums">NPR 0</p>
+                            <p className="mt-1 text-xs text-muted-foreground">Assigned automatically</p>
+                          </div>
+                          <div className="mt-4 min-h-10 text-sm text-muted-foreground">No billing period</div>
+                          <p className="mt-2 text-[11px] text-muted-foreground">Available when paid or trial access ends</p>
+                        </>
+                      ) : prices.quoteOnly ? (
                         <>
                           <div>
                             <p className="text-2xl font-semibold tracking-tight">Let&apos;s chat</p>
@@ -713,7 +767,7 @@ export default function PremiumPage() {
                               Custom - {intervalLabel(prices.billingIntervalMonths)}
                             </p>
                           </div>
-                          <div className="mt-3 min-h-[52px] border-t pt-3 text-sm">
+                          <div className="mt-4 min-h-10 text-sm">
                             <span className="font-semibold">Renewal: On request</span>
                             <span className="ml-1 text-muted-foreground">
                               per {intervalLabel(prices.billingIntervalMonths).toLowerCase()}
@@ -724,14 +778,14 @@ export default function PremiumPage() {
                       ) : primaryPrice ? (
                         <>
                           <div>
-                            <p className="text-3xl font-semibold tracking-tight tabular-nums">
+                            <p className="text-4xl font-semibold tracking-[-0.035em] tabular-nums">
                               {formatPrice(primaryPrice.amount, primaryPrice.currency)}
                             </p>
                             <p className="mt-1 text-xs text-muted-foreground">
                               {priceTypeLabel(primaryPrice)} - {intervalLabel(prices.billingIntervalMonths)}
                             </p>
                           </div>
-                          <div className="mt-3 min-h-[52px] border-t pt-3 text-sm">
+                          <div className="mt-4 min-h-10 text-sm leading-relaxed">
                             {renewal ? (
                               <>
                                 <span className="font-semibold">
@@ -745,10 +799,9 @@ export default function PremiumPage() {
                               <span className="text-muted-foreground">No separate renewal price</span>
                             )}
                           </div>
-                          <p className="mt-2 text-[11px] text-muted-foreground">
-                            Tax {primaryPrice.tax_inclusive ? "included" : "not included"}
-                          </p>
-                          {savings ? <p className="mt-2 w-fit rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300">Save {formatPrice(savings.amount, savings.currency)} annually</p> : null}
+                          <div className="mt-2 flex min-h-7 flex-wrap items-center justify-between gap-2">
+                            {savings ? <p className="w-fit rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300">Save {formatPrice(savings.amount, savings.currency)} annually</p> : null}
+                          </div>
                         </>
                       ) : (
                         <>
@@ -763,10 +816,8 @@ export default function PremiumPage() {
                       )}
                     </div>
 
-                    <PlanFeatureList features={features} planCode={plan.code} onShowMore={setFeatureListPlan} />
-
                     <div
-                      className="mt-auto flex shrink-0 flex-col gap-2"
+                      className="flex shrink-0 flex-col gap-2"
                       onClick={(event) => event.stopPropagation()}
                       onKeyDown={(event) => event.stopPropagation()}
                     >
@@ -777,7 +828,7 @@ export default function PremiumPage() {
                       ) : <>
                       <Button
                         className="w-full"
-                        variant={isCurrent ? "outline" : "default"}
+                        variant={isCurrent || !isRecommended ? "outline" : "default"}
                         disabled={
                           (isCurrent && selectedAddonCodes.length === 0) ||
                           !canRequest ||
@@ -811,19 +862,18 @@ export default function PremiumPage() {
                                   ? `Request ${plan.name} + add-ons`
                                   : `Choose ${plan.name}`}
                       </Button>
-                      <Button
-                        type="button"
-                        className={cn("w-full", !showContact && "invisible pointer-events-none")}
-                        variant="outline"
-                        aria-hidden={!showContact}
-                        tabIndex={showContact ? 0 : -1}
-                        disabled={!showContact}
-                        onClick={() => openContact(planContactDraft(plan))}
-                      >
-                        <MessageSquare aria-hidden="true" className="mr-2 h-4 w-4" />
-                        Contact Yummy (optional)
-                      </Button>
+                      {showContact ? (
+                        <Button type="button" className="w-full" variant="outline" onClick={() => openContact(planContactDraft(plan))}>
+                          <MessageSquare aria-hidden="true" className="mr-2 h-4 w-4" />
+                          Contact Yummy (optional)
+                        </Button>
+                      ) : null}
                       </>}
+                    </div>
+                    <div className="border-t border-border/70 pt-5">
+                      <p className="mb-4 text-sm font-semibold text-foreground">{comparison.previousName ? `Everything in ${comparison.previousName}, plus` : `Included with ${plan.name}`}</p>
+                      <PlanFeatureList features={features} planCode={plan.code} onShowMore={setFeatureListPlan} />
+                      {features.length <= visibleFeatureLimit ? <Button type="button" variant="link" className="mt-2 h-11 px-0" onClick={() => setFeatureListPlan(plan.code)}>View all features</Button> : null}
                     </div>
                   </CardContent>
                 </Card>
@@ -831,38 +881,72 @@ export default function PremiumPage() {
             })}
           </div>
 
+          {otherPlans.map((plan) => {
+            const pricing = pricesForInterval(plan, selectedIntervalFor(plan));
+            const isRequesting = requestingPlan === plan.code && requestLoading;
+            return (
+              <div key={plan.code} className="mt-4 flex flex-col gap-4 rounded-2xl border p-4 sm:flex-row sm:items-center">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <p className="font-semibold">{plan.name}</p>
+                    <Badge variant="outline">Custom</Badge>
+                  </div>
+                  <p className="mt-1 text-sm text-muted-foreground">{plan.current_version?.subtitle || plan.description || "Tailored support and capabilities for complex operations."}</p>
+                </div>
+                <Button type="button" variant="outline" disabled={requestLoading} onClick={() => void handlePlanRequest(plan)}>
+                  {isRequesting ? <Loader2 aria-hidden="true" className="mr-2 h-4 w-4 animate-spin motion-reduce:animate-none" /> : <MessageSquare aria-hidden="true" className="mr-2 h-4 w-4" />}
+                  {pricing.quoteOnly ? "Request quote" : `Choose ${plan.name}`}
+                </Button>
+              </div>
+            );
+          })}
+
+          {freePlan ? (
+            <div className="mt-4 flex flex-col gap-3 rounded-2xl border bg-muted/20 p-4 sm:flex-row sm:items-center">
+              <ShieldCheck aria-hidden="true" className="h-5 w-5 shrink-0 text-muted-foreground" />
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="text-sm font-semibold">Free fallback</p>
+                  {currentCode === "free" ? <Badge variant="outline">Current plan</Badge> : null}
+                </div>
+                <p className="mt-1 text-sm text-muted-foreground">Applied automatically when paid or trial access ends.</p>
+              </div>
+              <Button type="button" variant="ghost" className="justify-start sm:justify-center" onClick={() => setFeatureListPlan(freePlan.code)}>
+                View features
+              </Button>
+            </div>
+          ) : null}
+
           <div className="mt-5 grid gap-3 rounded-2xl border bg-muted/20 p-4 text-sm text-muted-foreground sm:grid-cols-3">
             <span className="flex items-center gap-2"><ShieldCheck aria-hidden="true" className="h-4 w-4 text-primary" />Secure Fonepay checkout</span>
             <span className="flex items-center gap-2"><CheckCircle2 aria-hidden="true" className="h-4 w-4 text-primary" />Exact amount verification</span>
             <span className="flex items-center gap-2"><FileText aria-hidden="true" className="h-4 w-4 text-primary" />Receipt after payment</span>
           </div>
 
-          {catalog?.addons.some((addon) => addon.is_public) ? <section className="mt-10 space-y-4" aria-labelledby="subscription-addons-title">
+          {catalog ? <section className="mt-10 space-y-4" aria-labelledby="subscription-addons-title">
             <div>
               <h2 id="subscription-addons-title" className="text-xl font-semibold tracking-tight">Optional add-ons</h2>
               <p className="mt-1 text-sm text-muted-foreground">Add extra capabilities after choosing the plan that fits your restaurant.</p>
             </div>
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {catalog.addons.filter((addon) => addon.is_public).map((addon) => {
-              const addonPricing = pricesForInterval(addon, selectedInterval);
+              const addonPricing = pricesForInterval(addon, selectedIntervalFor(addon));
               const primaryPrice = addonPricing.initial;
               const quoteOnly = addonPricing.quoteOnly;
-              const selected = selectedAddonCodes.includes(addon.code);
               return (
                 <Card
                   key={String(addon.id)}
                   className={cn(
                     "relative flex h-full min-h-[360px] flex-col overflow-hidden rounded-2xl border-border/60 transition-[border-color,box-shadow] duration-200 hover:border-primary/35 hover:shadow-sm motion-reduce:transition-none",
-                    selected && "border-2 border-primary",
                   )}
                 >
                   <div
                     className={cn(
                       "shrink-0 px-4 py-1.5 text-center text-[11px] font-bold uppercase tracking-widest",
-                      selected ? "bg-primary text-primary-foreground" : "bg-muted/40 text-muted-foreground",
+                      "bg-muted/40 text-muted-foreground",
                     )}
                   >
-                    {selected ? "Added to request" : "Available add-on"}
+                    Available add-on
                   </div>
                   <CardHeader className="shrink-0 space-y-1.5 pb-3 pt-5">
                     <CardTitle className="flex items-center justify-between gap-3 text-xl">
@@ -909,9 +993,6 @@ export default function PremiumPage() {
                                 : "Available with all plans"}
                             </span>
                           </div>
-                          <p className="mt-2 text-[11px] text-muted-foreground">
-                            Tax {primaryPrice.tax_inclusive ? "included" : "not included"}
-                          </p>
                         </>
                       ) : (
                         <>
@@ -949,24 +1030,39 @@ export default function PremiumPage() {
                       <Button
                         type="button"
                         className="w-full"
-                        variant={selected ? "default" : "outline"}
-                        aria-pressed={selected}
-                        onClick={() =>
-                          setSelectedAddonCodes((current) =>
-                            current.includes(addon.code)
-                              ? current.filter((code) => code !== addon.code)
-                              : [...current, addon.code],
-                          )
-                        }
+                        variant="outline"
+                        disabled={requestingQuote !== null || sentQuotes.includes(addon.code)}
+                        onClick={() => void requestAddonQuote(addon.code)}
                       >
-                        <ShieldCheck aria-hidden="true" className="mr-2 h-4 w-4" />
-                        {selected ? "Included in request" : "Add to request"}
+                        {requestingQuote === addon.code ? <Loader2 aria-hidden="true" className="mr-2 size-4 animate-spin motion-reduce:animate-none" /> : <MessageSquare aria-hidden="true" className="mr-2 size-4" />}
+                        {sentQuotes.includes(addon.code) ? "Quote requested" : "Request quote"}
                       </Button>
                     </div>
                   </CardContent>
                 </Card>
               );
             })}
+            {[
+              { code: "hotel", name: "Hotel Management", description: "Room management, reservations and guest stays." },
+              { code: "grow", name: "Yummy Grow", description: "Customer retention, campaigns and growth tools." },
+            ].filter((offer) => !catalog.addons.some((addon) => addon.is_public && (addon.code.toLowerCase().includes(offer.code) || (offer.code === "hotel" && addon.current_version?.entitlements["business.hotel.enabled"] === true)))).map((offer) => (
+              <Card key={offer.code} className="flex h-full min-h-[360px] flex-col overflow-hidden rounded-2xl border-border/60">
+                <div className="bg-muted/40 px-4 py-1.5 text-center text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Available add-on</div>
+                <CardHeader className="space-y-1.5 pb-3 pt-5">
+                  <CardTitle className="flex flex-wrap items-center justify-between gap-3 text-xl"><span>{offer.name}</span><Badge variant="outline">Custom</Badge></CardTitle>
+                  <p className="text-sm text-muted-foreground">{offer.description}</p>
+                </CardHeader>
+                <CardContent className="flex flex-1 flex-col gap-5 pt-0">
+                  <div className="rounded-xl border bg-muted/20 p-4">
+                    <p className="text-2xl font-bold">Custom quote</p>
+                    <p className="mt-1 text-xs text-muted-foreground">Contact for pricing</p>
+                    <p className="mt-4 border-t pt-3 text-xs leading-5 text-muted-foreground">Pricing and plan compatibility confirmed on request.</p>
+                  </div>
+                  <p className="text-sm text-muted-foreground">Discuss your {offer.name} requirements with the Yummy team.</p>
+                  <Button type="button" variant="outline" className="mt-auto w-full" disabled={requestingQuote !== null || sentQuotes.includes(offer.code)} onClick={() => void requestAddonQuote(offer.code)}>{requestingQuote === offer.code ? <Loader2 aria-hidden="true" className="mr-2 size-4 animate-spin motion-reduce:animate-none" /> : <MessageSquare aria-hidden="true" className="mr-2 size-4" />}{sentQuotes.includes(offer.code) ? "Quote requested" : "Request quote"}</Button>
+                </CardContent>
+              </Card>
+            ))}
             </div>
           </section> : null}
           </>
@@ -1047,22 +1143,22 @@ export default function PremiumPage() {
           if (!open) closePurchaseDialog();
         }}
       >
-        <DialogContent className={cn("max-h-[92vh] overflow-y-auto overscroll-contain p-0", fonepayCheckout ? "sm:max-w-5xl" : "sm:max-w-4xl")}>
-          <div className="border-b bg-primary/[0.035] px-6 py-5">
-            <DialogHeader>
-              <div className="mb-1 inline-flex w-fit items-center gap-2 rounded-full border border-primary/20 bg-background/80 px-3 py-1 text-xs font-semibold text-primary">
-                <ShieldCheck aria-hidden="true" className="h-3.5 w-3.5" /> Secure Fonepay checkout
+        <DialogContent className={cn("max-h-[92dvh] w-[calc(100%_-_2rem)] gap-0 overflow-y-auto overscroll-contain rounded-2xl p-0 motion-reduce:animate-none sm:rounded-2xl", fonepayCheckout ? "sm:max-w-[820px]" : "sm:max-w-[520px]")}>
+          <div className="border-b px-6 pb-5 pt-6 sm:px-8 sm:pt-8">
+            <DialogHeader className="text-left">
+              <div className="mb-3 flex w-fit items-center gap-2 text-xs font-medium text-muted-foreground">
+                <ShieldCheck aria-hidden="true" className="h-4 w-4 text-primary" /> Fonepay checkout
               </div>
-              <DialogTitle>{fonepayCheckout ? "Scan & pay" : "Review your plan"}</DialogTitle>
+              <DialogTitle className="text-2xl font-semibold tracking-tight">{fonepayCheckout ? "Scan & pay" : "Review your plan"}</DialogTitle>
               <DialogDescription>
-                {fonepayCheckout ? "Pay with Fonepay while Yummy verifies the transaction automatically." : "Confirm the details, add a promo code if you have one, then continue with Fonepay."}
+                {fonepayCheckout ? "Scan with your banking app. We’ll confirm your payment here." : "Review your subscription, then create your payment QR."}
               </DialogDescription>
             </DialogHeader>
           </div>
-          <div className={cn("px-6 pb-6", fonepayCheckout ? "grid gap-6 py-6 lg:grid-cols-[minmax(0,0.82fr)_minmax(0,1.18fr)] lg:px-8" : "grid gap-6 py-6 md:grid-cols-[minmax(0,1fr)_minmax(0,0.9fr)]")}>
+          <div className={cn("px-6 pb-6 sm:px-8 sm:pb-8", fonepayCheckout ? "grid gap-6 py-6 md:grid-cols-[minmax(0,1fr)_minmax(0,0.9fr)] md:gap-8" : "space-y-6 pt-6")}>
             {fonepayCheckout?.summary ? (
-              <div className="order-2 rounded-2xl border bg-muted/20 p-5 text-sm lg:p-6">
-                <h3 className="text-base font-semibold">Purchase summary</h3>
+              <div className="order-2 min-w-0 border-t pt-6 text-sm md:border-l md:border-t-0 md:pl-8 md:pt-0">
+                <h3 className="flex items-center gap-2 text-base font-semibold"><Crown aria-hidden="true" className="size-4 text-primary" />Your subscription</h3>
                 <div className="mt-4 space-y-3 border-b pb-4">
                   <div className="flex items-start justify-between gap-4"><span className="text-muted-foreground">Restaurant</span><span className="max-w-[65%] break-words text-right font-medium">{restaurant?.name || "Current restaurant"}</span></div>
                   <div className="flex items-start justify-between gap-4"><span className="text-muted-foreground">Plan</span><span className="text-right font-medium">{fonepayCheckout.summary.plan_name}</span></div>
@@ -1073,73 +1169,71 @@ export default function PremiumPage() {
                 <div className="mt-4 flex justify-between border-t pt-4 text-lg font-bold"><span>Total</span><span className="tabular-nums">{formatMoney(Number(fonepayCheckout.summary.total_amount), fonepayCheckout.summary.currency)}</span></div>
                 <p className="mt-2 break-all text-xs text-muted-foreground">Reference: {fonepayCheckout.prn}</p>
 
-                <div className="mt-6 border-t pt-5">
-                  <h3 className="text-base font-semibold">How to pay</h3>
-                  <ol className="mt-4 space-y-3">
+                <div className="mt-5 border-t pt-4">
+                  <h3 className="text-sm font-semibold">Complete in your banking app</h3>
+                  <ol className="mt-3 space-y-2.5">
                     {[
-                      "Open a Fonepay-supported banking or wallet app on your phone.",
-                      "Choose Scan QR and scan the code shown here.",
+                      "Open a Fonepay-supported app and scan this QR.",
                       `Confirm the exact amount: ${formatMoney(Number(fonepayCheckout.summary.total_amount), fonepayCheckout.summary.currency)}.`,
-                      "Complete payment. This checkout updates automatically.",
+                      "Pay and return here for confirmation.",
                     ].map((instruction, index) => (
-                      <li key={instruction} className="flex gap-3 leading-6">
-                        <span aria-hidden="true" className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 font-semibold text-primary">{index + 1}</span>
-                        <span className="pt-0.5">{instruction}</span>
+                      <li key={instruction} className="flex gap-2.5 text-xs leading-5 text-muted-foreground">
+                        <span aria-hidden="true" className="flex size-5 shrink-0 items-center justify-center rounded-full bg-muted text-[11px] font-semibold text-foreground">{index + 1}</span>
+                        <span>{instruction}</span>
                       </li>
                     ))}
                   </ol>
-                  <div className="mt-5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 leading-6 text-emerald-900 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-200">
-                    Yummy activates the plan only after Fonepay confirms the exact amount.
+                  <div className="mt-4 flex items-start gap-2 border-t pt-4 text-xs leading-5 text-muted-foreground">
+                    <ShieldCheck aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-primary" />Your plan activates once Fonepay verifies the exact amount.
                   </div>
                 </div>
               </div>
             ) : purchasePlan ? (
               <>
-                <div className="space-y-5">
-                  <div>
-                    <p className="text-sm font-semibold">Pay securely with Fonepay</p>
-                    <p className="mt-1 text-sm leading-6 text-muted-foreground">The QR expiry will appear as soon as it is created. Yummy activates the plan only after the exact amount is verified.</p>
+                <div>
+                  <div className="mb-5 flex items-center gap-3">
+                    <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary"><Crown aria-hidden="true" className="size-5" /></span>
+                    <div className="min-w-0"><h3 className="break-words text-lg font-semibold">{purchasePlan.name}</h3><p className="text-xs text-muted-foreground">{intervalLabel(purchasePricing?.billingIntervalMonths ?? null)} subscription</p></div>
                   </div>
-                  <label className="block text-sm font-semibold">Promo code <span className="font-normal text-muted-foreground">(optional)</span>
-                    <Input className="mt-2" name="subscription-promo-code" value={promoCode} onChange={(event) => setPromoCode(event.target.value.toUpperCase())} maxLength={32} autoComplete="off" spellCheck={false} placeholder="Example: WELCOME10…" />
-                  </label>
-                  <Button className="h-11 w-full" type="button" onClick={() => void startPlanPurchase()} disabled={paymentBusy}>
-                    {paymentBusy ? <Loader2 aria-hidden="true" className="mr-2 h-4 w-4 animate-spin motion-reduce:animate-none" /> : <ShieldCheck aria-hidden="true" className="mr-2 h-4 w-4" />}Continue with Fonepay
-                  </Button>
-                  <p className="text-xs leading-5 text-muted-foreground">Promo codes are validated before the QR is created. You will review the final payable amount before scanning.</p>
-                </div>
-                <div className="rounded-2xl border bg-muted/20 p-5">
-                  <h3 className="text-base font-semibold">Order summary</h3>
-                  <div className="mt-5 space-y-4 text-sm">
+                  <p className="text-xs font-medium text-muted-foreground">Total before promo</p>
+                  <p className="mt-1 break-words text-4xl font-semibold tracking-tight tabular-nums">{formatPrice(purchasePrice?.amount ?? null, purchasePrice?.currency || "NPR")}</p>
+                  <div className="mt-6 space-y-3 border-y py-4 text-sm">
                     <div className="flex items-start justify-between gap-4"><span className="text-muted-foreground">Restaurant</span><span className="max-w-[65%] break-words text-right font-medium">{restaurant?.name || "Current restaurant"}</span></div>
-                    <div className="flex items-start justify-between gap-4"><span className="text-muted-foreground">Plan</span><span className="text-right font-medium">{purchasePlan.name}</span></div>
                     <div className="flex items-start justify-between gap-4"><span className="text-muted-foreground">Billing period</span><span className="text-right font-medium">{intervalLabel(purchasePricing?.billingIntervalMonths ?? null)}</span></div>
-                    <div className="flex items-center justify-between gap-4 border-t pt-4 text-lg font-semibold"><span>Total before promo</span><span className="tabular-nums">{formatPrice(purchasePrice?.amount ?? null, purchasePrice?.currency || "NPR")}</span></div>
                   </div>
-                  <div className="mt-5 rounded-xl border border-primary/15 bg-background px-4 py-3 text-sm leading-6 text-muted-foreground"><ShieldCheck aria-hidden="true" className="mr-2 inline h-4 w-4 text-primary" />Your payment is verified before your plan changes.</div>
+                </div>
+                <div className="space-y-4">
+                  <label className="block text-sm font-medium">Promo code <span className="font-normal text-muted-foreground">(optional)</span>
+                    <Input className="mt-2 h-11" name="subscription-promo-code" value={promoCode} onChange={(event) => setPromoCode(event.target.value.toUpperCase())} maxLength={32} autoComplete="off" spellCheck={false} placeholder="Enter your code…" />
+                  </label>
+                  <Button className="h-12 w-full gap-2" type="button" onClick={() => void startPlanPurchase()} disabled={paymentBusy}>
+                    {paymentBusy ? <Loader2 aria-hidden="true" className="size-4 animate-spin motion-reduce:animate-none" /> : <ShieldCheck aria-hidden="true" className="size-4" />}Continue with Fonepay
+                    {!paymentBusy ? <ArrowRight aria-hidden="true" className="ml-auto size-4" /> : null}
+                  </Button>
+                  <p className="text-center text-xs leading-5 text-muted-foreground">Review the final amount before you scan.<br />Your plan activates after payment is verified.</p>
                 </div>
               </>
             ) : null}
 
-            {fonepayCheckout ? <div className="order-1 flex flex-col items-center text-center">
+            {fonepayCheckout ? <div className="order-1 flex min-w-0 flex-col items-center text-center">
               <p className="text-sm font-medium text-muted-foreground">Amount to pay</p>
               <p className="mt-1 text-3xl font-bold tracking-tight tabular-nums">{formatMoney(Number(fonepayCheckout.summary?.total_amount || 0), fonepayCheckout.summary?.currency || "NPR")}</p>
-              {fonepayCheckout.status === "pending" && checkoutSecondsRemaining !== null ? <p className="mt-3 inline-flex items-center gap-2 text-sm text-muted-foreground"><Clock3 aria-hidden="true" className="h-4 w-4" />Checkout closes in <span className="font-semibold text-primary tabular-nums">{formatCountdown(checkoutSecondsRemaining)}</span></p> : null}
+              {fonepayCheckout.status === "pending" && checkoutSecondsRemaining !== null ? <p className="mt-3 inline-flex items-center gap-2 rounded-full bg-muted px-3 py-1.5 text-xs text-muted-foreground"><Clock3 aria-hidden="true" className="size-3.5" />Expires in <span className="font-semibold text-foreground tabular-nums">{formatCountdown(checkoutSecondsRemaining)}</span></p> : null}
               <div className="mt-5 w-full">
-                {paymentQr ? <div className="relative mx-auto w-fit rounded-2xl border bg-white p-3 shadow-sm"><Image src={paymentQr} width={280} height={280} alt={`Fonepay QR for ${fonepayCheckout.summary?.plan_name || "subscription payment"}`} priority unoptimized /></div> : <Alert><AlertCircle className="h-4 w-4" /><AlertDescription>Fonepay did not return a displayable QR.</AlertDescription></Alert>}
+                {paymentQr ? <div className="relative mx-auto w-fit max-w-full rounded-xl border bg-white p-4"><Image className="h-auto max-w-full" src={paymentQr} width={232} height={232} alt={`Fonepay QR for ${fonepayCheckout.summary?.plan_name || "subscription payment"}`} priority unoptimized /></div> : <Alert><AlertCircle className="h-4 w-4" /><AlertDescription>Fonepay did not return a displayable QR.</AlertDescription></Alert>}
               </div>
               <div aria-live="polite" className="mt-5 w-full">
               {fonepayCheckout.status === "pending" ? <p role="status" className="inline-flex items-center gap-2 text-sm text-muted-foreground"><Loader2 aria-hidden="true" className="h-4 w-4 animate-spin motion-reduce:animate-none" />Waiting for payment confirmation…</p> : null}
               {fonepayCheckout.status === "paid" ? <Alert className="border-emerald-200 bg-emerald-50 text-emerald-900"><CheckCircle2 className="h-4 w-4" /><AlertDescription>Payment verified. Your subscription is active.</AlertDescription></Alert> : null}
               {fonepayCheckout.status === "review_required" ? <Alert variant="destructive"><AlertCircle className="h-4 w-4" /><AlertDescription>Payment requires manual review. Your plan will not change until Yummy resolves it.</AlertDescription></Alert> : null}
               </div>
-              <div className="mt-5 grid w-full gap-2 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
+              <div className="mt-4 grid w-full gap-2 sm:grid-cols-2">
                 <Button variant="outline" type="button" onClick={downloadPaymentQr} disabled={!paymentQr}><Download aria-hidden="true" className="mr-2 h-4 w-4" />Download QR</Button>
-                <Button variant="outline" type="button" onClick={() => void verifyFonepayPayment()} disabled={paymentBusy || fonepayCheckout.status === "paid" || fonepayCheckout.status === "review_required"}>
-                  {paymentBusy ? <Loader2 aria-hidden="true" className="mr-2 h-4 w-4 animate-spin motion-reduce:animate-none" /> : <RefreshCw aria-hidden="true" className="mr-2 h-4 w-4" />}{fonepayCheckout.status === "paid" ? "Payment verified" : "I’ve paid — check now"}
+                <Button type="button" onClick={() => void verifyFonepayPayment()} disabled={paymentBusy || fonepayCheckout.status === "paid" || fonepayCheckout.status === "review_required"}>
+                  {paymentBusy ? <Loader2 aria-hidden="true" className="mr-2 h-4 w-4 animate-spin motion-reduce:animate-none" /> : <RefreshCw aria-hidden="true" className="mr-2 h-4 w-4" />}{fonepayCheckout.status === "paid" ? "Payment verified" : "Check payment"}
                 </Button>
-                {fonepayCheckout.status === "pending" ? <Button className="border-destructive/30 text-destructive hover:bg-destructive/5 sm:col-span-2 lg:col-span-1 xl:col-span-2" variant="outline" type="button" onClick={() => setCancelCheckoutOpen(true)} disabled={paymentBusy}>
-                  <XCircle aria-hidden="true" className="mr-2 h-4 w-4" />Cancel checkout & choose another plan
+                {fonepayCheckout.status === "pending" ? <Button className="min-h-11 text-muted-foreground hover:text-destructive sm:col-span-2" variant="ghost" type="button" onClick={() => setCancelCheckoutOpen(true)} disabled={paymentBusy}>
+                  <XCircle aria-hidden="true" className="mr-2 h-4 w-4" />Cancel checkout
                 </Button> : null}
               </div>
               <p className="mt-4 text-xs leading-5 text-muted-foreground">To choose another plan, cancel this checkout first. Do not pay an old QR after cancelling it.</p>
@@ -1211,7 +1305,7 @@ export default function PremiumPage() {
             <DialogTitle className="text-xl font-semibold tracking-tight sm:text-2xl">Let&apos;s Get In Touch.</DialogTitle>
             <DialogDescription>
               <span className="block text-foreground/90">
-                Your plan request is already saved. Use the prepared email below if you would also like to contact the Yummy team directly.
+                Review the prepared message and send it to the Yummy team to discuss pricing and your requirements.
               </span>
               <span className="mt-2 inline-flex items-center gap-2 text-sm text-muted-foreground">
                 <Mail aria-hidden="true" className="h-4 w-4" />
@@ -1299,7 +1393,7 @@ export default function PremiumPage() {
             <DialogTitle className="text-xl font-semibold tracking-tight sm:text-2xl">Let&apos;s Get In Touch.</DialogTitle>
             <DialogDescription>
               <span className="block text-foreground/90">
-                Your plan request is already saved. Use the prepared email below if you would also like to contact the Yummy team directly.
+                Review the prepared message and send it to the Yummy team to discuss pricing and your requirements.
               </span>
               <span className="mt-2 inline-flex items-center gap-2 text-sm text-muted-foreground">
                 <Mail aria-hidden="true" className="h-4 w-4" />
@@ -1393,7 +1487,7 @@ export default function PremiumPage() {
               {featureListPlan && (() => {
                 const plan = catalog?.plans.find((p) => p.code === featureListPlan);
                 if (!plan) return null;
-                const prices = pricesForInterval(plan, selectedInterval);
+                const prices = pricesForInterval(plan, selectedIntervalFor(plan));
                 const primaryPrice = prices.initial ?? prices.renewal;
                 return (
                   <div className="shrink-0 text-right">
