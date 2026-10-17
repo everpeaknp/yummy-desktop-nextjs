@@ -8,6 +8,8 @@ import {
   isEntitlementEnabled,
   isSubscriptionEntitlementEnabled,
   planFeatures,
+  planBillingSavings,
+  planMarketingBadge,
   priceTypeLabel,
   pricesForInterval,
   requiredPlanName,
@@ -97,6 +99,18 @@ describe("subscription entitlement helpers", () => {
     expect(pricesForInterval(basic, 12).initial?.amount).toBe(1000);
     expect(pricesForInterval(basic, 12).renewal?.amount).toBe(800);
     expect(priceTypeLabel(pricesForInterval(basic, 12).initial!)).toBe("Price");
+  });
+
+  it("uses catalog marketing badges and only shows real billing savings", () => {
+    const basic = plan("basic", 1, {});
+    basic.current_version!.marketing_content = { recommended: true };
+    basic.current_version!.prices.push({ id: "six", billing_interval_months: 6, price_type: "initial", amount: 600, currency: "NPR", tax_inclusive: false, quote_only: false });
+
+    expect(planMarketingBadge(basic)).toBe("Recommended");
+    expect(planBillingSavings(basic)).toEqual({ amount: 200, currency: "NPR" });
+
+    basic.current_version!.prices.find((price) => price.id === "six")!.amount = 400;
+    expect(planBillingSavings(basic)).toBeNull();
   });
 
   it("preserves nullable terms and scopes quote pricing to the selected term", () => {

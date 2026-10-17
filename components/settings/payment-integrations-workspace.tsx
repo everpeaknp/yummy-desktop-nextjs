@@ -39,6 +39,16 @@ const emptyConfiguration: FonepayConfiguration = {
   is_active: false,
 };
 
+function toFonepayConfiguration(restaurant: Record<string, unknown>): FonepayConfiguration {
+  return {
+    merchant_code: String(restaurant.fonepay_pid || ""),
+    api_user: String(restaurant.fonepay_username || ""),
+    api_secret: "",
+    api_password: "",
+    is_active: Boolean(restaurant.fonepay_enabled),
+  };
+}
+
 export function PaymentIntegrationsWorkspace() {
   const user = useAuth((state) => state.user);
   const setRestaurant = useRestaurant((state) => state.setRestaurant);
@@ -64,13 +74,7 @@ export function PaymentIntegrationsWorkspace() {
       const restaurant = response.data?.data;
       if (!restaurant) throw new Error("Restaurant configuration is missing");
       setRestaurant(restaurant);
-      const nextConfiguration: FonepayConfiguration = {
-        merchant_code: restaurant.fonepay_config?.merchant_code || "",
-        api_user: restaurant.fonepay_config?.api_user || "",
-        api_secret: restaurant.fonepay_config?.api_secret || "",
-        api_password: restaurant.fonepay_config?.api_password || "",
-        is_active: Boolean(restaurant.fonepay_config?.is_active),
-      };
+      const nextConfiguration = toFonepayConfiguration(restaurant);
       setConfiguration(nextConfiguration);
       setSavedConfiguration(nextConfiguration);
     } catch (error) {
@@ -93,13 +97,35 @@ export function PaymentIntegrationsWorkspace() {
   const saveConfiguration = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!user?.restaurant_id || !dirty) return;
+    const merchantChanged =
+      configuration.merchant_code.trim() !== savedConfiguration.merchant_code;
+    if (merchantChanged && (!configuration.api_secret.trim() || !configuration.api_password.trim())) {
+      toast.error("Enter the API secret and password when changing the merchant code.");
+      return;
+    }
     setSaving(true);
     try {
-      await apiClient.put(
+      const response = await apiClient.put(
         RestaurantApis.updateFonepay(user.restaurant_id),
-        configuration,
+        {
+          fonepay_enabled: configuration.is_active,
+          fonepay_pid: configuration.merchant_code,
+          fonepay_username: configuration.api_user,
+          ...(configuration.api_secret.trim()
+            ? { fonepay_secret: configuration.api_secret }
+            : {}),
+          ...(configuration.api_password.trim()
+            ? { fonepay_password: configuration.api_password }
+            : {}),
+        },
       );
-      setSavedConfiguration(configuration);
+      const restaurant = response.data?.data;
+      const nextConfiguration = restaurant
+        ? toFonepayConfiguration(restaurant)
+        : { ...configuration, api_secret: "", api_password: "" };
+      if (restaurant) setRestaurant(restaurant);
+      setConfiguration(nextConfiguration);
+      setSavedConfiguration(nextConfiguration);
       toast.success("Payment integration updated");
     } catch (error) {
       console.error("Failed to update payment integration", error);
@@ -200,6 +226,7 @@ export function PaymentIntegrationsWorkspace() {
                     </Label>
                     <Input
                       id="fonepay-merchant"
+                      name="fonepay-merchant-code"
                       value={configuration.merchant_code}
                       onChange={(event) =>
                         setConfiguration({
@@ -208,12 +235,15 @@ export function PaymentIntegrationsWorkspace() {
                         })
                       }
                       placeholder="Provided by FonePay"
+                      autoComplete="off"
+                      spellCheck={false}
                     />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="fonepay-user">API user</Label>
                     <Input
                       id="fonepay-user"
+                      name="fonepay-api-user"
                       value={configuration.api_user}
                       onChange={(event) =>
                         setConfiguration({
@@ -222,6 +252,8 @@ export function PaymentIntegrationsWorkspace() {
                         })
                       }
                       placeholder="FonePay username"
+                      autoComplete="off"
+                      spellCheck={false}
                     />
                   </div>
                   <div className="space-y-2">
@@ -230,6 +262,7 @@ export function PaymentIntegrationsWorkspace() {
                       <KeyRound className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                       <Input
                         id="fonepay-secret"
+                        name="fonepay-api-secret"
                         type="password"
                         className="pl-9"
                         value={configuration.api_secret}
@@ -238,6 +271,12 @@ export function PaymentIntegrationsWorkspace() {
                             ...configuration,
                             api_secret: event.target.value,
                           })
+                        }
+                        spellCheck={false}
+                        placeholder={
+                          savedConfiguration.merchant_code
+                            ? "Stored securely - enter to replace"
+                            : undefined
                         }
                         autoComplete="new-password"
                       />
@@ -249,6 +288,7 @@ export function PaymentIntegrationsWorkspace() {
                       <KeyRound className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                       <Input
                         id="fonepay-password"
+                        name="fonepay-api-password"
                         type="password"
                         className="pl-9"
                         value={configuration.api_password}
@@ -257,6 +297,11 @@ export function PaymentIntegrationsWorkspace() {
                             ...configuration,
                             api_password: event.target.value,
                           })
+                        }
+                        placeholder={
+                          savedConfiguration.merchant_code
+                            ? "Stored securely - enter to replace"
+                            : undefined
                         }
                         autoComplete="new-password"
                       />

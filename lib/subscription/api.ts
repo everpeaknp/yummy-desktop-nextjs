@@ -7,7 +7,7 @@ import {
   normalizeSubscriptionUsage,
   normalizeUpgradeRequest,
 } from "./normalizers";
-import type { UpgradeRequestPayload } from "./types";
+import type { SubscriptionCheckoutPayload, SubscriptionFonepayCheckout, UpgradeRequestPayload } from "./types";
 
 function restaurantContext(path: string, restaurantId?: number | null): string {
   return restaurantId ? `${path}?restaurant_id=${encodeURIComponent(String(restaurantId))}` : path;
@@ -45,6 +45,29 @@ export const subscriptionApi = {
   async resolveQuotaCompliance(payload: { table_ids: number[]; menu_item_ids: number[]; user_ids: number[] }, restaurantId?: number | null) {
     const response = await apiClient.post(restaurantContext(SubscriptionApis.quotaCompliance, restaurantId), payload);
     return response.data;
+  },
+
+  async createCheckout(payload: SubscriptionCheckoutPayload, restaurantId?: number | null): Promise<SubscriptionFonepayCheckout> {
+    const response = await apiClient.post(
+      restaurantContext(SubscriptionApis.checkout, restaurantId),
+      payload,
+    );
+    return response.data.data;
+  },
+
+  async startFonepayCheckout(invoiceId: number | string, restaurantId?: number | null): Promise<SubscriptionFonepayCheckout> {
+    const response = await apiClient.post(restaurantContext(SubscriptionApis.fonepayCheckout(invoiceId), restaurantId));
+    return response.data.data;
+  },
+
+  async verifyFonepayCheckout(invoiceId: number | string, prn: string, restaurantId?: number | null): Promise<SubscriptionFonepayCheckout> {
+    const response = await apiClient.post(restaurantContext(SubscriptionApis.fonepayVerify(invoiceId, prn), restaurantId));
+    return response.data.data;
+  },
+
+  async supersedeFonepayCheckout(invoiceId: number | string, prn: string, restaurantId?: number | null): Promise<SubscriptionFonepayCheckout> {
+    const response = await apiClient.post(restaurantContext(SubscriptionApis.fonepaySupersede(invoiceId, prn), restaurantId));
+    return response.data.data;
   },
 };
 

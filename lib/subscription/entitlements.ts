@@ -301,6 +301,27 @@ export function priceTypeLabel(price: SubscriptionPrice): string {
   return "Price";
 }
 
+export function planMarketingBadge(plan: SubscriptionPlan): string | null {
+  const marketing = plan.current_version?.marketing_content;
+  if (!marketing || typeof marketing !== "object" || Array.isArray(marketing)) return null;
+  const values = marketing as Record<string, unknown>;
+  const badge = typeof values.badge === "string" ? values.badge.trim() : "";
+  if (badge) return badge;
+  return values.recommended === true || values.is_recommended === true ? "Recommended" : null;
+}
+
+export function planBillingSavings(
+  plan: SubscriptionPlan,
+  longerIntervalMonths = 12,
+  shorterIntervalMonths = 6,
+): { amount: number; currency: string } | null {
+  const longer = pricesForInterval(plan, longerIntervalMonths).initial ?? pricesForInterval(plan, longerIntervalMonths).renewal;
+  const shorter = pricesForInterval(plan, shorterIntervalMonths).initial ?? pricesForInterval(plan, shorterIntervalMonths).renewal;
+  if (longer?.amount == null || shorter?.amount == null || longerIntervalMonths % shorterIntervalMonths !== 0) return null;
+  const amount = Number(shorter.amount) * (longerIntervalMonths / shorterIntervalMonths) - Number(longer.amount);
+  return amount > 0 ? { amount, currency: longer.currency } : null;
+}
+
 export function formatPrice(amount: number | null, currency: string): string {
   if (amount == null) return "Custom quote";
   try {
