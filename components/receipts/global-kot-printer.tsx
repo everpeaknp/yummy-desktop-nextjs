@@ -73,6 +73,47 @@ function resolvePlaceholders(
     .replace(/\{\{restaurant_pan\}\}/g, restaurant?.pan_number || "");
 }
 
+export function rewriteStationTicketTitleInCanonicalPayload(
+  payloadBase64: string,
+  kot: any,
+  template: any[],
+): string {
+  const templateUsesStationTitle = template.some((block) =>
+    JSON.stringify(block).includes("{{station_ticket_title}}") ||
+    (String(block?.type || "").toLowerCase() === "text" &&
+      String(block?.id || "") === "1" &&
+      String(block?.text || "").trim().toUpperCase() === "INITIAL TICKET"),
+  );
+  if (!payloadBase64 || !templateUsesStationTitle) return payloadBase64;
+
+  try {
+    const payload = atob(payloadBase64);
+    const markers = ["INITIAL TICKET", "ADDITIONAL ITEMS"];
+    const marker = markers
+      .map((value) => ({ value, index: payload.indexOf(value) }))
+      .filter((entry) => entry.index >= 0)
+      .sort((left, right) => left.index - right.index)[0];
+    if (!marker) return payloadBase64;
+
+    const station = String(kot?.station || "KITCHEN").trim().toUpperCase();
+    const titleBytes = new TextEncoder().encode(
+      `${station || "KITCHEN"} ORDER TICKET`,
+    );
+    const titleBinary = Array.from(titleBytes, (byte) =>
+      String.fromCharCode(byte),
+    ).join("");
+
+    return btoa(
+      payload.slice(0, marker.index) +
+        titleBinary +
+        payload.slice(marker.index + marker.value.length),
+    );
+  } catch {
+    // Keep the server's payload intact if this runtime cannot decode it.
+    return payloadBase64;
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Template-aware ESC/POS builder
 // Reads the KOT designer template blocks and converts to raw ESC/POS bytes.
@@ -662,6 +703,13 @@ export function GlobalKotPrinter() {
           console.warn(
             "[GlobalKotPrinter] Canonical render failed; using compatibility renderer:",
             renderError,
+          );
+        }
+        if (payloadBase64) {
+          payloadBase64 = rewriteStationTicketTitleInCanonicalPayload(
+            payloadBase64,
+            data,
+            template,
           );
         }
         const globalSettings = template.find(

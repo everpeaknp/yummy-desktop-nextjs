@@ -445,7 +445,7 @@ export function KOTDesigner({
                     phone: restaurant?.phone,
                     kot_no: "10-1",
                     station: "KITCHEN",
-                    station_ticket_title: "INITIAL TICKET",
+                    station_ticket_title: "KITCHEN ORDER TICKET",
                     type: "Initial Ticket",
                     table_name: "M1",
                     order_id: "10",

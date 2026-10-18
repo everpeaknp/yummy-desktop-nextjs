@@ -4,7 +4,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }));
 vi.mock("@/lib/api-client", () => ({ default: mocks }));
 vi.mock("@/hooks/use-restaurant", () => ({ useRestaurant: { getState: () => ({ restaurant: { id: 52 } }) } }));
-import { GlobalKotPrinter } from "./global-kot-printer";
+import {
+  GlobalKotPrinter,
+  rewriteStationTicketTitleInCanonicalPayload,
+} from "./global-kot-printer";
 
 const ticket = {
   id: 45079, restaurant_id: 52, station: "bar", order: { id: 10 },
@@ -64,5 +67,66 @@ describe("KOT claim requires a usable local print bridge", () => {
     await act(async () => dispatchTicket());
     expect(mocks.post).toHaveBeenCalledTimes(1);
     expect(printNetworkRaw).not.toHaveBeenCalled();
+  });
+});
+
+describe("canonical KOT station title compatibility", () => {
+  it("uses the KOT station for a saved station title token", () => {
+    const canonicalPayload = btoa(
+      "\x1b@INITIAL TICKET\nType: Initial Ticket\n",
+    );
+
+    const correctedPayload = rewriteStationTicketTitleInCanonicalPayload(
+      canonicalPayload,
+      ticket,
+      [{ type: "text", text: "{{station_ticket_title}}" }],
+    );
+
+    expect(atob(correctedPayload)).toBe(
+      "\x1b@BAR ORDER TICKET\nType: Initial Ticket\n",
+    );
+  });
+
+  it("upgrades the legacy initial-ticket title in saved templates", () => {
+    const canonicalPayload = btoa(
+      "\x1b@INITIAL TICKET\nType: Initial Ticket\n",
+    );
+
+    const correctedPayload = rewriteStationTicketTitleInCanonicalPayload(
+      canonicalPayload,
+      ticket,
+      [{ id: "1", type: "text", text: "INITIAL TICKET" }],
+    );
+
+    expect(atob(correctedPayload)).toBe(
+      "\x1b@BAR ORDER TICKET\nType: Initial Ticket\n",
+    );
+  });
+
+  it("leaves canonical output unchanged when the template has no station token", () => {
+    const canonicalPayload = btoa("\x1b@INITIAL TICKET\n");
+
+    expect(
+      rewriteStationTicketTitleInCanonicalPayload(canonicalPayload, ticket, [
+        { type: "text", text: "CUSTOM KITCHEN LABEL" },
+      ]),
+    ).toBe(canonicalPayload);
+  });
+
+  it("replaces an additional-items header without changing its type row", () => {
+    const addTicket = { ...ticket, type: "add" };
+    const canonicalPayload = btoa(
+      "\x1b@ADDITIONAL ITEMS\nType: Additional Items\n",
+    );
+
+    const correctedPayload = rewriteStationTicketTitleInCanonicalPayload(
+      canonicalPayload,
+      addTicket,
+      [{ type: "text", text: "{{station_ticket_title}}" }],
+    );
+
+    expect(atob(correctedPayload)).toBe(
+      "\x1b@BAR ORDER TICKET\nType: Additional Items\n",
+    );
   });
 });
