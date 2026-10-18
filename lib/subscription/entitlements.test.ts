@@ -2,12 +2,16 @@ import { describe, expect, it } from "vitest";
 
 import {
   billingIntervals,
+  planBillingIntervals,
   currentPlanDisplayName,
   entitlementLimit,
   isResolvedEntitlementEnabled,
   isEntitlementEnabled,
   isSubscriptionEntitlementEnabled,
   planFeatures,
+  planFeatureComparison,
+  planBillingSavings,
+  planMarketingBadge,
   priceTypeLabel,
   pricesForInterval,
   requiredPlanName,
@@ -40,6 +44,22 @@ function plan(code: string, order: number, entitlements: Record<string, boolean 
 }
 
 describe("subscription entitlement helpers", () => {
+  it("shows only new capabilities and higher limits for an inherited tier", () => {
+    const basic = plan("basic", 1, { "orders.dine_in.enabled": true, "users.max": 15 });
+    const pro = plan("pro", 2, { "orders.dine_in.enabled": true, "users.max": 20, "inventory.enabled": true });
+    const result = planFeatureComparison(pro, [basic, pro]);
+    expect(result.previousName).toBe("Basic");
+    expect(result.features.map((feature) => feature.label)).toEqual(["20 users + billing owner", "Inventory management"]);
+    expect(planFeatures(pro)).toHaveLength(3);
+  });
+
+  it("does not claim inheritance when a capability or unlimited quota is removed", () => {
+    const basic = plan("basic", 1, { "orders.dine_in.enabled": true, "users.max": null });
+    const pro = plan("pro", 2, { "orders.dine_in.enabled": true, "users.max": 20 });
+    expect(planFeatureComparison(pro, [basic, pro]).previousName).toBeNull();
+    expect(planFeatureComparison(pro, [pro]).previousName).toBeNull();
+    expect(planFeatureComparison(plan("pro", 2, { "orders.dine_in.enabled": false, "users.max": null }), [basic]).previousName).toBeNull();
+  });
   it("distinguishes missing, disabled, enabled, and unlimited values", () => {
     const entitlements = { "payroll.enabled": true, "inventory.enabled": false, "users.max": null };
     expect(isEntitlementEnabled(entitlements, "payroll.enabled")).toBe(true);
@@ -94,9 +114,22 @@ describe("subscription entitlement helpers", () => {
     basic.current_version?.prices.push({ id: "six", billing_interval_months: 6, price_type: "initial", amount: 7000, currency: "NPR", tax_inclusive: true, quote_only: false });
     const catalog: SubscriptionCatalog = { catalog_version: "1", currency: "NPR", plans: [basic], addons: [] };
     expect(billingIntervals(catalog)).toEqual([6, 12]);
+    expect(planBillingIntervals(basic)).toEqual([6, 12]);
     expect(pricesForInterval(basic, 12).initial?.amount).toBe(1000);
     expect(pricesForInterval(basic, 12).renewal?.amount).toBe(800);
     expect(priceTypeLabel(pricesForInterval(basic, 12).initial!)).toBe("Price");
+  });
+
+  it("uses catalog marketing badges and only shows real billing savings", () => {
+    const basic = plan("basic", 1, {});
+    basic.current_version!.marketing_content = { recommended: true };
+    basic.current_version!.prices.push({ id: "six", billing_interval_months: 6, price_type: "initial", amount: 600, currency: "NPR", tax_inclusive: false, quote_only: false });
+
+    expect(planMarketingBadge(basic)).toBe("Recommended");
+    expect(planBillingSavings(basic)).toEqual({ amount: 200, currency: "NPR" });
+
+    basic.current_version!.prices.find((price) => price.id === "six")!.amount = 400;
+    expect(planBillingSavings(basic)).toBeNull();
   });
 
   it("preserves nullable terms and scopes quote pricing to the selected term", () => {

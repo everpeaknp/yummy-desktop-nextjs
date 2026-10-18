@@ -5,6 +5,7 @@ import { useEffect, useRef, useCallback } from "react";
 import { NotificationApis } from "@/lib/api/endpoints";
 import { getWebSocketReconnectDelay, warnWebSocketUnavailableOnce } from "@/lib/websocket-reconnect";
 import { useAuth } from "@/hooks/use-auth";
+import { hasPermission } from '@/lib/role-permissions';
 
 // ── Types ────────────────────────────────────────────────────────────
 export interface AppNotification {
@@ -41,8 +42,13 @@ export function tabsForRole(role: string): NotificationTab[] {
         { label: "Orders", type: "order" },
         { label: "KOT", type: "kot" },
         { label: "Inventory", type: "inventory" },
+        { label: "Table access", type: "table_access" },
         { label: "Payroll", type: "payroll" },
       ];
+    case "waiter":
+    case "staff":
+    case "cashier":
+      return [{ label: 'Notifications', type: null }, { label: 'Table access', type: 'table_access' }];
     case "kitchen":
     case "bar":
     case "cafe":
@@ -178,6 +184,11 @@ function buildKotNotificationContent(event: string, data: any): { title: string;
 }
 
 // ── Zustand store ────────────────────────────────────────────────────
+export function filterNotificationTab(all: AppNotification[], tab: string | null) {
+  return all.filter(n => tab === 'table_access' ? n.event === 'table.access_requested'
+    : n.event !== 'table.access_requested' && (!tab || n.type.toLowerCase() === tab.toLowerCase()));
+}
+
 interface NotificationState {
   notifications: AppNotification[];
   allNotifications: AppNotification[];
@@ -208,11 +219,11 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
   setPanelOpen: (open) => set({ panelOpen: open }),
   setActiveTab: (tab) => {
     const all = get().allNotifications;
-    const filtered = tab ? all.filter((n) => n.type.toLowerCase() === tab.toLowerCase()) : all;
+    const filtered = filterNotificationTab(all, tab);
     set({ activeTab: tab, notifications: filtered });
   },
   setNotifications: (all, tab, total) => {
-    const filtered = tab ? all.filter((n) => n.type.toLowerCase() === tab.toLowerCase()) : all;
+    const filtered = filterNotificationTab(all, tab);
     set({ allNotifications: all, notifications: filtered, total });
   },
   setUnreadCount: (count) => set({ unreadCount: count }),
@@ -223,7 +234,7 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
     const unique = more.filter((n) => !existingIds.has(n.id));
     const all = [...existing, ...unique];
     const tab = get().activeTab;
-    const filtered = tab ? all.filter((n) => n.type.toLowerCase() === tab.toLowerCase()) : all;
+    const filtered = filterNotificationTab(all, tab);
     set({ allNotifications: all, notifications: filtered });
   },
   setBrowserPermission: (p) => set({ browserPermission: p }),
@@ -494,7 +505,12 @@ export function useNotifications() {
     fetchUnreadCount,
     markAllRead,
     role,
-    tabs: tabsForRole(role),
+    tabs: (() => {
+      const canReview = hasPermission(user, 'pos.order.edit');
+      const tabs = tabsForRole(role).filter(tab => tab.type !== 'table_access' || canReview);
+      if (canReview && !tabs.some(tab => tab.type === 'table_access')) tabs.push({ label: 'Table access', type: 'table_access' });
+      return tabs;
+    })(),
     requestPermission: requestNotificationPermission,
   };
 }

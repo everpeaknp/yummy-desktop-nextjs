@@ -32,8 +32,12 @@ export const SubscriptionApis = {
   current: "/subscriptions/current",
   usage: "/subscriptions/usage",
   invoices: "/subscriptions/invoices",
+  checkout: "/subscriptions/checkout",
   upgradeRequests: "/subscriptions/upgrade-requests",
   quotaCompliance: "/subscriptions/quota-compliance/resolve",
+  fonepayCheckout: (invoiceId: number | string) => `/subscriptions/invoices/${invoiceId}/fonepay/checkout`,
+  fonepayVerify: (invoiceId: number | string, prn: string) => `/subscriptions/invoices/${invoiceId}/fonepay/${encodeURIComponent(prn)}/verify`,
+  fonepaySupersede: (invoiceId: number | string, prn: string) => `/subscriptions/invoices/${invoiceId}/fonepay/${encodeURIComponent(prn)}/supersede`,
 };
 
 export const FiscalApis = {

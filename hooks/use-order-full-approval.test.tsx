@@ -1,0 +1,20 @@
+import { afterEach, expect, it, vi } from "vitest";
+import { act, cleanup, renderHook } from "@testing-library/react";
+import apiClient from "@/lib/api-client";
+import { useOrderFull } from "./use-order-full";
+vi.mock("@/lib/api-client", () => ({ default: { get: vi.fn() } }));
+afterEach(() => { cleanup(); vi.useRealTimers(); vi.clearAllMocks(); });
+it("refreshes new additions without replacing the accepted total or flashing a loader", async () => {
+  vi.useFakeTimers();
+  const snapshot = { order: { id: 7, table_id: 1, status: "pending", grand_total: 100 }, tables: [], kots: [], payments: [] };
+  vi.mocked(apiClient.get).mockResolvedValueOnce({ data: { status: "success", data: snapshot } });
+  const { result, unmount } = renderHook(() => useOrderFull(7));
+  await act(async () => { await Promise.resolve(); });
+  expect(result.current.loading).toBe(false);
+  vi.mocked(apiClient.get).mockResolvedValue({ data: { status: "success", data: { ...snapshot, pending_item_requests: [{ id: 8, status: "requested", grand_total: 20 }] } } });
+  await act(async () => { await vi.advanceTimersByTimeAsync(10000); });
+  expect(result.current.context?.pending_item_requests?.[0].id).toBe(8);
+  expect(result.current.context?.order.grand_total).toBe(100);
+  expect(result.current.loading).toBe(false);
+  unmount();
+});

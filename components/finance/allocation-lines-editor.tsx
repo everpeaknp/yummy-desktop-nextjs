@@ -1,4 +1,5 @@
 "use client";
+import { OptionSelect } from "@/components/ui/option-select";
 
 import React, { useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -255,10 +256,10 @@ export function AllocationLinesEditor({
               >
                 {/* Head Select */}
                 <div className="flex-1 w-full sm:w-auto">
-                  <select
-                    className="w-full h-9 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  <OptionSelect aria-label="Reporting account"
+                    className="w-full h-9"
                     value={line.reporting_head_id}
-                    onChange={(e) => handleHeadChange(idx, e.target.value)}
+                    onValueChange={(e) => handleHeadChange(idx, e)}
                     disabled={disabled}
                   >
                     {eligibleHeads.map((h) => (
@@ -271,7 +272,7 @@ export function AllocationLinesEditor({
                         + Add new account head
                       </option>
                     )}
-                  </select>
+                  </OptionSelect>
                 </div>
 
                 {/* Amount */}
@@ -360,11 +361,11 @@ export function AllocationLinesEditor({
             </div>
             <div className="grid gap-2">
               <Label htmlFor="head_parent">Parent group *</Label>
-              <select
+              <OptionSelect aria-label="Parent group"
                 id="head_parent"
-                className="w-full h-9 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                className="w-full h-9"
                 value={parentGroupId}
-                onChange={(e) => setParentGroupId(e.target.value)}
+                onValueChange={(e) => setParentGroupId(e)}
                 disabled={loadingParentGroups}
               >
                 <option value="">
@@ -377,7 +378,7 @@ export function AllocationLinesEditor({
                     {group.hierarchy_path || group.name}
                   </option>
                 ))}
-              </select>
+              </OptionSelect>
             </div>
           </div>
           <DialogFooter>

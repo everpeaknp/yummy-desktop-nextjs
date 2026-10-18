@@ -1,4 +1,5 @@
 "use client";
+import { OptionSelect } from "@/components/ui/option-select";
 
 import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { useAuth } from "@/hooks/use-auth";
@@ -813,18 +814,18 @@ export default function KitchenPage() {
 
         <label className="mt-2 flex min-h-11 items-center gap-2 rounded-xl border border-border/60 bg-muted/20 px-3 text-xs font-medium md:hidden">
           <span className="shrink-0 text-muted-foreground">Station</span>
-          <select
+          <OptionSelect
             aria-label="Kitchen station"
-            className="min-w-0 flex-1 bg-transparent text-right font-semibold text-foreground outline-none"
+            className="min-w-0 flex-1"
             value={stationTab}
-            onChange={(event) => setStationTab(event.target.value)}
+            onValueChange={(event) => setStationTab(event)}
           >
             {STATIONS.map((station) => (
               <option key={station} value={station}>
                 {humanizeKotStation(station)}
               </option>
             ))}
-          </select>
+          </OptionSelect>
         </label>
 
         <div className="mt-3 hidden min-w-0 md:block">

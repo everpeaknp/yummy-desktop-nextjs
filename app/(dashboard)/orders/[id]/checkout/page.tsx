@@ -7,6 +7,7 @@ import apiClient from "@/lib/api-client";
 import { useAuth } from "@/hooks/use-auth";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import { useOrderFull } from "@/hooks/use-order-full";
+import { TableBillSwitcher } from "@/components/orders/table-bill-switcher";
 import { useMobileAppBarTitle } from "@/components/layout/mobile-app-bar-title";
 
 function CheckoutAppBarTitle({ title }: { title: string }) {
@@ -23,6 +24,7 @@ import {
   GrowthApis,
 } from "@/lib/api/endpoints";
 import { Button } from "@/components/ui/button";
+import { BillManagementActions } from "@/components/orders/bill-management-actions";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
@@ -616,6 +618,13 @@ function StaffSearchSelect({
 // ── Main Checkout Page ─────────────────────────────
 export default function CheckoutPage() {
   const params = useParams() as { id?: string | string[] } | null;
+  const rawId = Array.isArray(params?.id) ? params?.id[0] : params?.id;
+  const orderId = Number(rawId || 0);
+  // Reset bill-specific forms without reloading the application shell.
+  return <CheckoutContent key={orderId} orderId={orderId} />;
+}
+
+function CheckoutContent({ orderId }: { orderId: number }) {
   const router = useRouter();
 
   // Extract returnTo from URL if present
@@ -628,8 +637,6 @@ export default function CheckoutPage() {
     }
   }, []);
 
-  const rawId = Array.isArray(params?.id) ? params?.id[0] : params?.id;
-  const orderId = Number(rawId || 0);
   const user = useAuth((s) => s.user);
   const restaurant = useRestaurant((s) => s.restaurant);
   const curr = restaurant?.currency || "Rs.";
@@ -2278,12 +2285,12 @@ export default function CheckoutPage() {
 
   const handleCancelSplit = async () => {
     const confirmCancel = window.confirm(
-      "Are you sure you want to revert the split? This will merge all guest bills back into the main order.",
+      "Cancel this split and combine all guest bills into the original bill? The original bill keeps its customer. Original customer details remain in audit history.",
     );
     if (!confirmCancel) return;
 
     try {
-      await apiClient.post(OrderApis.cancelGuestBillSplit(orderId));
+      await apiClient.post(OrderApis.cancelGuestBillSplit(Number(guestBills?.anchor_order_id || orderId)));
       toast.success("Split reverted successfully");
       await fetchBill();
     } catch (err: any) {
@@ -2956,6 +2963,15 @@ export default function CheckoutPage() {
       </div>
 
       {/* ── Fully Paid Banner ── */}
+      {context?.order && <TableBillSwitcher order={context.order} checkout />}
+      {context?.order && <BillManagementActions order={context.order} session={guestBills} canManage={canSplitPayment} onCreateSplit={() => {
+        const initialItems = buildSplitInitialItems();
+        setSplitParts([{ label: "Guest 1", items: { ...initialItems } }, { label: "Guest 2", items: { ...initialItems } }]);
+        setSplitError(null); setSplitBillOpen(true);
+      }} onChanged={async targetId => {
+        if (targetId !== orderId) router.push(`/orders/${targetId}/checkout`);
+        else { await fetchBill(); await fetchContext(); }
+      }} />}
       {displayIsFullyPaid &&
         !isCustomerBalanceOutstanding &&
         !isRoomServiceOrder &&
@@ -3650,8 +3666,8 @@ export default function CheckoutPage() {
               {/* Guest Bills Section */}
               {guestBills?.orders?.length > 0 &&
                 guestBills?.split_group_id &&
-                String(guestBills.anchor_order_id) === String(orderId) && (
-                  <div className="space-y-3 mb-4">
+                (
+                  <div id="guest-bills" className="space-y-3 mb-4 scroll-mt-24">
                     <Card className="border-orange-200 bg-orange-50/20 dark:bg-orange-950/10">
                       <CardContent className="p-4 space-y-3">
                         <div className="flex items-center justify-between border-b border-orange-100 dark:border-orange-900/50 pb-2">
@@ -3663,9 +3679,10 @@ export default function CheckoutPage() {
                             variant="ghost"
                             size="sm"
                             onClick={handleCancelSplit}
+                            disabled={!canSplitPayment || guestBills.orders.some((bill: any) => Number(bill.total_paid) > 0)}
                             className="h-8 text-xs text-muted-foreground hover:text-destructive gap-1 px-2"
                           >
-                            <X className="h-3 w-3" /> Revert Split
+                            <X className="h-3 w-3" /> Cancel split
                           </Button>
                         </div>
 

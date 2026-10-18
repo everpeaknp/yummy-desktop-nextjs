@@ -301,6 +301,37 @@ export function priceTypeLabel(price: SubscriptionPrice): string {
   return "Price";
 }
 
+export function planBillingIntervals(
+  plan: Pick<SubscriptionPlan, "current_version">,
+): number[] {
+  const intervals = new Set<number>();
+  for (const price of plan.current_version?.prices ?? []) {
+    if (price.billing_interval_months) intervals.add(price.billing_interval_months);
+  }
+  return Array.from(intervals).sort((a, b) => a - b);
+}
+
+export function planMarketingBadge(plan: SubscriptionPlan): string | null {
+  const marketing = plan.current_version?.marketing_content;
+  if (!marketing || typeof marketing !== "object" || Array.isArray(marketing)) return null;
+  const values = marketing as Record<string, unknown>;
+  const badge = typeof values.badge === "string" ? values.badge.trim() : "";
+  if (badge) return badge;
+  return values.recommended === true || values.is_recommended === true ? "Recommended" : null;
+}
+
+export function planBillingSavings(
+  plan: SubscriptionPlan,
+  longerIntervalMonths = 12,
+  shorterIntervalMonths = 6,
+): { amount: number; currency: string } | null {
+  const longer = pricesForInterval(plan, longerIntervalMonths).initial ?? pricesForInterval(plan, longerIntervalMonths).renewal;
+  const shorter = pricesForInterval(plan, shorterIntervalMonths).initial ?? pricesForInterval(plan, shorterIntervalMonths).renewal;
+  if (longer?.amount == null || shorter?.amount == null || longerIntervalMonths % shorterIntervalMonths !== 0) return null;
+  const amount = Number(shorter.amount) * (longerIntervalMonths / shorterIntervalMonths) - Number(longer.amount);
+  return amount > 0 ? { amount, currency: longer.currency } : null;
+}
+
 export function formatPrice(amount: number | null, currency: string): string {
   if (amount == null) return "Custom quote";
   try {
@@ -315,6 +346,28 @@ export function formatPrice(amount: number | null, currency: string): string {
 }
 
 export type MarketingFeature = { label: string; included: boolean };
+
+/** Only claim inheritance when the published capability flags and limits allow it. */
+export function planFeatureComparison(plan: SubscriptionPlan, plans: SubscriptionPlan[]) {
+  const previousCode = ({ basic: "free", pro: "basic", premium: "pro" } as Record<string, string>)[plan.code.toLowerCase()];
+  const previous = plans.find((candidate) => candidate.code.toLowerCase() === previousCode);
+  const features = planFeatures(plan);
+  const before = previous?.current_version?.entitlements;
+  const after = plan.current_version?.entitlements;
+  const inherits = before && after && Object.keys(before).length > 0 && Object.entries(before).every(([key, value]) => {
+    if (key.endsWith(".enabled")) return value !== true || after[key] === true;
+    if (!key.endsWith(".max") && key !== "finance.history_days") return true;
+    if (!(key in after)) return false;
+    if (value === null) return after[key] === null;
+    return after[key] === null || (Number.isFinite(Number(after[key])) && Number(after[key]) >= Number(value));
+  });
+  if (!inherits || !previous) return { previousName: null, features };
+  const inherited = new Set(planFeatures(previous).filter((feature) => feature.included).map((feature) => feature.label.trim().toLowerCase()));
+  return {
+    previousName: previous.name,
+    features: features.filter((feature) => !feature.included || !inherited.has(feature.label.trim().toLowerCase())),
+  };
+}
 
 function parseMarketingFeatures(content: unknown): MarketingFeature[] {
   const source = Array.isArray(content)

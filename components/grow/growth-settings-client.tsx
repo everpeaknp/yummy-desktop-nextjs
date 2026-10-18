@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import QRCode from "qrcode";
 import { Check, Clock3, Copy, CreditCard, Download, Loader2, Mail, MessageSquareText, QrCode, RefreshCw, ShieldAlert, ShieldCheck, Sparkles, TriangleAlert, UsersRound, WalletCards } from "lucide-react";
@@ -25,7 +25,7 @@ function findQrPayload(value: unknown): string | null {
   if (typeof value === "string" && value.trim()) return value.trim();
   if (!value || typeof value !== "object") return null;
   const record = value as Record<string, unknown>;
-  for (const key of ["qr_payload", "payload", "qr_string", "deeplink", "content", "qr", "qrurl", "qr_url"]) {
+  for (const key of ["qrMessage", "qr_message", "qr_payload", "payload", "qr_string", "deeplink", "content", "qr", "qrurl", "qr_url"]) {
     const result = findQrPayload(record[key]);
     if (result) return result;
   }
@@ -59,6 +59,7 @@ export function GrowthSettingsClient({ focusSection }: { focusSection?: "credits
   const [purchaseQr, setPurchaseQr] = useState("");
   const [buyingPackage, setBuyingPackage] = useState<string | null>(null);
   const [checkingPayment, setCheckingPayment] = useState(false);
+  const checkingPaymentRef = useRef(false);
   const [signupQr, setSignupQr] = useState("");
 
   const restaurantId = user?.restaurant_id;
@@ -184,26 +185,38 @@ export function GrowthSettingsClient({ focusSection }: { focusSection?: "credits
     }
   };
 
-  const checkSmsPayment = async () => {
-    if (!smsPurchase) return;
+  const checkSmsPayment = useCallback(async (purchaseId: number, silent = false) => {
+    if (checkingPaymentRef.current) return;
+    checkingPaymentRef.current = true;
     setCheckingPayment(true);
     try {
-      const purchase = await growthApi.verifySmsPurchase(smsPurchase.id);
+      const purchase = await growthApi.verifySmsPurchase(purchaseId);
       setSmsPurchase(purchase);
       if (purchase.status === "paid") {
         setSmsWallet(await growthApi.getSmsWallet());
+        setSmsPurchase(null);
         toast.success(`${purchase.credits.toLocaleString("en-NP")} SMS credits added.`);
       } else if (purchase.status === "review_required") {
         toast.error("Payment requires manual review because the verified amount did not match.");
-      } else {
+      } else if (!silent) {
         toast.info("Payment has not completed yet.");
       }
     } catch (error) {
-      toast.error(getApiErrorMessage(error, "Unable to verify Fonepay payment"));
+      if (!silent) toast.error(getApiErrorMessage(error, "Unable to verify Fonepay payment"));
     } finally {
+      checkingPaymentRef.current = false;
       setCheckingPayment(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    const purchaseId = smsPurchase?.id;
+    if (!purchaseId) return;
+    const timer = window.setInterval(() => {
+      void checkSmsPayment(purchaseId, true);
+    }, 5000);
+    return () => window.clearInterval(timer);
+  }, [checkSmsPayment, smsPurchase?.id]);
 
   const [savingEmail, setSavingEmail] = useState(false);
   const [savingSms, setSavingSms] = useState(false);
@@ -499,7 +512,7 @@ export function GrowthSettingsClient({ focusSection }: { focusSection?: "credits
           <DialogHeader><DialogTitle>Buy SMS Credits</DialogTitle><DialogDescription>Scan with Fonepay to pay NPR {Number(smsPurchase?.amount_npr || 0).toLocaleString("en-NP")} for {smsPurchase?.credits.toLocaleString("en-NP")} credits.</DialogDescription></DialogHeader>
           <div className="space-y-4 text-center">
             {purchaseQr ? <Image src={purchaseQr} width={300} height={300} alt="Fonepay payment QR" unoptimized className="mx-auto rounded-xl bg-white p-3" /> : <Alert><TriangleAlert className="h-4 w-4" /><AlertDescription>Fonepay did not return a displayable QR payload.</AlertDescription></Alert>}
-            <Button className="w-full" onClick={() => void checkSmsPayment()} disabled={checkingPayment || smsPurchase?.status === "paid"}>
+            <Button className="w-full" onClick={() => smsPurchase && void checkSmsPayment(smsPurchase.id)} disabled={checkingPayment || smsPurchase?.status === "paid"}>
               {checkingPayment ? <Loader2 aria-hidden="true" className="mr-2 h-4 w-4 animate-spin motion-reduce:animate-none" /> : <RefreshCw aria-hidden="true" className="mr-2 h-4 w-4" />}{smsPurchase?.status === "paid" ? "Payment Verified" : "Check My Payment"}
             </Button>
             <p className="text-xs text-muted-foreground">Credits are added only after Yummy verifies the exact amount with Fonepay.</p>

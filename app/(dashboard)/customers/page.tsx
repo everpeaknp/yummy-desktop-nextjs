@@ -28,6 +28,7 @@ import { presentCustomerBalance } from "@/lib/presentation/customer-balance";
 import { formatCurrency } from "@/lib/utils";
 import { hasPermission } from "@/lib/role-permissions";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -54,6 +55,7 @@ export default function CustomersPage() {
   const [isFallbackMode, setIsFallbackMode] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [receivablesOnly, setReceivablesOnly] = useState(false);
   const [addCustomerOpen, setAddCustomerOpen] = useState(false);
   const [editCustomer, setEditCustomer] = useState<CustomerRecord | null>(null);
   const [reminderSettingsOpen, setReminderSettingsOpen] = useState(false);
@@ -82,14 +84,21 @@ export default function CustomersPage() {
     if (!user?.restaurant_id) return;
     setLoading(true);
     try {
-      const response = await apiClient.get(
-        CustomerApis.listCustomers(user.restaurant_id),
-      );
-      if (response.data.status === "success") {
-        setCustomers(response.data.data.customers ?? []);
-        setIsFallbackMode(false);
-        return;
+      const allCustomers: CustomerRecord[] = [];
+      let skip = 0;
+      while (true) {
+        const response = await apiClient.get(CustomerApis.listCustomers(user.restaurant_id), {
+          params: { skip, limit: 100 },
+        });
+        if (response.data.status !== "success") throw new Error("Customer list unavailable");
+        const page: CustomerRecord[] = response.data.data.customers ?? [];
+        allCustomers.push(...page);
+        skip += page.length;
+        if (page.length < 100 || skip >= Number(response.data.data.total ?? Infinity)) break;
       }
+      setCustomers(allCustomers);
+      setIsFallbackMode(false);
+      return;
     } catch (error: unknown) {
       const status =
         typeof error === "object" && error !== null && "response" in error
@@ -125,6 +134,7 @@ export default function CustomersPage() {
             }
             setCustomers(Array.from(customersById.values()));
             setIsFallbackMode(true);
+            setReceivablesOnly(false);
             return;
           }
         } catch (fallbackError) {
@@ -159,9 +169,12 @@ export default function CustomersPage() {
         (statusFilter === "active"
           ? customer.is_active !== false
           : customer.is_active === false);
-      return matchesSearch && matchesStatus;
+      const matchesBalance = !receivablesOnly || presentCustomerBalance({
+        isAvailable: !isFallbackMode, legacyReceivable: customer.credit,
+      }).kind === "receivable";
+      return matchesSearch && matchesStatus && matchesBalance;
     });
-  }, [customers, searchQuery, statusFilter]);
+  }, [customers, searchQuery, statusFilter, receivablesOnly, isFallbackMode]);
 
   const totalReceivable = customers.reduce(
     (sum, customer) => sum + Number(customer.credit ?? 0),
@@ -177,6 +190,10 @@ export default function CustomersPage() {
     customer.full_name || customer.name || "Guest";
   const contact = (customer: CustomerRecord) =>
     customer.phone || customer.email || "No contact details";
+  const balanceFilter = (id: string) => <label htmlFor={id} className="flex min-h-11 items-center gap-2 rounded-xl border border-border bg-card px-3 text-sm font-medium">
+    <Checkbox id={id} checked={receivablesOnly} disabled={isFallbackMode || loading} onCheckedChange={value => setReceivablesOnly(value === true)} />
+    Has receivables
+  </label>;
 
   return (
     <AppPage width="register">
@@ -218,7 +235,7 @@ export default function CustomersPage() {
         filter={
           <FilterBar
             title="Filters"
-            activeCount={statusFilter === "all" ? 0 : 1}
+            activeCount={(statusFilter === "all" ? 0 : 1) + (receivablesOnly ? 1 : 0)}
             responsiveAt="lg"
             mobileTriggerVariant="icon"
             mobileContent={
@@ -242,6 +259,7 @@ export default function CustomersPage() {
                     <SelectItem value="inactive">Inactive</SelectItem>
                   </SelectContent>
                 </Select>
+                <div className="mt-3">{balanceFilter("customer-receivables-mobile")}</div>
               </div>
             }
           />
@@ -299,6 +317,7 @@ export default function CustomersPage() {
         <p className="text-xs text-amber-700 dark:text-amber-400">
           Customer profiles are unavailable for this account. Showing customers
           linked to orders only.
+          Receivable filtering is unavailable because these balances are unknown.
         </p>
       ) : null}
 
@@ -323,6 +342,7 @@ export default function CustomersPage() {
             <SelectItem value="inactive">Inactive</SelectItem>
           </SelectContent>
         </Select>
+        {balanceFilter("customer-receivables-desktop")}
       </FilterBar>
 
       {loading ? (
@@ -331,7 +351,7 @@ export default function CustomersPage() {
         <EmptyState
           icon={<User className="h-5 w-5" />}
           title="No customers found"
-          description="Add a customer to track their sales and settlements."
+          description={receivablesOnly || searchQuery || statusFilter !== "all" ? "No customers match these filters. Adjust the search or turn off a filter." : "Add a customer to track their sales and settlements."}
         />
       ) : (
         <>

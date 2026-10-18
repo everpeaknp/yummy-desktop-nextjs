@@ -1,4 +1,5 @@
 "use client";
+import { OptionSelect } from "@/components/ui/option-select";
 
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -498,9 +499,9 @@ export function AccountHeadsClient() {
         </div>
 
         {/* Type Tabs */}
-        <select value={selectedType} onChange={(event) => setSelectedType(event.target.value)} className="h-9 w-full rounded-lg border border-input bg-background px-3 text-sm sm:hidden">
+        <OptionSelect aria-label="Account type" value={selectedType} onValueChange={(event) => setSelectedType(event)} className="h-9 w-full sm:hidden">
           <option value="all">All account types</option><option value="asset">Assets</option><option value="liability">Liabilities</option><option value="equity">Equity</option><option value="income">Income</option><option value="expense">Expenses</option>
-        </select>
+        </OptionSelect>
         <Tabs
           value={selectedType}
           onValueChange={setSelectedType}

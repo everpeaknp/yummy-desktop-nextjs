@@ -1,4 +1,5 @@
 "use client";
+import { OptionSelect } from "@/components/ui/option-select";
 
 import { useEffect, useMemo, useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
@@ -328,11 +329,11 @@ export function FinanceSalesReturnDialog({
         <div className="grid gap-4 md:grid-cols-3">
           <div className="space-y-2">
             <Label>Return source</Label>
-            <select
-              className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+            <OptionSelect aria-label="Return source"
+              className="h-10 w-full"
               value={sourceType}
-              onChange={(event) => {
-                const value = event.target.value as FinanceSalesReturnSource;
+              onValueChange={(event) => {
+                const value = event as FinanceSalesReturnSource;
                 setSourceType(value);
                 setSourceId("");
                 setOrder(null);
@@ -341,15 +342,15 @@ export function FinanceSalesReturnDialog({
             >
               <option value="finance_invoice">Recorded invoice</option>
               <option value="external">Sale not recorded here</option>
-            </select>
+            </OptionSelect>
           </div>
           {sourceType === "finance_invoice" ? (
             <div className="space-y-2 md:col-span-2">
               <Label>Invoice *</Label>
-              <select
-                className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+              <OptionSelect aria-label="Invoice"
+                className="h-10 w-full"
                 value={sourceId}
-                onChange={(event) => setSourceId(event.target.value)}
+                onValueChange={(event) => setSourceId(event)}
               >
                 <option value="">Select by invoice number</option>
                 {invoices
@@ -368,7 +369,7 @@ export function FinanceSalesReturnDialog({
                       · {formatCurrency(invoice.grand_total)}
                     </option>
                   ))}
-              </select>
+              </OptionSelect>
             </div>
           ) : (
             <>
@@ -488,12 +489,12 @@ export function FinanceSalesReturnDialog({
                       }
                     />
                   </div>
-                  <select
-                    className="h-11 w-full rounded-xl border bg-background px-3 text-sm"
+                  <OptionSelect aria-label="Reporting account"
+                    className="h-11 w-full"
                     value={row.reporting_head_id || ""}
-                    onChange={(event) =>
+                    onValueChange={(event) =>
                       updateRow(row.key, {
-                        reporting_head_id: Number(event.target.value),
+                        reporting_head_id: Number(event),
                       })
                     }
                   >
@@ -503,7 +504,7 @@ export function FinanceSalesReturnDialog({
                         {head.hierarchy_path || head.name}
                       </option>
                     ))}
-                  </select>
+                  </OptionSelect>
                 </>
               ) : null}
             </div>
@@ -594,12 +595,12 @@ export function FinanceSalesReturnDialog({
                         />
                       </td>
                       <td className="p-2">
-                        <select
-                          className="h-10 min-w-48 rounded-md border bg-background px-2"
+                        <OptionSelect aria-label="Reporting account"
+                          className="h-10 min-w-48"
                           value={row.reporting_head_id || ""}
-                          onChange={(event) =>
+                          onValueChange={(event) =>
                             updateRow(row.key, {
-                              reporting_head_id: Number(event.target.value),
+                              reporting_head_id: Number(event),
                             })
                           }
                         >
@@ -609,7 +610,7 @@ export function FinanceSalesReturnDialog({
                               {head.hierarchy_path || head.name}
                             </option>
                           ))}
-                        </select>
+                        </OptionSelect>
                       </td>
                       <td className="p-2">
                         <Button
@@ -656,10 +657,10 @@ export function FinanceSalesReturnDialog({
               <Label>
                 Customer {outcome === "customer_credit" ? "*" : "(optional)"}
               </Label>
-              <select
-                className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+              <OptionSelect aria-label="Customer"
+                className="h-10 w-full"
                 value={customerId}
-                onChange={(event) => setCustomerId(event.target.value)}
+                onValueChange={(event) => setCustomerId(event)}
               >
                 <option value="">No customer</option>
                 {customers.map((customer) => (
@@ -669,7 +670,7 @@ export function FinanceSalesReturnDialog({
                       `Customer #${customer.id}`}
                   </option>
                 ))}
-              </select>
+              </OptionSelect>
             </div>
             <div className="space-y-2">
               <Label>Reason *</Label>
@@ -684,10 +685,10 @@ export function FinanceSalesReturnDialog({
             successfulPayments.length ? (
               <div className="space-y-2">
                 <Label>Original payment to reverse</Label>
-                <select
-                  className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                <OptionSelect aria-label="Original payment to reverse"
+                  className="h-10 w-full"
                   value={originalPaymentId}
-                  onChange={(event) => setOriginalPaymentId(event.target.value)}
+                  onValueChange={(event) => setOriginalPaymentId(event)}
                 >
                   {successfulPayments.map((payment: any) => (
                     <option key={payment.id} value={payment.id}>
@@ -695,7 +696,7 @@ export function FinanceSalesReturnDialog({
                       {formatCurrency(payment.amount)}
                     </option>
                   ))}
-                </select>
+                </OptionSelect>
               </div>
             ) : null}
           </div>

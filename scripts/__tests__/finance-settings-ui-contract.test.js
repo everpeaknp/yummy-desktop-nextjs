@@ -51,6 +51,10 @@ test("Payment Integrations owns FonePay without absorbing checkout or settlement
   assert.match(route, /PaymentIntegrationsWorkspace/);
   assert.match(workspace, /activeItemId="payment_integrations"/);
   assert.match(workspace, /RestaurantApis\.updateFonepay/);
+  assert.match(workspace, /restaurant\.fonepay_pid/);
+  assert.match(workspace, /fonepay_enabled: configuration\.is_active/);
+  assert.match(workspace, /fonepay_pid: configuration\.merchant_code/);
+  assert.doesNotMatch(workspace, /restaurant\.fonepay_config/);
   assert.match(workspace, /Provider status/);
   assert.match(workspace, /\/finance\/operations\?tab=payment-instruments/);
   assert.match(workspace, /\/finance\/operations\?tab=accounts/);
@@ -59,6 +63,38 @@ test("Payment Integrations owns FonePay without absorbing checkout or settlement
     legacyOperations,
     /router\.replace\("\/settings\/payment-integrations"\)/,
   );
+});
+
+test("Grow SMS checkout recognizes Fonepay's qrMessage response field", () => {
+  const workspace = read("components/grow/growth-settings-client.tsx");
+
+  assert.match(workspace, /"qrMessage"/);
+  assert.match(workspace, /checkSmsPayment\(purchaseId, true\)/);
+  assert.match(workspace, /window\.setInterval/);
+  assert.doesNotMatch(workspace, /purchaseStatus/);
+});
+
+test("Subscription plans use secure self-service checkout with automatic verification and QR download", () => {
+  const page = read("app/(dashboard)/premium/page.tsx");
+  const api = read("lib/subscription/api.ts");
+
+  assert.match(page, /`Choose \$\{plan\.name\}`/);
+  assert.match(page, /Continue with Fonepay/);
+  assert.match(page, /Choose your plan/);
+  assert.match(page, /subscriptionApi\.createCheckout/);
+  assert.match(page, /window\.setInterval\(\(\) => void poll\(\), 4_000\)/);
+  assert.match(page, /downloadPaymentQr/);
+  assert.match(page, /closePurchaseDialog/);
+  assert.match(page, /subscriptionApi\.supersedeFonepayCheckout/);
+  assert.match(page, /Cancel checkout & choose another plan/);
+  assert.match(page, /Checkout closes in/);
+  assert.match(page, /Purchase summary/);
+  assert.match(page, /How to pay/);
+  assert.match(page, /Payment verified\. Your subscription is active\./);
+  assert.match(page, /Only verified, fully paid invoices appear here\./);
+  assert.match(page, /checkoutStatus !== "expired"/);
+  assert.doesNotMatch(page, />Pay with Fonepay</);
+  assert.match(api, /SubscriptionApis\.checkout/);
 });
 
 test("the centralized Settings model owns all three Finance destinations", () => {
