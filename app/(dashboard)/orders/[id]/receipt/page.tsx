@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { useRouter, useParams } from "next/navigation";
 import apiClient from "@/lib/api-client";
+import { getDisplayErrorMessage } from "@/lib/api-error-message";
 import { useAuth } from "@/hooks/use-auth";
 import { hasPermission } from "@/lib/role-permissions";
 import { toast } from "sonner";
@@ -62,6 +63,7 @@ import {
   isElectronDesktop,
   printRawToReceiptPrinter,
 } from "@/lib/receipt-network-print";
+import { resolveAuthorizedReceiptTerminalId } from "@/lib/receipt-print-terminal";
 
 function formatCurrency(amount: number) {
   return `Rs. ${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -468,6 +470,7 @@ export default function ReceiptPage() {
     return response.data.data as {
       authorization_id: number;
       designation: string;
+      receipt_terminal_id?: number | null;
     };
   }, [isPreBill, orderId, receipt?.printer_config?.name, selectedTerminalId]);
 
@@ -501,7 +504,10 @@ export default function ReceiptPage() {
           isPreBill ? "bill" : "receipt",
           authorization.authorization_id,
           paymentQr?.config_id,
-          selectedTerminalId,
+          resolveAuthorizedReceiptTerminalId(
+            authorization.receipt_terminal_id,
+            selectedTerminalId,
+          ),
         );
         await printRawToReceiptPrinter(
           selectedTerminal?.printer
@@ -522,7 +528,7 @@ export default function ReceiptPage() {
       await completeOrdinaryPrint(
         authorization.authorization_id,
         false,
-        printError instanceof Error ? printError.message : "Printing failed",
+        getDisplayErrorMessage(printError, "Printing failed"),
       ).catch(() => undefined);
       throw printError;
     } finally {
@@ -733,9 +739,7 @@ export default function ReceiptPage() {
       autoPrintedOrderRef.current = orderId;
       void runFiscalPrint().catch((printError) => {
         toast.error(
-          printError instanceof Error
-            ? printError.message
-            : "Fiscal printing failed.",
+          getDisplayErrorMessage(printError, "Fiscal printing failed."),
         );
       });
       return;
@@ -788,9 +792,7 @@ export default function ReceiptPage() {
           toast.success("Fiscal print result recorded.");
         } catch (printError) {
           toast.error(
-            printError instanceof Error
-              ? printError.message
-              : "Fiscal printing failed.",
+            getDisplayErrorMessage(printError, "Fiscal printing failed."),
           );
         }
         return;
@@ -801,7 +803,7 @@ export default function ReceiptPage() {
         toast.success("Receipt sent to the configured printer.");
       } catch (printError) {
         toast.error(
-          printError instanceof Error ? printError.message : "Printing failed.",
+          getDisplayErrorMessage(printError, "Printing failed."),
         );
       }
     },

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { getApiErrorMessage } from "./api-error-message";
+import { getApiErrorMessage, getDisplayErrorMessage } from "./api-error-message";
 
 describe("getApiErrorMessage", () => {
   it("formats channel-specific consent errors", () => {
@@ -42,5 +42,15 @@ describe("getApiErrorMessage", () => {
         "Request failed",
       ),
     ).toBe("Day close is blocked by incomplete drawer controls.\n• General drawer must be recounted.");
+  });
+
+  it("prefers the server conflict detail over Axios's generic message", () => {
+    const error = Object.assign(new Error("Request failed with status code 409"), {
+      response: { data: { detail: "Select a receipt terminal before printing." } },
+    });
+
+    expect(getDisplayErrorMessage(error, "Printing failed.")).toBe(
+      "Select a receipt terminal before printing.",
+    );
   });
 });

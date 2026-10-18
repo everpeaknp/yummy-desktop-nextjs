@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { getApiErrorMessage } from "@/lib/api-error-message";
+import { getDisplayErrorMessage } from "@/lib/api-error-message";
 import { fiscalApi } from "@/lib/fiscal/api";
 import type {
   FiscalDocument,
@@ -10,8 +10,7 @@ import type {
 } from "@/lib/fiscal/types";
 
 function errorMessage(error: unknown): string {
-  if (error instanceof Error && error.message.trim()) return error.message;
-  return getApiErrorMessage(error, "The fiscal print job failed.");
+  return getDisplayErrorMessage(error, "The fiscal print job failed.");
 }
 
 export function useFiscalPrint(document: FiscalDocument | null) {

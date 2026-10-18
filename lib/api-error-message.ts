@@ -28,3 +28,10 @@ export function getApiErrorMessage(error: unknown, fallback: string): string {
   if (typeof data.message === "string" && data.message.trim()) return data.message;
   return fallback;
 }
+
+export function getDisplayErrorMessage(error: unknown, fallback: string): string {
+  const apiMessage = getApiErrorMessage(error, "");
+  if (apiMessage.trim()) return apiMessage;
+  if (error instanceof Error && error.message.trim()) return error.message;
+  return fallback;
+}
