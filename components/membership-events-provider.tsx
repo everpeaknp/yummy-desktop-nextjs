@@ -78,6 +78,9 @@ export function MembershipEventsProvider() {
             const count = Number(data.payload.count || 0);
             const oldCount = useNotificationStore.getState().unreadCount;
             useNotificationStore.getState().setUnreadCount(count);
+            if (count > oldCount) {
+              window.dispatchEvent(new Event("yummy-notifications-unread-increased"));
+            }
             if (count > oldCount && document.visibilityState === "hidden") {
               showUnreadNotification(count);
             }

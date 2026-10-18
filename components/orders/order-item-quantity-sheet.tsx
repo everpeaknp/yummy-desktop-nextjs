@@ -14,8 +14,7 @@ import {
 } from "@/components/ui/sheet";
 import { cn, formatCurrency } from "@/lib/utils";
 import type { OrderItem } from "@/types/order";
-
-export type OrderItemQuantityPatch = { qty: number; is_nc?: boolean };
+import type { OrderItemQuantityPatch } from "./order-item-quantity-editor";
 
 export function OrderItemQuantitySheet({
   item,

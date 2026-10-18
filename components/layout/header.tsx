@@ -44,6 +44,7 @@ import {
   useNotificationStore,
 } from "@/hooks/use-notifications";
 import { NotificationPanel } from "@/components/notifications/notification-panel";
+import { TableAccessSnackbar } from "@/components/notifications/table-access-snackbar";
 import apiClient from "@/lib/api-client";
 import { LiveStats } from "@/components/layout/live-stats";
 import { getHomeRouteForUser, isPathAccessible, hasPermission } from "@/lib/role-permissions";
@@ -455,6 +456,7 @@ export const Header = memo(function Header() {
           )}
           <NotificationBell />
           <NotificationPanel />
+          <TableAccessSnackbar />
           <Button
             type="button"
             variant="ghost"

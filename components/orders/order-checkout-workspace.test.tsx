@@ -5,6 +5,7 @@ import {
   CheckoutWorkspacePageOnly,
   CheckoutBillItemName,
   CheckoutBillRefreshStatus,
+  mergeCustomerOptions,
   OrderCheckoutWorkspace,
 } from "./order-checkout-workspace";
 
@@ -88,4 +89,11 @@ it("offers a retry when the quick bill refresh fails", () => {
   );
   screen.getByRole("button", { name: "Retry bill refresh" }).click();
   expect(onRetry).toHaveBeenCalledTimes(1);
+});
+
+it("keeps customer state stable when a refresh returns unchanged customer data", () => {
+  const current = [{ id: 7, full_name: "R.A. Mohan", phone: "123" }];
+  const result = mergeCustomerOptions(current, [{ ...current[0] }]);
+
+  expect(result).toBe(current);
 });

@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Fragment,
   useEffect,
   useState,
   useCallback,
@@ -113,7 +114,8 @@ import { toast } from "sonner";
 import { PendingItemRequests } from "@/components/orders/pending-item-requests";
 import { TableBillSwitcher } from "@/components/orders/table-bill-switcher";
 import { OrderCheckoutWorkspace } from "@/components/orders/order-checkout-workspace";
-import { OrderItemQuantitySheet, type OrderItemQuantityPatch } from "@/components/orders/order-item-quantity-sheet";
+import { OrderItemQuantityEditor, type OrderItemQuantityPatch } from "@/components/orders/order-item-quantity-editor";
+import { OrderItemQuantitySheet } from "@/components/orders/order-item-quantity-sheet";
 import { usePosBillingPermissions } from "@/hooks/use-pos-billing-permissions";
 import { getOrderDiscountLabel, getRecordedOrderDiscount } from "@/lib/order-totals";
 import { KotEmbeddedTicketCard } from "@/components/kitchen/kot-ticket-card";
@@ -296,6 +298,8 @@ function OrderDetailContent({ orderId }: { orderId: number }) {
     loading,
     error,
     fetchContext,
+    fetchContextQuiet,
+    replaceContextLocal,
     updateKotLocal,
     isFullyPaid,
     allKotsServed,
@@ -320,6 +324,7 @@ function OrderDetailContent({ orderId }: { orderId: number }) {
     Record<number, Partial<OrderItem>>
   >({});
   const [selectedItem, setSelectedItem] = useState<OrderItem | null>(null);
+  const [selectedItemEditor, setSelectedItemEditor] = useState<"inline" | "sheet" | null>(null);
   const [itemUpdating, setItemUpdating] = useState(false);
   const [billRefreshToken, setBillRefreshToken] = useState(0);
   const [kotUpdatingIds, setKotUpdatingIds] = useState<Set<number>>(new Set());
@@ -441,6 +446,12 @@ function OrderDetailContent({ orderId }: { orderId: number }) {
 
   const handleOpenItemDetail = useCallback((item: OrderItem) => {
     setSelectedItem(item);
+    setSelectedItemEditor("sheet");
+  }, []);
+
+  const handleOpenInlineItemDetail = useCallback((item: OrderItem) => {
+    setSelectedItem(item);
+    setSelectedItemEditor("inline");
   }, []);
 
   const handleApplyItemUpdate = useCallback(
@@ -453,14 +464,19 @@ function OrderDetailContent({ orderId }: { orderId: number }) {
 
       setItemUpdating(true);
       try {
-        await apiClient.patch(OrderApis.updateOrderLine(sourceOrder.id, item.id), {
+        const response = await apiClient.patch(OrderApis.updateOrderLine(sourceOrder.id, item.id), {
           qty: patch.qty,
           ...(patch.is_nc !== undefined ? { is_nc: patch.is_nc } : {}),
           expected_version: (sourceOrder as any).version,
           idempotency_key: crypto.randomUUID(),
         });
+        const updatedContext = response.data?.data;
+        if (updatedContext?.order?.id === sourceOrder.id) {
+          replaceContextLocal(updatedContext);
+        } else {
+          await fetchContextQuiet();
+        }
         toast.success("Order item updated");
-        await fetchContext();
         setItemOverrides({});
         setBillRefreshToken((version) => version + 1);
         return true;
@@ -477,14 +493,17 @@ function OrderDetailContent({ orderId }: { orderId: number }) {
         setItemUpdating(false);
       }
     },
-    [fetchContext, setItemOverrides, sourceOrder],
+    [fetchContextQuiet, replaceContextLocal, sourceOrder],
   );
 
   const handleSaveItemDetail = useCallback(
     async (patch: OrderItemQuantityPatch) => {
       if (!selectedItem) return false;
       const saved = await handleApplyItemUpdate(selectedItem.id, patch);
-      if (saved) setSelectedItem(null);
+      if (saved) {
+        setSelectedItem(null);
+        setSelectedItemEditor(null);
+      }
       return saved;
     },
     [handleApplyItemUpdate, selectedItem],
@@ -1041,15 +1060,15 @@ function OrderDetailContent({ orderId }: { orderId: number }) {
         </div>
       </header>
 
+      <TableBillSwitcher order={order} canApproveRequests={canEditOrder} canRejectRequests={canVoidOrder} />
+
       <OrderItemQuantitySheet
-        item={selectedItem}
+        item={selectedItemEditor === "sheet" ? selectedItem : null}
         canMarkNc={canMarkNc}
         isUpdating={itemUpdating}
-        onClose={() => setSelectedItem(null)}
+        onClose={() => { setSelectedItem(null); setSelectedItemEditor(null); }}
         onSave={handleSaveItemDetail}
       />
-
-      <TableBillSwitcher order={order} canApproveRequests={canEditOrder} canRejectRequests={canVoidOrder} />
 
       <div className={cn(
         "grid min-w-0 grid-cols-1 items-start gap-6",
@@ -1101,7 +1120,10 @@ function OrderDetailContent({ orderId }: { orderId: number }) {
             <DetailsTab
               order={displayOrder}
               tables={context.tables}
-              onEditItem={handleOpenItemDetail}
+              onEditItem={handleOpenInlineItemDetail}
+              selectedItem={selectedItemEditor === "inline" ? selectedItem : null}
+              onCloseItemEdit={() => { setSelectedItem(null); setSelectedItemEditor(null); }}
+              onSaveItemEdit={handleSaveItemDetail}
               onToggleItemNc={(item) =>
                 void handleApplyItemUpdate(item.id, {
                   qty: Number(item.qty),
@@ -1139,6 +1161,9 @@ function OrderDetailContent({ orderId }: { orderId: number }) {
           <OrderCheckoutWorkspace
             orderId={orderId}
             presentation="quick"
+            orderContext={context}
+            refreshOrderContext={fetchContext}
+            refreshOrderContextQuiet={fetchContextQuiet}
             billRefreshToken={checkoutBillRefreshToken}
             onEditOrderItem={(itemId) => {
               const item = displayOrder.items.find(
@@ -1481,6 +1506,9 @@ function DetailsTab({
   order,
   tables,
   onEditItem,
+  selectedItem,
+  onCloseItemEdit,
+  onSaveItemEdit,
   onToggleItemNc,
   canMarkNc,
   itemUpdating,
@@ -1489,6 +1517,9 @@ function DetailsTab({
   order: Order;
   tables: OrderTableSummary[];
   onEditItem: (item: OrderItem) => void;
+  selectedItem: OrderItem | null;
+  onCloseItemEdit: () => void;
+  onSaveItemEdit: (patch: OrderItemQuantityPatch) => Promise<boolean>;
   onToggleItemNc: (item: OrderItem) => void;
   canMarkNc: boolean;
   itemUpdating: boolean;
@@ -1527,15 +1558,25 @@ function DetailsTab({
                   const canEdit =
                     order.status !== "completed" && order.status !== "canceled";
                   return (
+                    <Fragment key={item.id}>
                     <tr
-                      key={item.id}
-                      className="transition-colors hover:bg-muted/20"
+                      tabIndex={canEdit ? 0 : undefined}
+                      aria-label={canEdit ? `Edit ${item.name_snapshot}` : undefined}
+                      aria-expanded={selectedItem?.id === item.id}
+                      className={cn("transition-colors", canEdit && "cursor-pointer hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/50", selectedItem?.id === item.id && "bg-muted/30")}
+                      onClick={() => canEdit && onEditItem(item)}
+                      onKeyDown={event => {
+                        if (canEdit && (event.key === "Enter" || event.key === " ")) {
+                          event.preventDefault();
+                          onEditItem(item);
+                        }
+                      }}
                     >
                       <td className="px-4 py-3.5">
                         <div className="min-w-0">
                           <button
                             type="button"
-                            className="flex items-center gap-2 text-left font-semibold text-foreground disabled:cursor-default"
+                            className="flex min-h-8 items-center gap-2 text-left font-semibold text-foreground underline-offset-4 hover:underline disabled:cursor-default disabled:no-underline"
                             disabled={!canEdit}
                             aria-label={`Edit ${item.name_snapshot} quantity`}
                             onClick={() => onEditItem(item)}
@@ -1568,7 +1609,8 @@ function DetailsTab({
                             className="h-9 gap-1.5"
                             disabled={itemUpdating}
                             aria-label={`${item.is_nc ? "Remove NC from" : "Mark NC for"} ${item.name_snapshot}`}
-                            onClick={() => onToggleItemNc(item)}
+                            onClick={event => { event.stopPropagation(); onToggleItemNc(item); }}
+                            onKeyDown={event => event.stopPropagation()}
                           >
                             <Award className="h-4 w-4" />
                             NC
@@ -1576,6 +1618,8 @@ function DetailsTab({
                         )}
                       </td>
                     </tr>
+                    {selectedItem?.id === item.id && <tr key={`${item.id}-editor`}><td colSpan={5} className="border-b border-border/30 bg-muted/10 p-3 sm:p-4"><OrderItemQuantityEditor item={item} canMarkNc={canMarkNc} isUpdating={itemUpdating} onClose={onCloseItemEdit} onSave={onSaveItemEdit} /></td></tr>}
+                    </Fragment>
                   );
                 })}
               </tbody>
