@@ -502,18 +502,8 @@ export default function TablesPage() {
 
   const getQrUrl = (token: string) => {
     const configuredQrBase = process.env.NEXT_PUBLIC_MENU_QR_BASE_URL;
-    if (configuredQrBase) {
-      return `${configuredQrBase.replace(/\/+$/, "")}/${token}`;
-    }
-
-    // Local default: customer menu app route
-    if (typeof window !== "undefined" && window.location.hostname === "localhost") {
-      return `http://localhost:3002/qr/${token}`;
-    }
-
-    // Production fallback aligned with existing public menu path style.
-    const baseUrl = typeof window !== "undefined" ? window.location.origin.replace("-web", "-menu") : "";
-    return `${baseUrl}/v/${token}`;
+    const menuQrBase = configuredQrBase || "https://menu.yummyever.com/qr";
+    return `${menuQrBase.replace(/\/+$/, "")}/${token}`;
   };
 
   const handlePrintQr = () => {
