@@ -7,6 +7,7 @@ import { hasPermission } from "@/lib/role-permissions";
 import { useRouter } from "next/navigation";
 import apiClient from "@/lib/api-client";
 import { TableApis, TableTypeApis } from "@/lib/api/endpoints";
+import { getMenuQrUrl } from "@/lib/menu-qr-url";
 import {
   Loader2,
   Armchair,
@@ -500,19 +501,13 @@ export default function TablesPage() {
     }
   };
 
-  const getQrUrl = (token: string) => {
-    const configuredQrBase = process.env.NEXT_PUBLIC_MENU_QR_BASE_URL;
-    const menuQrBase = configuredQrBase || "https://menu.yummyever.com/qr";
-    return `${menuQrBase.replace(/\/+$/, "")}/${token}`;
-  };
-
   const handlePrintQr = () => {
     window.print();
   };
 
   const handleDownloadQr = async () => {
     if (!qrToken || !qrTable) return;
-    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=500x500&data=${encodeURIComponent(getQrUrl(qrToken))}`;
+    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=500x500&data=${encodeURIComponent(getMenuQrUrl(qrToken))}`;
     try {
       const response = await fetch(qrUrl);
       const blob = await response.blob();
@@ -980,7 +975,7 @@ export default function TablesPage() {
                   <div className="flex flex-col items-center gap-4">
                      <div className="relative h-[200px] w-[200px] bg-white rounded-2xl overflow-hidden border-2 border-indigo-50 p-2">
                         <Image 
-                           src={`https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(getQrUrl(qrToken))}`}
+                           src={`https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(getMenuQrUrl(qrToken))}`}
                            alt={`QR Code for ${qrTable?.table_name}`}
                            fill
                            className="object-contain"
@@ -1001,13 +996,13 @@ export default function TablesPage() {
                   <div className="flex items-center gap-2 p-3 bg-muted/50 rounded-2xl border border-border/40">
                     <div className="flex-1 min-w-0">
                        <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-0.5">Direct Link</p>
-                       <p className="text-xs font-medium truncate text-foreground">{getQrUrl(qrToken)}</p>
+                       <p className="text-xs font-medium truncate text-foreground">{getMenuQrUrl(qrToken)}</p>
                     </div>
                     <Button 
                       variant="ghost" 
                       size="icon" 
                       className="h-8 w-8 rounded-lg"
-                      onClick={() => navigator.clipboard.writeText(getQrUrl(qrToken!))}
+                      onClick={() => navigator.clipboard.writeText(getMenuQrUrl(qrToken!))}
                     >
                        <Copy className="h-4 w-4" />
                     </Button>
@@ -1031,7 +1026,7 @@ export default function TablesPage() {
                      <Button 
                         variant="outline" 
                         className="rounded-xl gap-2 font-bold"
-                        onClick={() => window.open(getQrUrl(qrToken!), '_blank')}
+                        onClick={() => window.open(getMenuQrUrl(qrToken!), '_blank')}
                       >
                         <ExternalLink className="h-4 w-4" /> Test Link
                      </Button>

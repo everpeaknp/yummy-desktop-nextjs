@@ -4,9 +4,7 @@ import {
   useEffect,
   useState,
   useCallback,
-  type Dispatch,
   type ReactNode,
-  type SetStateAction,
 } from "react";
 import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
@@ -114,6 +112,8 @@ import type {
 import { toast } from "sonner";
 import { PendingItemRequests } from "@/components/orders/pending-item-requests";
 import { TableBillSwitcher } from "@/components/orders/table-bill-switcher";
+import { OrderCheckoutWorkspace } from "@/components/orders/order-checkout-workspace";
+import { OrderItemQuantitySheet, type OrderItemQuantityPatch } from "@/components/orders/order-item-quantity-sheet";
 import { usePosBillingPermissions } from "@/hooks/use-pos-billing-permissions";
 import { getOrderDiscountLabel, getRecordedOrderDiscount } from "@/lib/order-totals";
 import { KotEmbeddedTicketCard } from "@/components/kitchen/kot-ticket-card";
@@ -319,6 +319,9 @@ function OrderDetailContent({ orderId }: { orderId: number }) {
   const [itemOverrides, setItemOverrides] = useState<
     Record<number, Partial<OrderItem>>
   >({});
+  const [selectedItem, setSelectedItem] = useState<OrderItem | null>(null);
+  const [itemUpdating, setItemUpdating] = useState(false);
+  const [billRefreshToken, setBillRefreshToken] = useState(0);
   const [kotUpdatingIds, setKotUpdatingIds] = useState<Set<number>>(new Set());
 
   const {
@@ -333,6 +336,19 @@ function OrderDetailContent({ orderId }: { orderId: number }) {
   } =
     usePosBillingPermissions();
   const sourceOrder = context?.order;
+  const checkoutBillRefreshToken = `${billRefreshToken}:${JSON.stringify(
+    sourceOrder?.items.map((item) => [
+      item.id,
+      item.qty,
+      item.unit_price,
+      item.line_total,
+      Boolean(item.is_nc),
+      item.modifiers?.map((modifier) => [
+        modifier.modifier_id,
+        modifier.price_adjustment_snapshot,
+      ]),
+    ]) ?? [],
+  )}`;
   const displayOrder = sourceOrder
     ? (() => {
         const items = sourceOrder.items.map((item) => {
@@ -421,6 +437,58 @@ function OrderDetailContent({ orderId }: { orderId: number }) {
       void fetchEvents();
     }
   }, [activeTab, fetchContext, fetchEvents]);
+
+
+  const handleOpenItemDetail = useCallback((item: OrderItem) => {
+    setSelectedItem(item);
+  }, []);
+
+  const handleApplyItemUpdate = useCallback(
+    async (itemId: number, patch: OrderItemQuantityPatch) => {
+      const item = sourceOrder?.items.find((candidate) => candidate.id === itemId);
+      if (!sourceOrder || !item) {
+        toast.error("Order line not found");
+        return false;
+      }
+
+      setItemUpdating(true);
+      try {
+        await apiClient.patch(OrderApis.updateOrderLine(sourceOrder.id, item.id), {
+          qty: patch.qty,
+          ...(patch.is_nc !== undefined ? { is_nc: patch.is_nc } : {}),
+          expected_version: (sourceOrder as any).version,
+          idempotency_key: crypto.randomUUID(),
+        });
+        toast.success("Order item updated");
+        await fetchContext();
+        setItemOverrides({});
+        setBillRefreshToken((version) => version + 1);
+        return true;
+      } catch (err: any) {
+        console.error("Failed to update item:", err);
+        toast.error(err.response?.data?.detail || "Failed to update item");
+        setItemOverrides((prev) => {
+          const next = { ...prev };
+          delete next[itemId];
+          return next;
+        });
+        return false;
+      } finally {
+        setItemUpdating(false);
+      }
+    },
+    [fetchContext, setItemOverrides, sourceOrder],
+  );
+
+  const handleSaveItemDetail = useCallback(
+    async (patch: OrderItemQuantityPatch) => {
+      if (!selectedItem) return false;
+      const saved = await handleApplyItemUpdate(selectedItem.id, patch);
+      if (saved) setSelectedItem(null);
+      return saved;
+    },
+    [handleApplyItemUpdate, selectedItem],
+  );
 
   const handleKotStatusChange = useCallback(
     async (kotId: number, status: string) => {
@@ -913,25 +981,6 @@ function OrderDetailContent({ orderId }: { orderId: number }) {
               )}
               Complete
             </Button>
-          ) : canViewBilling || canProcessPayment || (isRoomServiceOrder && hasPermission(user, "hotel.checkout")) ? (
-            <Link
-              href={`/orders/${orderId}/checkout`}
-              className="min-w-0 flex-1 sm:flex-none"
-            >
-              <Button
-                size="sm"
-                className="h-10 w-full min-w-0 gap-2 rounded-xl px-3 font-semibold shadow-sm sm:w-auto"
-              >
-                <Receipt className="h-4 w-4 shrink-0" />
-                <span className="truncate">
-                  {isRoomServiceOrder
-                    ? "Mark delivered"
-                    : isFullyPaid
-                      ? "Payments"
-                      : "Checkout"}
-                </span>
-              </Button>
-            </Link>
           ) : null}
 
           <DropdownMenu>
@@ -946,6 +995,12 @@ function OrderDetailContent({ orderId }: { orderId: number }) {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-48">
+              {(canViewBilling || canProcessPayment || (isRoomServiceOrder && hasPermission(user, "hotel.checkout"))) && (
+                <DropdownMenuItem onSelect={() => router.push(`/orders/${orderId}/checkout`)} className="gap-2">
+                  <Receipt className="h-4 w-4" />
+                  {isRoomServiceOrder ? "Mark delivered" : isFullyPaid ? "Payments" : "Checkout"}
+                </DropdownMenuItem>
+              )}
               {canSplitPayment && isEditable && String(order.status).toLowerCase() !== "requested" && <DropdownMenuItem asChild><Link href={`/orders/${orderId}/checkout#bill-actions`} className="flex cursor-pointer items-center gap-2"><Users className="h-4 w-4" />Manage bills</Link></DropdownMenuItem>}
               {canViewReceipt && <DropdownMenuItem asChild>
                 <Link
@@ -986,10 +1041,23 @@ function OrderDetailContent({ orderId }: { orderId: number }) {
         </div>
       </header>
 
-      <TableBillSwitcher order={order} />
+      <OrderItemQuantitySheet
+        item={selectedItem}
+        canMarkNc={canMarkNc}
+        isUpdating={itemUpdating}
+        onClose={() => setSelectedItem(null)}
+        onSave={handleSaveItemDetail}
+      />
 
-      {/* ── Tab Bar ── */}
-      <nav
+      <TableBillSwitcher order={order} canApproveRequests={canEditOrder} canRejectRequests={canVoidOrder} />
+
+      <div className={cn(
+        "grid min-w-0 grid-cols-1 items-start gap-6",
+        "xl:grid-cols-[minmax(0,1fr)_minmax(360px,420px)]",
+      )}>
+        <div className="min-w-0">
+          {/* ── Tab Bar ── */}
+          <nav
         aria-label="Order detail sections"
         className="grid grid-cols-3 gap-1 rounded-xl border border-border/40 bg-muted/30 p-1"
       >
@@ -1026,17 +1094,22 @@ function OrderDetailContent({ orderId }: { orderId: number }) {
       </nav>
 
       {/* ── Content Grid ── */}
-      <div className="w-full max-w-3xl min-w-0">
+      <div className="mt-5 w-full min-w-0">
         <div className="space-y-4">
           {activeTab === "details" && (
             <>
             <DetailsTab
               order={displayOrder}
               tables={context.tables}
-              onRefresh={fetchContext}
+              onEditItem={handleOpenItemDetail}
+              onToggleItemNc={(item) =>
+                void handleApplyItemUpdate(item.id, {
+                  qty: Number(item.qty),
+                  is_nc: !Boolean(item.is_nc),
+                })
+              }
               canMarkNc={canMarkNc}
-              itemOverrides={itemOverrides}
-              setItemOverrides={setItemOverrides}
+              itemUpdating={itemUpdating}
               summary={
                 <OrderBillSummary
                   order={displayOrder}
@@ -1060,6 +1133,21 @@ function OrderDetailContent({ orderId }: { orderId: number }) {
             <EventsTab events={events} loading={eventsLoading} />
           )}
         </div>
+        </div>
+        </div>
+        <aside className="min-w-0 xl:sticky xl:top-4">
+          <OrderCheckoutWorkspace
+            orderId={orderId}
+            presentation="quick"
+            billRefreshToken={checkoutBillRefreshToken}
+            onEditOrderItem={(itemId) => {
+              const item = displayOrder.items.find(
+                (candidate) => Number(candidate.id) === Number(itemId),
+              );
+              if (item) handleOpenItemDetail(item);
+            }}
+          />
+        </aside>
       </div>
 
       {/* ── Cancel Dialog ── */}
@@ -1392,94 +1480,21 @@ function OrderBillSummary({
 function DetailsTab({
   order,
   tables,
-  onRefresh,
+  onEditItem,
+  onToggleItemNc,
   canMarkNc,
-  itemOverrides,
-  setItemOverrides,
+  itemUpdating,
   summary,
 }: {
   order: Order;
   tables: OrderTableSummary[];
-  onRefresh: () => void;
+  onEditItem: (item: OrderItem) => void;
+  onToggleItemNc: (item: OrderItem) => void;
   canMarkNc: boolean;
-  itemOverrides: Record<number, Partial<OrderItem>>;
-  setItemOverrides: Dispatch<
-    SetStateAction<Record<number, Partial<OrderItem>>>
-  >;
+  itemUpdating: boolean;
   summary: ReactNode;
 }) {
-  const router = useRouter();
-  const [selectedItem, setSelectedItem] = useState<OrderItem | null>(null);
-  const [selectedItemQuantity, setSelectedItemQuantity] = useState(1);
-  const [selectedItemNc, setSelectedItemNc] = useState(false);
-  const [isUpdating, setIsUpdating] = useState(false);
-
   const displayItems = order.items;
-
-  const handleApplyItemUpdate = useCallback(
-    async (itemId: number, patch: { qty?: number; is_nc?: boolean }) => {
-      setIsUpdating(true);
-      try {
-        const item = order.items.find((candidate) => candidate.id === itemId);
-        if (!item) throw new Error("Order line not found");
-        const displayItem =
-          displayItems.find((candidate) => candidate.id === itemId) || item;
-        const qty = patch.qty ?? displayItem.qty;
-        if (patch.qty !== undefined || patch.is_nc !== undefined) {
-          await apiClient.patch(OrderApis.updateOrderLine(order.id, item.id), {
-            ...(patch.qty !== undefined ? { qty } : {}),
-            ...(patch.is_nc !== undefined ? { is_nc: patch.is_nc } : {}),
-            expected_version: (order as any).version,
-            idempotency_key: crypto.randomUUID(),
-          });
-        }
-        if (patch.qty !== undefined) toast.success("Quantity updated");
-        if (patch.is_nc !== undefined) toast.success("NC status updated");
-        await onRefresh();
-        setItemOverrides({});
-        return true;
-      } catch (err: any) {
-        console.error("Failed to update item:", err);
-        toast.error(err.response?.data?.detail || "Failed to update item");
-        // Revert optimistic update on error
-        setItemOverrides((prev) => {
-          const next = { ...prev };
-          delete next[itemId];
-          return next;
-        });
-        return false;
-      } finally {
-        setIsUpdating(false);
-      }
-    },
-    [order, displayItems, onRefresh, setItemOverrides],
-  );
-
-  const handleOpenItemDetail = (item: OrderItem) => {
-    setSelectedItem(item);
-    setSelectedItemQuantity(Number(itemOverrides[item.id]?.qty ?? item.qty));
-    setSelectedItemNc(Boolean(itemOverrides[item.id]?.is_nc ?? item.is_nc));
-  };
-
-  const handleSaveItemDetail = async () => {
-    if (!selectedItem) return;
-    const nextQty = Math.max(1, Math.floor(selectedItemQuantity || 1));
-    const currentQty = Number(
-      itemOverrides[selectedItem.id]?.qty ?? selectedItem.qty,
-    );
-    const currentNc = Boolean(
-      itemOverrides[selectedItem.id]?.is_nc ?? selectedItem.is_nc,
-    );
-    if (nextQty === currentQty && selectedItemNc === currentNc) {
-      setSelectedItem(null);
-      return;
-    }
-    const saved = await handleApplyItemUpdate(selectedItem.id, {
-      qty: nextQty,
-      ...(selectedItemNc !== currentNc ? { is_nc: selectedItemNc } : {}),
-    });
-    if (saved) setSelectedItem(null);
-  };
 
   return (
     <div className="space-y-4">
@@ -1496,96 +1511,75 @@ function DetailsTab({
             </Badge>
           </div>
 
-          <div className="divide-y divide-border/20">
-            {displayItems.map((item: OrderItem) => {
-              const canEdit =
-                order.status !== "completed" && order.status !== "canceled";
-              return (
-                <div
-                  key={item.id}
-                  role={canEdit ? "button" : undefined}
-                  tabIndex={canEdit ? 0 : undefined}
-                  aria-label={
-                    canEdit ? `Edit ${item.name_snapshot}` : undefined
-                  }
-                  className={cn(
-                    "px-4 py-3.5 transition-colors",
-                    canEdit &&
-                      "cursor-pointer hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/40",
-                  )}
-                  onClick={
-                    canEdit ? () => handleOpenItemDetail(item) : undefined
-                  }
-                  onKeyDown={
-                    canEdit
-                      ? (event) => {
-                          if (event.key === "Enter" || event.key === " ") {
-                            event.preventDefault();
-                            handleOpenItemDetail(item);
-                          }
-                        }
-                      : undefined
-                  }
-                >
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-foreground">
-                        {item.name_snapshot}
-                      </p>
-                      {item.category_name_snapshot && (
-                        <p className="mt-0.5 text-xs text-muted-foreground">
-                          {item.category_name_snapshot}
-                        </p>
-                      )}
-                      {item.modifiers && item.modifiers.length > 0 && (
-                        <div className="flex flex-wrap gap-1 mt-2">
-                          {item.modifiers.map((m) => (
-                            <Badge
-                              key={m.id}
-                              variant="secondary"
-                              className="text-[10px] font-medium px-2 py-0.5"
-                            >
-                              {m.modifier_name_snapshot}
-                              {m.price_adjustment_snapshot !== 0 && (
-                                <span className="ml-1 text-muted-foreground">
-                                  +{formatCurrency(m.price_adjustment_snapshot)}
-                                </span>
-                              )}
-                            </Badge>
-                          ))}
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[620px] text-sm">
+              <thead>
+                <tr className="border-b border-border/30 bg-muted/20 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  <th scope="col" className="px-4 py-3">ITEM</th>
+                  <th scope="col" className="px-3 py-3 text-center">QTY</th>
+                  <th scope="col" className="px-3 py-3 text-right">PRICE</th>
+                  <th scope="col" className="px-3 py-3 text-right">TOTAL</th>
+                  <th scope="col" className="px-4 py-3 text-right">ACTIONS</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border/20">
+                {displayItems.map((item: OrderItem) => {
+                  const canEdit =
+                    order.status !== "completed" && order.status !== "canceled";
+                  return (
+                    <tr
+                      key={item.id}
+                      className="transition-colors hover:bg-muted/20"
+                    >
+                      <td className="px-4 py-3.5">
+                        <div className="min-w-0">
+                          <button
+                            type="button"
+                            className="flex items-center gap-2 text-left font-semibold text-foreground disabled:cursor-default"
+                            disabled={!canEdit}
+                            aria-label={`Edit ${item.name_snapshot} quantity`}
+                            onClick={() => onEditItem(item)}
+                          >
+                            {item.name_snapshot}
+                            {item.is_nc && (
+                              <Badge variant="outline" className="h-5 border-orange-500/40 text-[10px] font-semibold text-orange-600">NC</Badge>
+                            )}
+                          </button>
+                          {item.category_name_snapshot && (
+                            <p className="mt-0.5 text-xs text-muted-foreground">{item.category_name_snapshot}</p>
+                          )}
+                          {item.modifiers?.length ? (
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              {item.modifiers.map((modifier) => modifier.modifier_name_snapshot).join(", ")}
+                            </p>
+                          ) : null}
+                          {item.notes && <p className="mt-1 text-xs italic text-muted-foreground">📝 {item.notes}</p>}
                         </div>
-                      )}
-                      {item.notes && (
-                        <p className="text-xs text-muted-foreground italic mt-1.5">
-                          📝 {item.notes}
-                        </p>
-                      )}
-                      {item.is_nc && (
-                        <Badge
-                          variant="outline"
-                          className="mt-2 h-5 text-[10px] font-semibold text-orange-600 border-orange-500/40"
-                        >
-                          NC
-                        </Badge>
-                      )}
-                    </div>
-                    <div className="text-right flex-shrink-0 flex flex-col items-end gap-2">
-                      <div className="flex items-center gap-2.5">
-                        <span className="rounded-md bg-muted px-2 py-1 text-xs font-semibold tabular-nums">
-                          ×{item.qty}
-                        </span>
-                        <span className="font-bold text-sm tabular-nums">
-                          {formatCurrency(item.line_total)}
-                        </span>
-                      </div>
-                      <span className="text-[10px] text-muted-foreground tabular-nums">
-                        @ {formatCurrency(item.unit_price)}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
+                      </td>
+                      <td className="px-3 py-3.5 text-center font-semibold tabular-nums">{item.qty}</td>
+                      <td className="px-3 py-3.5 text-right text-muted-foreground tabular-nums">{formatCurrency(item.unit_price)}</td>
+                      <td className="px-3 py-3.5 text-right font-bold tabular-nums">{formatCurrency(item.line_total)}</td>
+                      <td className="px-4 py-3.5 text-right">
+                        {canMarkNc && canEdit && (
+                          <Button
+                            type="button"
+                            variant={item.is_nc ? "default" : "outline"}
+                            size="sm"
+                            className="h-9 gap-1.5"
+                            disabled={itemUpdating}
+                            aria-label={`${item.is_nc ? "Remove NC from" : "Mark NC for"} ${item.name_snapshot}`}
+                            onClick={() => onToggleItemNc(item)}
+                          >
+                            <Award className="h-4 w-4" />
+                            NC
+                          </Button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         </CardContent>
       </Card>
@@ -1741,132 +1735,6 @@ function DetailsTab({
         </CardContent>
       </Card>
 
-      <Sheet
-        open={!!selectedItem}
-        onOpenChange={(open) => !open && setSelectedItem(null)}
-      >
-        <SheetContent
-          side="bottom"
-          className="mx-auto w-full max-w-3xl rounded-t-2xl px-6 pb-6 pt-8"
-        >
-          <SheetHeader className="pr-8">
-            <SheetTitle>{selectedItem?.name_snapshot}</SheetTitle>
-            <SheetDescription>
-              {selectedItem?.category_name_snapshot || "Menu item"} ·{" "}
-              {selectedItem ? formatCurrency(selectedItem.unit_price) : ""} each
-            </SheetDescription>
-          </SheetHeader>
-
-          <div className="space-y-5 py-6">
-            <div className="flex items-center justify-between rounded-xl border border-border/60 p-4">
-              <div>
-                <p className="font-semibold">Quantity</p>
-                <p className="text-sm text-muted-foreground">
-                  Changes are sent to the kitchen only when you confirm.
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="h-10 w-10"
-                  disabled={isUpdating || selectedItemQuantity <= 1}
-                  onClick={() =>
-                    setSelectedItemQuantity((value) => Math.max(1, value - 1))
-                  }
-                  aria-label="Reduce quantity"
-                >
-                  <Minus className="h-4 w-4" />
-                </Button>
-                <Input
-                  type="number"
-                  min={1}
-                  value={selectedItemQuantity}
-                  onChange={(event) =>
-                    setSelectedItemQuantity(
-                      Math.max(1, Number(event.target.value) || 1),
-                    )
-                  }
-                  className="h-10 w-20 text-center font-bold tabular-nums"
-                  aria-label="Quantity"
-                />
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="h-10 w-10"
-                  disabled={isUpdating}
-                  onClick={() => setSelectedItemQuantity((value) => value + 1)}
-                  aria-label="Increase quantity"
-                >
-                  <Plus className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-
-            {canMarkNc && (
-              <button
-                type="button"
-                className={cn(
-                  "flex w-full items-center justify-between rounded-xl border p-4 text-left transition-colors",
-                  selectedItemNc
-                    ? "border-orange-500/50 bg-orange-50 dark:bg-orange-950/20"
-                    : "border-border/60 hover:bg-muted/40",
-                )}
-                disabled={isUpdating}
-                onClick={() => setSelectedItemNc((value) => !value)}
-              >
-                <div className="flex items-center gap-3">
-                  <span
-                    className={cn(
-                      "flex h-9 w-9 items-center justify-center rounded-lg",
-                      selectedItemNc
-                        ? "bg-orange-500 text-white"
-                        : "bg-muted text-muted-foreground",
-                    )}
-                  >
-                    <Award className="h-4 w-4" />
-                  </span>
-                  <div>
-                    <p className="font-semibold">Non-chargeable (NC)</p>
-                    <p className="text-sm text-muted-foreground">
-                      Exclude this item from the bill.
-                    </p>
-                  </div>
-                </div>
-                <span
-                  className={cn(
-                    "rounded-full px-2.5 py-1 text-xs font-semibold",
-                    selectedItemNc
-                      ? "bg-orange-500 text-white"
-                      : "bg-muted text-muted-foreground",
-                  )}
-                >
-                  {selectedItemNc ? "NC" : "Chargeable"}
-                </span>
-              </button>
-            )}
-          </div>
-
-          <SheetFooter>
-            <Button
-              variant="outline"
-              onClick={() => setSelectedItem(null)}
-              disabled={isUpdating}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleSaveItemDetail}
-              disabled={!selectedItem || isUpdating}
-            >
-              {isUpdating ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : null}
-              Update & Send
-            </Button>
-          </SheetFooter>
-        </SheetContent>
-      </Sheet>
     </div>
   );
 }
