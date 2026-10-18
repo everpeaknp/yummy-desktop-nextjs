@@ -18,6 +18,7 @@ import { cn, formatCurrency } from "@/lib/utils";
 interface OrderCardProps {
   order: Order;
   onClick?: () => void;
+  pendingAdditionCount?: number;
 }
 
 const statusStyles: Record<
@@ -45,9 +46,9 @@ const statusStyles: Record<
     dot: "bg-indigo-500",
   },
   requested: {
-    badge: "bg-indigo-50 text-indigo-700 border-indigo-200",
-    border: "border-l-indigo-500",
-    dot: "bg-indigo-500",
+    badge: "bg-orange-50 text-orange-800 border-orange-200 dark:bg-orange-950 dark:text-orange-200 dark:border-orange-800",
+    border: "border-l-orange-500",
+    dot: "bg-orange-500",
   },
   preparing: {
     badge: "bg-amber-50 text-amber-700 border-amber-200",
@@ -126,7 +127,7 @@ function elapsedLabel(raw: string | undefined, terminal: boolean) {
   return `${hours}h${remainder ? ` ${remainder}m` : ""}`;
 }
 
-export function OrderCard({ order, onClick }: OrderCardProps) {
+export function OrderCard({ order, onClick, pendingAdditionCount = 0 }: OrderCardProps) {
   const currency = useRestaurant((s) => s.restaurant?.currency || "NPR");
   const status = String(order.status || "pending").toLowerCase();
   const style = statusStyles[status] || statusStyles.pending;
@@ -182,7 +183,7 @@ export function OrderCard({ order, onClick }: OrderCardProps) {
         .toLowerCase()
         .includes("room charge"),
   );
-  const previewItems = displayItems.slice(0, 5);
+  const previewItems = displayItems.slice(0, pendingAdditionCount > 0 ? 3 : 5);
 
   return (
     <article
@@ -193,7 +194,7 @@ export function OrderCard({ order, onClick }: OrderCardProps) {
         if (onClick && (event.key === "Enter" || event.key === " ")) onClick();
       }}
       className={cn(
-        "group relative min-h-[214px] overflow-hidden rounded-xl border border-border/70 border-l-[3px] bg-card shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg sm:h-[340px] sm:rounded-2xl sm:border-l-4",
+        "group relative min-h-[214px] overflow-hidden rounded-xl border border-border/70 border-l-[3px] bg-card shadow-sm transition-[transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-lg motion-reduce:transition-none motion-reduce:hover:translate-y-0 sm:h-[340px] sm:rounded-2xl sm:border-l-4",
         onClick && "cursor-pointer",
         style.border,
       )}
@@ -215,7 +216,7 @@ export function OrderCard({ order, onClick }: OrderCardProps) {
                   style.badge,
                 )}
               >
-                {status === "requested" ? "Pending" : status}
+                {status === "requested" ? "Awaiting approval" : status}
               </Badge>
               <span className="flex items-center gap-1 text-[10px] font-semibold text-muted-foreground sm:text-xs">
                 <Clock className="h-3 w-3 sm:h-3.5 sm:w-3.5" />{" "}
@@ -244,6 +245,7 @@ export function OrderCard({ order, onClick }: OrderCardProps) {
         </div>
 
         <div className="mt-2 flex h-[84px] shrink-0 flex-col overflow-hidden border-t border-dashed border-border/70 pt-2 sm:mt-3 sm:h-[128px] sm:pt-3">
+          {pendingAdditionCount > 0 && <span role="status" title={`${pendingAdditionCount} ${pendingAdditionCount === 1 ? "addition" : "additions"} awaiting approval`} className="mb-1 block max-w-full shrink-0 truncate rounded-md bg-orange-50 px-2 py-1 text-[10px] font-semibold leading-4 text-orange-800 dark:bg-orange-950 dark:text-orange-200 sm:text-[11px]">{pendingAdditionCount} {pendingAdditionCount === 1 ? "addition" : "additions"} awaiting approval</span>}
           <div className="space-y-0.5 sm:space-y-1">
             {previewItems.length ? (
               previewItems.map((item) => (
@@ -267,7 +269,12 @@ export function OrderCard({ order, onClick }: OrderCardProps) {
           </div>
         </div>
 
-        {itemQuantityTotal > 0 && !terminal && (
+        {status === "requested" && (
+          <p className="mt-1 text-[10px] font-semibold text-muted-foreground sm:text-xs">
+            Review request · Not sent to kitchen
+          </p>
+        )}
+        {itemQuantityTotal > 0 && !terminal && status !== "requested" && (
           <div className="mt-1 flex items-center justify-between text-[10px] font-semibold sm:text-xs">
             <span
               className={cn(

@@ -112,6 +112,8 @@ import type {
   OrderPayment,
 } from "@/types/order";
 import { toast } from "sonner";
+import { PendingItemRequests } from "@/components/orders/pending-item-requests";
+import { TableBillSwitcher } from "@/components/orders/table-bill-switcher";
 import { usePosBillingPermissions } from "@/hooks/use-pos-billing-permissions";
 import { getOrderDiscountLabel, getRecordedOrderDiscount } from "@/lib/order-totals";
 import { KotEmbeddedTicketCard } from "@/components/kitchen/kot-ticket-card";
@@ -281,6 +283,10 @@ export default function OrderDetailPage() {
   const params = useParams() as { id?: string | string[] } | null;
   const rawId = Array.isArray(params?.id) ? params?.id[0] : params?.id;
   const orderId = Number(rawId || 0);
+  return <OrderDetailContent key={orderId} orderId={orderId} />;
+}
+
+function OrderDetailContent({ orderId }: { orderId: number }) {
   const router = useRouter();
   const user = useAuth((s) => s.user);
   const me = useAuth((s) => s.me);
@@ -323,6 +329,7 @@ export default function OrderDetailPage() {
     canViewBilling,
     canProcessPayment,
     canViewReceipt,
+    canSplitPayment,
   } =
     usePosBillingPermissions();
   const sourceOrder = context?.order;
@@ -890,7 +897,7 @@ export default function OrderDetailPage() {
               ) : (
                 <CheckCircle className="h-4 w-4" />
               )}
-              Verify
+              Accept request
             </Button>
           ) : !isRoomServiceOrder && isEditable && isFullyPaid && canEditOrder ? (
             <Button
@@ -939,6 +946,7 @@ export default function OrderDetailPage() {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-48">
+              {canSplitPayment && isEditable && String(order.status).toLowerCase() !== "requested" && <DropdownMenuItem asChild><Link href={`/orders/${orderId}/checkout#bill-actions`} className="flex cursor-pointer items-center gap-2"><Users className="h-4 w-4" />Manage bills</Link></DropdownMenuItem>}
               {canViewReceipt && <DropdownMenuItem asChild>
                 <Link
                   href={`/orders/${orderId}/receipt`}
@@ -977,6 +985,8 @@ export default function OrderDetailPage() {
           </DropdownMenu>
         </div>
       </header>
+
+      <TableBillSwitcher order={order} />
 
       {/* ── Tab Bar ── */}
       <nav
@@ -1019,6 +1029,7 @@ export default function OrderDetailPage() {
       <div className="w-full max-w-3xl min-w-0">
         <div className="space-y-4">
           {activeTab === "details" && (
+            <>
             <DetailsTab
               order={displayOrder}
               tables={context.tables}
@@ -1034,6 +1045,8 @@ export default function OrderDetailPage() {
                 />
               }
             />
+            <PendingItemRequests requests={context.pending_item_requests || []} canApprove={canEditOrder} canReject={canVoidOrder} onResolved={fetchContext} />
+            </>
           )}
           {activeTab === "kots" && (
             <KOTsTab
@@ -1476,7 +1489,7 @@ function DetailsTab({
           <div className="flex items-center justify-between border-b border-border/30 px-4 py-3">
             <div className="flex items-center gap-2">
               <Utensils className="h-4 w-4 text-muted-foreground" />
-              <span className="text-sm font-semibold">Items</span>
+              <span className="text-sm font-semibold">{order.status === "requested" ? "Items awaiting approval" : "Accepted items"}</span>
             </div>
             <Badge variant="secondary" className="text-xs font-medium">
               {displayItems.length} items

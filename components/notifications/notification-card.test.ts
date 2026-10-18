@@ -23,6 +23,13 @@ const baseNotification: AppNotification = {
 };
 
 describe("table service notification content", () => {
+  it('shows table-access approval instructions instead of generic order content', () => {
+    const content = extractContent({ ...baseNotification, event: 'table.access_requested',
+      title: 'Table access requested', body: 'Guest wants to host Table g5.' });
+    expect(content.header).toBe('Table access requested');
+    expect(content.subtitle).toContain('g5');
+    expect(content.bodyLines[0]).toContain('seated here');
+  });
   it.each([
     ["call_waiter", "Waiter requested"],
     ["request_bill", "Bill requested"],

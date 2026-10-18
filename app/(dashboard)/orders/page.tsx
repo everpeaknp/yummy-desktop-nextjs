@@ -54,6 +54,7 @@ import {
   subDays,
 } from "date-fns";
 import { OrderCard } from "@/components/orders/order-card";
+import { groupOrderApprovals } from "@/lib/order-approval-groups";
 import { OrderHistoryCard } from "@/components/orders/order-history-card";
 import Link from "next/link";
 import { ReceiptDetailSheet } from "@/components/receipts/receipt-detail-sheet";
@@ -1097,6 +1098,8 @@ export default function OrdersPage() {
     })
     .sort((a: any, b: any) => getOrderTimeMs(b) - getOrderTimeMs(a));
 
+  const approvalGroups = groupOrderApprovals(filteredActive);
+
   const filteredKots = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
     return kots
@@ -1362,7 +1365,7 @@ export default function OrdersPage() {
               value: "active",
               label: "Active",
               icon: ClipboardList,
-              count: filteredActive.length,
+              count: approvalGroups.visible.length,
             },
             {
               value: "kot",
@@ -1570,20 +1573,10 @@ export default function OrdersPage() {
               />
             ) : (
               <>
-                <div className="mb-3 flex items-center gap-2 text-sm font-semibold sm:mb-4">
-                  <span className="h-2 w-2 rounded-full bg-emerald-500" />
-                  Now serving
-                </div>
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-3 2xl:grid-cols-4 lg:gap-5">
-                  {filteredActive.map((order) => (
-                    <Link
-                      key={order.id}
-                      href={`/orders/${order.id}`}
-                      className="block h-full"
-                    >
-                      <OrderCard order={order} />
-                    </Link>
-                  ))}
+                <div className="mb-3 flex items-center gap-2 text-sm font-semibold sm:mb-4">Customer orders</div>
+                <div className="grid grid-cols-1 items-start gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-3 2xl:grid-cols-4 lg:gap-5">
+                  {approvalGroups.visible.map(order =>
+                    <Link key={order.id} href={`/orders/${order.id}`} className="block min-w-0 rounded-2xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"><OrderCard order={order} pendingAdditionCount={approvalGroups.additions.get(order.id)?.length || 0} /></Link>)}
                 </div>
               </>
             )

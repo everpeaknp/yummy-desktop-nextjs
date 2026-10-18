@@ -8,6 +8,20 @@ export function useOrderFull(orderId: string | number) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Quietly refresh additions without replacing the accepted bill with a loader.
+  useEffect(() => {
+    if (!context?.order.table_id || ["completed", "canceled", "cancelled"].includes(context.order.status)) return;
+    let disposed = false;
+    const timer = setInterval(async () => {
+      if (document.visibilityState !== "visible") return;
+      try {
+        const response = await apiClient.get(OrderApis.getOrderFull(Number(orderId)));
+        if (!disposed && response.data.status === "success") setContext(current => current?.order.id === Number(orderId) ? response.data.data : current);
+      } catch { /* Preserve the last confirmed bill; explicit refresh surfaces errors. */ }
+    }, 10000);
+    return () => { disposed = true; clearInterval(timer); };
+  }, [orderId, context?.order.table_id, context?.order.status]);
+
   const fetchContext = useCallback(async () => {
     if (!orderId) return;
     

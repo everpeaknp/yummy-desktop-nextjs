@@ -1,4 +1,5 @@
 "use client";
+import { OptionSelect } from "@/components/ui/option-select";
 
 /**
  * Properties panel for editing selected objects
@@ -193,16 +194,16 @@ export function PropertiesPanel({
             <label className="block text-xs font-medium text-gray-700 mb-2">
               Font Weight
             </label>
-            <select
+            <OptionSelect aria-label="Font weight"
               value={String((obj as any).fontWeight || "normal")}
-              onChange={(e) => handleChange("fontWeight", e.target.value)}
-              className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
+              onValueChange={(e) => handleChange("fontWeight", e)}
+              className="w-full"
             >
               <option value="normal">Normal</option>
               <option value="bold">Bold</option>
               <option value="600">Semi-Bold</option>
               <option value="900">Black</option>
-            </select>
+            </OptionSelect>
           </div>
         </>
       )}

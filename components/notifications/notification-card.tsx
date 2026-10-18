@@ -14,6 +14,7 @@ import {
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import type { AppNotification } from "@/hooks/use-notifications";
+import { TableAccessNotification } from './table-access-notification';
 
 // ── Helpers ──────────────────────────────────────────────────────────
 function relativeTime(dateStr: string): string {
@@ -121,6 +122,9 @@ interface ContentView {
 
 export function extractContent(n: AppNotification): ContentView {
   const payload = n.payload || {};
+  if (n.event === 'table.access_requested') {
+    return { header: n.title || 'Table access requested', subtitle: n.body || null, bodyLines: ['Confirm the customer is seated here before approving.'] };
+  }
 
   if (n.event === "table.service_requested") {
     const labels: Record<string, string> = {
@@ -233,6 +237,11 @@ export function NotificationCard({
   const route = notification.payload?.route;
   const destination =
     typeof route === "string" && route.startsWith("/") ? route : null;
+
+  if (notification.event === 'table.access_requested') {
+    const id = Number(notification.payload?.request_id ?? notification.entity_id);
+    if (Number.isInteger(id) && id > 0) return <TableAccessNotification requestId={id} />;
+  }
 
   return (
     <button

@@ -1,4 +1,5 @@
 "use client";
+import { OptionSelect } from "@/components/ui/option-select";
 
 import { useEffect, useMemo, useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
@@ -234,10 +235,10 @@ export function FinanceSalesInvoiceDialog({
           <div className="grid gap-4 md:grid-cols-4">
             <div className="space-y-2 md:col-span-2">
               <Label>Customer {!paid ? "*" : "(optional)"}</Label>
-              <select
-                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+              <OptionSelect aria-label="Customer"
+                className="h-10 w-full"
                 value={customerId}
-                onChange={(event) => setCustomerId(event.target.value)}
+                onValueChange={(event) => setCustomerId(event)}
               >
                 <option value="">Walk-in / no customer</option>
                 {customers.map((customer) => (
@@ -247,20 +248,20 @@ export function FinanceSalesInvoiceDialog({
                       `Customer #${customer.id}`}
                   </option>
                 ))}
-              </select>
+              </OptionSelect>
             </div>
             <div className="space-y-2">
               <Label>Business</Label>
-              <select
-                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+              <OptionSelect aria-label="Business"
+                className="h-10 w-full"
                 value={businessLine}
-                onChange={(event) =>
-                  setBusinessLine(event.target.value as "restaurant" | "hotel")
+                onValueChange={(event) =>
+                  setBusinessLine(event as "restaurant" | "hotel")
                 }
               >
                 <option value="restaurant">Restaurant</option>
                 <option value="hotel">Hotel</option>
-              </select>
+              </OptionSelect>
             </div>
             <div className="space-y-2">
               <Label>Date *</Label>
@@ -372,12 +373,12 @@ export function FinanceSalesInvoiceDialog({
                   </div>
                   <div className="space-y-1.5">
                     <Label>Sales account</Label>
-                    <select
-                      className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm"
+                    <OptionSelect aria-label="Reporting account"
+                      className="h-11 w-full"
                       value={line.reporting_head_id || ""}
-                      onChange={(event) =>
+                      onValueChange={(event) =>
                         updateLine(line.key, {
-                          reporting_head_id: Number(event.target.value),
+                          reporting_head_id: Number(event),
                         })
                       }
                     >
@@ -387,7 +388,7 @@ export function FinanceSalesInvoiceDialog({
                           {head.hierarchy_path || head.name}
                         </option>
                       ))}
-                    </select>
+                    </OptionSelect>
                   </div>
                   <div className="flex items-center justify-between border-t border-border pt-3 text-sm">
                     <span className="text-muted-foreground">Line total</span>
@@ -491,12 +492,12 @@ export function FinanceSalesInvoiceDialog({
                         />
                       </td>
                       <td className="p-2">
-                        <select
-                          className="h-10 min-w-52 rounded-md border border-input bg-background px-2"
+                        <OptionSelect aria-label="Reporting account"
+                          className="h-10 min-w-52"
                           value={line.reporting_head_id || ""}
-                          onChange={(event) =>
+                          onValueChange={(event) =>
                             updateLine(line.key, {
-                              reporting_head_id: Number(event.target.value),
+                              reporting_head_id: Number(event),
                             })
                           }
                         >
@@ -506,7 +507,7 @@ export function FinanceSalesInvoiceDialog({
                               {head.hierarchy_path || head.name}
                             </option>
                           ))}
-                        </select>
+                        </OptionSelect>
                       </td>
                       <td className="p-3 text-right font-medium">
                         {formatCurrency(lineTotal)}

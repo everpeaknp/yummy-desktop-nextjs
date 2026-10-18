@@ -1,4 +1,5 @@
 "use client";
+import { OptionSelect } from "@/components/ui/option-select";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { CalendarDays, Loader2, Plus, Trash2 } from "lucide-react";
@@ -198,10 +199,10 @@ export default function TeamSchedule() {
         <CardContent className="space-y-4">
           <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-7">
             {weekDays.map((day, index) => <label key={day} className="space-y-1 text-sm font-medium">{day}
-              <select className="h-10 w-full rounded-md border bg-background px-3 text-sm text-foreground" value={assignments[index]} onChange={(event) => setAssignments((current) => current.map((item, itemIndex) => itemIndex === index ? event.target.value : item))}>
+              <OptionSelect aria-label="Weekly shift template" className="h-10 w-full" value={assignments[index]} onValueChange={(event) => setAssignments((current) => current.map((item, itemIndex) => itemIndex === index ? event : item))}>
                 <option value={DAY_OFF}>Day off</option>
                 {templates.map((template) => <option key={template.id} value={String(template.id)}>{template.name}</option>)}
-              </select>
+              </OptionSelect>
             </label>)}
           </div>
           <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4">
@@ -267,7 +268,7 @@ function ScheduleCell({ day, templates, disabled, locked, onChange }: { day: Att
     const label = outcome === "present" ? "Present" : outcome === "absent" ? "Absent" : outcome === "review" ? "Pending review" : "No attendance recorded";
     return <div className={`rounded-md border p-2 ${tone}`}><p className="font-medium">{day.label}</p><p className="mt-0.5 text-xs text-muted-foreground">{label}{day.detail ? ` · ${day.detail}` : ""}</p></div>;
   }
-  return <select aria-label={`Schedule for ${day.date}`} className="min-h-16 w-full rounded-md border bg-background px-2 text-sm text-foreground" disabled={disabled} value={day.kind === "day_off" ? DAY_OFF : template ? String(template.id) : DAY_OFF} onChange={(event) => onChange(event.target.value)}><option value={DAY_OFF}>Day off</option>{templates.map((item) => <option key={item.id} value={String(item.id)}>{item.name}</option>)}</select>;
+  return <OptionSelect aria-label={`Schedule for ${day.date}`} className="min-h-16 w-full" disabled={disabled} value={day.kind === "day_off" ? DAY_OFF : template ? String(template.id) : DAY_OFF} onValueChange={(event) => onChange(event)}><option value={DAY_OFF}>Day off</option>{templates.map((item) => <option key={item.id} value={String(item.id)}>{item.name}</option>)}</OptionSelect>;
 }
 
 function ScheduleChangeRows({ changes, templates, staffNames }: { changes: AttendanceScheduleAudit[]; templates: AttendanceShiftTemplate[]; staffNames: Map<number, string> }) {

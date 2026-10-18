@@ -1,4 +1,5 @@
 export type OrderStatus =
+  | "requested"
   | "pending"
   | "running"
   | "scheduled"
@@ -80,6 +81,7 @@ export interface Order {
   table_category_name?: string | null;
   number_of_guests?: number | null;
   customer_id?: number | null;
+  approval_target_order_id?: number | null;
   customer_name?: string | null;
   customer_phone?: string | null;
   waiter_name?: string | null;
@@ -150,6 +152,7 @@ export interface KOTUpdate {
 
 export interface OrderFullContext {
   order: Order;
+  pending_item_requests?: Order[];
   tables: OrderTableSummary[];
   kots: KOTUpdate[];
   payments: OrderPayment[];

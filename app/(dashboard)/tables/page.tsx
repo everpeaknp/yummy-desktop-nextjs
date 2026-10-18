@@ -57,6 +57,7 @@ import { AppPage } from "@/components/patterns/page/app-page";
 import { PageHeader } from "@/components/patterns/page/page-header";
 import { FilterChip } from "@/components/patterns/controls/filter-chip";
 import { EmptyState } from "@/components/patterns/feedback/feedback-state";
+import { TableVisitAccess } from '@/components/tables/table-visit-access';
 
 interface TableType {
   id: number;
@@ -597,6 +598,7 @@ export default function TablesPage() {
         />
       </div>
 
+      {hasPermission(user, 'pos.order.edit') && <TableVisitAccess />}
       <div className="flex items-center gap-2 md:hidden">
         {isLayoutMode ? (
           <>
