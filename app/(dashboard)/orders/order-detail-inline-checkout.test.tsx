@@ -7,6 +7,8 @@ const mocks = vi.hoisted(() => ({
   push: vi.fn(),
   back: vi.fn(),
   fetchContext: vi.fn(),
+  fetchContextQuiet: vi.fn(),
+  replaceContextLocal: vi.fn(),
   patch: vi.fn(),
   order: null as any,
   fullyPaid: false,
@@ -39,6 +41,8 @@ vi.mock("@/hooks/use-order-full", () => ({
     loading: false,
     error: null,
     fetchContext: mocks.fetchContext,
+    fetchContextQuiet: mocks.fetchContextQuiet,
+    replaceContextLocal: mocks.replaceContextLocal,
     updateKotLocal: vi.fn(),
     isFullyPaid: mocks.fullyPaid,
     allKotsServed: true,
@@ -114,7 +118,23 @@ beforeEach(() => {
   mocks.push.mockReset();
   mocks.back.mockReset();
   mocks.fetchContext.mockReset().mockResolvedValue(undefined);
-  mocks.patch.mockReset().mockResolvedValue({ data: { status: "success" } });
+  mocks.fetchContextQuiet.mockReset().mockResolvedValue(true);
+  mocks.replaceContextLocal.mockReset();
+  mocks.patch.mockReset().mockImplementation(async (url: string, patch: any) => {
+    const itemId = Number(url.split("/").pop());
+    const updatedOrder = {
+      ...mocks.order,
+      version: Number(mocks.order.version || 0) + 1,
+      items: mocks.order.items.map((item: any) => item.id === itemId ? {
+        ...item,
+        ...patch,
+        line_total: patch.is_nc ?? item.is_nc
+          ? 0
+          : (Number(item.unit_price) + (item.modifiers || []).reduce((sum: number, modifier: any) => sum + Number(modifier.price_adjustment_snapshot || 0), 0)) * Number(patch.qty ?? item.qty),
+      } : item),
+    };
+    return { data: { status: "success", data: { order: updatedOrder, tables: [], kots: [], payments: [], pending_item_requests: [] } } };
+  });
 });
 
 it("keeps quick checkout beside order details without navigating or changing the order column width", async () => {
@@ -175,7 +195,12 @@ it("shows accepted items in a price table and lets staff mark a line NC", async 
     "/orders/51/lines/142",
     expect.objectContaining({ qty: 1, is_nc: true, expected_version: 1 }),
   ));
-  expect(mocks.fetchContext).toHaveBeenCalled();
+  expect(mocks.fetchContext).not.toHaveBeenCalled();
+  expect(mocks.replaceContextLocal).toHaveBeenCalledWith(expect.objectContaining({
+    order: expect.objectContaining({
+      items: expect.arrayContaining([expect.objectContaining({ id: 142, is_nc: true })]),
+    }),
+  }));
 });
 
 it("lets staff remove NC directly from an accepted item", async () => {
@@ -199,8 +224,9 @@ it("keeps the real checkout mounted without a placeholder or open step", () => {
   expect(screen.getByRole("navigation", { name: "Order detail sections" })).toBeInTheDocument();
 });
 
-it("opens the shared quantity and NC sheet from the quick-checkout bill and refreshes after save", async () => {
+it("opens the shared quantity sheet from quick checkout and updates the bill without reloading the order page", async () => {
   render(<OrderDetailPage />);
+  const initialBillRefreshToken = screen.getByTestId("quick-checkout").getAttribute("data-bill-refresh-token");
   fireEvent.click(await screen.findByRole("button", { name: "Edit bill item" }));
   expect(await screen.findByRole("spinbutton", { name: "Quantity" })).toHaveValue(1);
 
@@ -211,7 +237,9 @@ it("opens the shared quantity and NC sheet from the quick-checkout bill and refr
     "/orders/51/lines/142",
     expect.objectContaining({ qty: 2, expected_version: 1 }),
   ));
-  expect(mocks.fetchContext).toHaveBeenCalled();
+  expect(mocks.fetchContext).not.toHaveBeenCalled();
+  expect(mocks.replaceContextLocal).toHaveBeenCalled();
+  await waitFor(() => expect(screen.getByTestId("quick-checkout").getAttribute("data-bill-refresh-token")).not.toBe(initialBillRefreshToken));
 });
 
 it("keeps room-service delivery action available when quick checkout opens", async () => {

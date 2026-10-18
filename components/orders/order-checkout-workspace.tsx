@@ -98,6 +98,7 @@ import {
   optionalCustomerText,
 } from "@/lib/customer-fiscal";
 import { getOrderDiscountLabel, getRecordedOrderDiscount } from "@/lib/order-totals";
+import type { OrderFullContext } from "@/types/order";
 import {
   canPostRoomOrderToFolio,
   requiresRoomOrderKotFulfillment,
@@ -372,6 +373,29 @@ type CustomerOption = {
   credit?: number | null;
 };
 
+export function mergeCustomerOptions(
+  current: CustomerOption[],
+  incoming: CustomerOption[],
+) {
+  const byId = new Map<number, CustomerOption>();
+  for (const customer of current) byId.set(Number(customer.id), customer);
+  for (const customer of incoming) byId.set(Number(customer.id), {
+    ...byId.get(Number(customer.id)),
+    ...customer,
+  });
+  const next = Array.from(byId.values());
+  return JSON.stringify(current) === JSON.stringify(next) ? current : next;
+}
+
+function keepCurrentIfUnchanged<T>(current: T, next: T): T {
+  if (Object.is(current, next)) return current;
+  try {
+    return JSON.stringify(current) === JSON.stringify(next) ? current : next;
+  } catch {
+    return next;
+  }
+}
+
 function normalizeCustomerPhone(value?: string | null) {
   return String(value || "").replace(/\D/g, "");
 }
@@ -620,6 +644,9 @@ function StaffSearchSelect({
 export type OrderCheckoutWorkspaceProps = {
   orderId: number;
   presentation: "page" | "quick";
+  orderContext?: OrderFullContext | null;
+  refreshOrderContext?: () => Promise<void>;
+  refreshOrderContextQuiet?: () => Promise<boolean>;
   onBackToOrder?: () => void;
   onEditOrderItem?: (orderItemId: number) => void;
   billRefreshToken?: number | string;
@@ -732,6 +759,9 @@ export function OrderCheckoutWorkspace({
   onBackToOrder,
   onEditOrderItem,
   billRefreshToken = 0,
+  orderContext,
+  refreshOrderContext,
+  refreshOrderContextQuiet,
 }: OrderCheckoutWorkspaceProps) {
   // Reset bill-specific forms without reloading the application shell.
   return (
@@ -742,6 +772,9 @@ export function OrderCheckoutWorkspace({
       onBackToOrder={onBackToOrder}
       onEditOrderItem={onEditOrderItem}
       billRefreshToken={billRefreshToken}
+      orderContext={orderContext}
+      refreshOrderContext={refreshOrderContext}
+      refreshOrderContextQuiet={refreshOrderContextQuiet}
     />
   );
 }
@@ -752,6 +785,9 @@ function CheckoutContent({
   onBackToOrder,
   onEditOrderItem,
   billRefreshToken = 0,
+  orderContext,
+  refreshOrderContext,
+  refreshOrderContextQuiet,
 }: OrderCheckoutWorkspaceProps) {
   const router = useRouter();
 
@@ -783,13 +819,13 @@ function CheckoutContent({
     canRedeemLoyalty,
   } = usePosBillingPermissions();
 
-  const {
-    context,
-    loading: orderLoading,
-    fetchContext,
-    isFullyPaid,
-    allKotsServed,
-  } = useOrderFull(orderId);
+  const internalOrder = useOrderFull(orderId, { enabled: presentation !== "quick" || !orderContext });
+  const context = orderContext ?? internalOrder.context;
+  const fetchContext = refreshOrderContext ?? internalOrder.fetchContext;
+  const fetchContextQuiet = refreshOrderContextQuiet ?? internalOrder.fetchContextQuiet;
+  const allKotsServed = context
+    ? context.kots.length === 0 || context.kots.every((kot) => ["served", "completed", "ready", "rejected", "cancelled"].includes(kot.status?.toLowerCase()))
+    : false;
   const kotFulfillmentRequired = requiresRoomOrderKotFulfillment({
     kotEnabled: restaurant?.kot_enabled,
     kotEntitled: restaurant?.entitlements?.["kitchen.kot.enabled"] as
@@ -927,6 +963,8 @@ function CheckoutContent({
 
   // Customer selection for Credit
   const [customers, setCustomers] = useState<any[]>([]);
+  const customerPaginationRestaurantRef = useRef<number | null>(null);
+  const requestedOrderCustomerRef = useRef<number | null>(null);
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>("");
   const [quickAddOpen, setQuickAddOpen] = useState(false);
   const [quickAddSubmitting, setQuickAddSubmitting] = useState(false);
@@ -1218,13 +1256,13 @@ function CheckoutContent({
         params: { _t: Date.now() },
       });
       if (res.data.status === "success") {
-        setGuestBills(res.data.data);
+        setGuestBills((current: any) => keepCurrentIfUnchanged(current, res.data.data));
       } else {
-        setGuestBills(null);
+        setGuestBills((current: any) => keepCurrentIfUnchanged(current, null));
       }
     } catch (err) {
       console.warn("Failed to fetch guest bills, probably not split:", err);
-      setGuestBills(null);
+      setGuestBills((current: any) => keepCurrentIfUnchanged(current, null));
     }
   }, [orderId]);
 
@@ -1241,33 +1279,32 @@ function CheckoutContent({
         }),
       ]);
       if (billRes.data.status === "success") {
-        setBill(billRes.data.data);
+        setBill((current) => keepCurrentIfUnchanged(current, billRes.data.data));
       }
       if (orderRes.data.status === "success") {
-        setOrderMeta(orderRes.data.data);
+        setOrderMeta((current) => keepCurrentIfUnchanged(current, orderRes.data.data));
       }
       const isCompleted =
         String(orderRes.data?.data?.status || "").toLowerCase() === "completed";
       const restaurantId = Number(user?.restaurant_id || restaurant?.id || 0);
       if (isCompleted && restaurantId > 0) {
-        try {
-          const document = await financeSalesApi.getByOrder(
-            restaurantId,
-            orderId,
-          );
-          const settlement = await financeSalesApi.getSettlement(
-            restaurantId,
-            document.id,
-          );
-          setInvoiceSettlement(settlement);
-        } catch {
-          setInvoiceSettlement(null);
-        }
+        void (async () => {
+          try {
+            const document = await financeSalesApi.getByOrder(restaurantId, orderId);
+            const settlement = await financeSalesApi.getSettlement(restaurantId, document.id);
+            setInvoiceSettlement((current) => keepCurrentIfUnchanged(current, settlement));
+          } catch {
+            setInvoiceSettlement((current) => keepCurrentIfUnchanged(current, null));
+          }
+        })();
       } else {
-        setInvoiceSettlement(null);
+        setInvoiceSettlement((current) => keepCurrentIfUnchanged(current, null));
       }
       setError(null);
-      await fetchGuestBills();
+      // Guest split data is secondary to showing the accepted bill. Load it in
+      // the background so slow split-bill lookups don't hold checkout behind a
+      // full-panel spinner.
+      void fetchGuestBills();
       return billRes.data.status === "success" && orderRes.data.status === "success";
     } catch (err: any) {
       setError(
@@ -1456,10 +1493,10 @@ function CheckoutContent({
     ) return;
     previousBillRefreshToken.current = billRefreshToken;
     let active = true;
-    setBillRefreshPending(true);
+    if (presentation !== "quick") setBillRefreshPending(true);
     setBillRefreshFailed(false);
-    void fetchBill()
-      .then((succeeded) => {
+    void Promise.all([fetchBill(), fetchContextQuiet()])
+      .then(([succeeded]) => {
         if (active) setBillRefreshFailed(!succeeded);
       })
       .finally(() => {
@@ -1468,7 +1505,7 @@ function CheckoutContent({
     return () => {
       active = false;
     };
-  }, [billRefreshToken, fetchBill, presentation]);
+  }, [billRefreshToken, fetchBill, fetchContextQuiet, presentation]);
 
   const handleRefreshBill = async () => {
     setBillRefreshPending(true);
@@ -1502,41 +1539,44 @@ function CheckoutContent({
   > => {
     if (!user?.restaurant_id) return null;
     try {
-      const pageSize = 500;
-      let skip = 0;
-      const loadedCustomers: CustomerOption[] = [];
-      const seenCustomerIds = new Set<number>();
+      const restaurantId = user.restaurant_id;
+      const pageSize = 100;
+      const { data } = await apiClient.get(
+        CustomerApis.listCustomers(restaurantId),
+        { params: { skip: 0, limit: pageSize } },
+      );
+      if (data.status !== "success") return null;
 
-      while (true) {
-        const { data } = await apiClient.get(
-          CustomerApis.listCustomers(user.restaurant_id),
-          {
-            params: { skip, limit: pageSize },
-          },
-        );
+      const firstPage = (data.data.customers || []) as CustomerOption[];
+      setCustomers((current) => mergeCustomerOptions(current, firstPage));
 
-        if (data.status !== "success") {
-          break;
-        }
-
-        const pageCustomers = (data.data.customers || []) as CustomerOption[];
-        let addedCount = 0;
-        for (const customer of pageCustomers) {
-          const customerId = Number(customer?.id || 0);
-          if (!customerId || seenCustomerIds.has(customerId)) continue;
-          seenCustomerIds.add(customerId);
-          loadedCustomers.push(customer);
-          addedCount += 1;
-        }
-
-        if (pageCustomers.length < pageSize || addedCount === 0) {
-          break;
-        }
-        skip += pageSize;
+      // Continue loading later pages after the first usable page is visible.
+      // This keeps the selector complete without making checkout wait for the
+      // entire customer directory.
+      if (customerPaginationRestaurantRef.current === null) {
+        customerPaginationRestaurantRef.current = restaurantId;
+        void (async () => {
+          let skip = pageSize;
+          while (true) {
+            const page = await apiClient.get(
+              CustomerApis.listCustomers(restaurantId),
+              { params: { skip, limit: pageSize } },
+            );
+            if (page.data.status !== "success") break;
+            const nextCustomers = (page.data.data.customers || []) as CustomerOption[];
+            setCustomers((current) => mergeCustomerOptions(current, nextCustomers));
+            if (nextCustomers.length < pageSize) break;
+            skip += pageSize;
+          }
+        })().catch((paginationError) => {
+          console.error("Failed to finish loading customers:", paginationError);
+        }).finally(() => {
+          if (customerPaginationRestaurantRef.current === restaurantId) {
+            customerPaginationRestaurantRef.current = null;
+          }
+        });
       }
-
-      setCustomers(loadedCustomers);
-      return loadedCustomers;
+      return firstPage;
     } catch (err: any) {
       // Fallback for roles that can checkout but don't have `customers.view`.
       // Build a selectable customer list from order history (requires `pos.view`).
@@ -1597,6 +1637,25 @@ function CheckoutContent({
       fetchCustomers();
     }
   }, [fetchCustomers, user?.restaurant_id]);
+
+  // The order already tells us who the customer is. Fetch only that customer's
+  // loyalty/credit details instead of making the selector wait for the full
+  // restaurant directory.
+  useEffect(() => {
+    const customerId = Number(orderMeta?.customer_id || 0);
+    if (!customerId || customers.some((customer) => Number(customer.id) === customerId)) return;
+    if (requestedOrderCustomerRef.current === customerId) return;
+    requestedOrderCustomerRef.current = customerId;
+    let active = true;
+    void apiClient.get(CustomerApis.getCustomer(customerId)).then(({ data }) => {
+      const customer = data?.data as CustomerOption | undefined;
+      if (!active || data?.status !== "success" || !customer?.id) return;
+      setCustomers((current) => mergeCustomerOptions(current, [customer]));
+    }).catch((err) => {
+      console.warn("Could not load selected customer's details:", err);
+    });
+    return () => { active = false; };
+  }, [customers, orderMeta?.customer_id]);
 
   const fetchStaffOptions = useCallback(async () => {
     try {
@@ -3012,9 +3071,24 @@ function CheckoutContent({
   const dueAmountForManualDiscount = displayBalanceDue;
   const checkoutCustomerId =
     selectedCheckoutCustomerId ?? orderMeta?.customer_id;
-  const checkoutCustomer = checkoutCustomerId
-    ? customers.find((c: any) => Number(c?.id) === Number(checkoutCustomerId))
+  const orderCustomerFallback: CustomerOption | null = orderMeta?.customer_id
+    ? {
+        id: orderMeta.customer_id,
+        full_name: orderMeta.customer_name || "Guest",
+        name: orderMeta.customer_name || "Guest",
+        phone: orderMeta.customer_phone || null,
+      }
     : null;
+  const checkoutCustomer = checkoutCustomerId
+    ? customers.find((c: any) => Number(c?.id) === Number(checkoutCustomerId)) ??
+      (Number(orderCustomerFallback?.id) === Number(checkoutCustomerId)
+        ? orderCustomerFallback
+        : null)
+    : null;
+  const checkoutCustomers = orderCustomerFallback &&
+    !customers.some((customer) => Number(customer.id) === orderCustomerFallback.id)
+    ? [orderCustomerFallback, ...customers]
+    : customers;
   const availableLoyaltyPoints = Number(checkoutCustomer?.loyalty_points || 0);
   const customerTotalSpent = Number(
     checkoutCustomer?.total_spent ??
@@ -3799,7 +3873,7 @@ function CheckoutContent({
           ) : null}
 
           <CheckoutBillRefreshStatus
-            pending={billRefreshPending}
+            pending={billRefreshPending && !isQuickCheckout}
             failed={billRefreshFailed}
             onRetry={handleRefreshBill}
           />
@@ -3828,7 +3902,7 @@ function CheckoutContent({
                     <CustomerSearchSelect
                       label="Customer"
                       placeholder="Select customer to view loyalty details"
-                      customers={customers}
+                      customers={checkoutCustomers}
                       value={
                         checkoutCustomerId ? String(checkoutCustomerId) : ""
                       }
