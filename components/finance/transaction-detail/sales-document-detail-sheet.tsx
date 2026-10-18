@@ -40,6 +40,8 @@ import { useFiscalPrint } from "@/hooks/use-fiscal-print";
 import { useFiscalProfile } from "@/hooks/use-fiscal-profile";
 import { useOrderFiscalDocument } from "@/hooks/use-order-fiscal-document";
 import apiClient from "@/lib/api-client";
+import { getDisplayErrorMessage } from "@/lib/api-error-message";
+import { resolveAuthorizedReceiptTerminalId } from "@/lib/receipt-print-terminal";
 import { OrderApis, ReceiptApis, RestaurantApis } from "@/lib/api/endpoints";
 import { financeSalesApi } from "@/lib/api/finance-sales-api";
 import {
@@ -398,6 +400,7 @@ export function SalesDocumentDetailSheet({
           const authorization = authorizationResponse.data.data as {
             authorization_id: number;
             designation: string;
+            receipt_terminal_id?: number | null;
           };
           authorizationId = authorization.authorization_id;
           setOrdinaryPrintDesignation(authorization.designation);
@@ -408,7 +411,10 @@ export function SalesDocumentDetailSheet({
                 params: {
                   mode: "receipt",
                   authorization_id: authorization.authorization_id,
-                  terminal_id: terminalId || undefined,
+                  terminal_id: resolveAuthorizedReceiptTerminalId(
+                    authorization.receipt_terminal_id,
+                    terminalId ?? null,
+                  ) ?? undefined,
                 },
               },
             );
@@ -454,9 +460,7 @@ export function SalesDocumentDetailSheet({
               .catch(() => undefined);
           }
           toast.error(
-            printError instanceof Error
-              ? printError.message
-              : "Receipt printing failed.",
+            getDisplayErrorMessage(printError, "Receipt printing failed."),
           );
         } finally {
           setOrdinaryPrintDesignation(null);
