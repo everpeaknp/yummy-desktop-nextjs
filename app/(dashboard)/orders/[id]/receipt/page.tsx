@@ -464,7 +464,9 @@ export default function ReceiptPage() {
         mode,
         device_identifier: "yummy-web-receipt-route",
         printer_name: receipt?.printer_config?.name || "Browser print dialog",
-        receipt_terminal_id: selectedTerminalId,
+        receipt_terminal_id:
+          selectedTerminalId ??
+          (receiptTerminals.length === 1 ? receiptTerminals[0].id : null),
       },
     );
     return response.data.data as {
@@ -472,7 +474,13 @@ export default function ReceiptPage() {
       designation: string;
       receipt_terminal_id?: number | null;
     };
-  }, [isPreBill, orderId, receipt?.printer_config?.name, selectedTerminalId]);
+  }, [
+    isPreBill,
+    orderId,
+    receipt?.printer_config?.name,
+    receiptTerminals,
+    selectedTerminalId,
+  ]);
 
   const completeOrdinaryPrint = useCallback(
     async (
@@ -507,6 +515,7 @@ export default function ReceiptPage() {
           resolveAuthorizedReceiptTerminalId(
             authorization.receipt_terminal_id,
             selectedTerminalId,
+            receiptTerminals.length === 1 ? receiptTerminals[0].id : null,
           ),
         );
         await printRawToReceiptPrinter(
@@ -746,7 +755,9 @@ export default function ReceiptPage() {
     }
 
     autoPrintedOrderRef.current = orderId;
-    void runAutoPrint();
+    void runAutoPrint().catch((printError) => {
+      toast.error(getDisplayErrorMessage(printError, "Printing failed."));
+    });
   }, [
     fiscalDocument,
     fiscalDocumentError,

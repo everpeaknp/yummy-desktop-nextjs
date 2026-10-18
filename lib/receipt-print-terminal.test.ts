@@ -9,4 +9,8 @@ describe("resolveAuthorizedReceiptTerminalId", () => {
   it("falls back to the selected terminal for older authorization responses", () => {
     expect(resolveAuthorizedReceiptTerminalId(undefined, 37)).toBe(37);
   });
+
+  it("uses the only assigned terminal when older APIs omit it and none was selected", () => {
+    expect(resolveAuthorizedReceiptTerminalId(undefined, null, 52)).toBe(52);
+  });
 });
