@@ -2332,9 +2332,6 @@ export const AttendanceApis = {
       ? `/attendance/device-mappings?device_id=${deviceId}`
       : "/attendance/device-mappings",
   upsertDeviceMapping: "/attendance/device-mappings",
-  mobileDevices: "/attendance/mobile-devices",
-  mobileDeviceDecision: (id: number, action: "approve" | "reject" | "revoke") =>
-    "/attendance/mobile-devices/" + id + "/" + action,
   connectorPairingCodes: "/attendance/connectors/pairing-codes",
   connectorPair: "/attendance/connectors/pair",
   connectorHeartbeat: "/attendance/connectors/heartbeat",

@@ -56,7 +56,7 @@ export default function MyAttendancePage() {
     if (!token) return toast.error("This is not an attendance QR code");
     if (!navigator.geolocation) return toast.error("Location is required for QR attendance");
     navigator.geolocation.getCurrentPosition(async (position) => {
-      try { await attendanceApi.submitMobilePunch({ qr_token: token, latitude: position.coords.latitude, longitude: position.coords.longitude, device_label: navigator.platform }); toast.success(active ? "Clocked out" : "Clocked in"); setScanning(false); stopScanner(); await load(); }
+      try { await attendanceApi.submitMobilePunch({ qr_token: token, latitude: position.coords.latitude, longitude: position.coords.longitude, accuracy_meters: position.coords.accuracy, device_label: navigator.platform }); toast.success(active ? "Clocked out" : "Clocked in"); setScanning(false); stopScanner(); await load(); }
       catch (error: any) { toast.error(error?.response?.data?.detail || "Attendance could not be recorded"); }
     }, () => toast.error("Allow location access to clock in"), { enableHighAccuracy: true, timeout: 10000 });
   }

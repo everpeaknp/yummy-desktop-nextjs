@@ -91,22 +91,22 @@ describe("attendanceApi", () => {
     expect(exported.filename).toBe("attendance.csv");
   });
 
-  it("calls QR device and mobile-device endpoints", async () => {
+  it("calls QR and biometric device endpoints", async () => {
     await attendanceApi.createQrSession({ station_label: "Front", ttl_seconds: 60 });
+    await attendanceApi.submitMobilePunch({ qr_token: "qr-token", latitude: 28.2, longitude: 83.9, accuracy_meters: 12 });
     await attendanceApi.createDevice({ name: "ZK" });
     await attendanceApi.updateDevice(7, { is_active: false });
     await attendanceApi.deleteShiftTemplate(6);
     await attendanceApi.deleteSchedule(5);
     await attendanceApi.upsertDeviceMapping({ device_id: 7, staff_id: 2, device_user_id: "42" });
-    await attendanceApi.decideMobileDevice(3, "revoke", "lost phone");
 
     expect(mocked.post).toHaveBeenCalledWith("/attendance/qr-sessions", { station_label: "Front", ttl_seconds: 60 });
+    expect(mocked.post).toHaveBeenCalledWith("/attendance/mobile-punch", expect.objectContaining({ qr_token: "qr-token", latitude: 28.2, longitude: 83.9, accuracy_meters: 12 }));
     expect(mocked.post).toHaveBeenCalledWith("/attendance/devices", { name: "ZK" });
     expect(mocked.patch).toHaveBeenCalledWith("/attendance/devices/7", { is_active: false });
     expect(mocked.delete).toHaveBeenCalledWith("/attendance/shift-templates/6");
     expect(mocked.delete).toHaveBeenCalledWith("/attendance/schedules/5");
     expect(mocked.post).toHaveBeenCalledWith("/attendance/device-mappings", { device_id: 7, staff_id: 2, device_user_id: "42" });
-    expect(mocked.post).toHaveBeenCalledWith("/attendance/mobile-devices/3/revoke", { reason: "lost phone" });
   });
 });
 

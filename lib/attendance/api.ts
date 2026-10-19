@@ -4,7 +4,6 @@ import type {
   AttendanceAudit,
   AttendanceDevice,
   AttendanceEntry,
-  AttendanceMobileDevice,
   MyAttendanceStatus,
   AttendanceHoliday,
   AttendanceLeave,
@@ -86,7 +85,7 @@ export const attendanceApi = {
   async staffReport(dateFrom: string, dateTo: string) {
     return unwrap<import("./types").AttendanceStaffReport[]>(await apiClient.get(AttendanceApis.staffReport(dateFrom, dateTo)));
   },
-  async submitMobilePunch(payload: { qr_token: string; latitude: number; longitude: number; device_label?: string }) {
+  async submitMobilePunch(payload: { qr_token: string; latitude: number; longitude: number; accuracy_meters: number; device_label?: string }) {
     return unwrap<AttendanceEntry>(await apiClient.post(AttendanceApis.mobilePunch, {
       ...payload,
       biometric_confirmed: false,
@@ -250,12 +249,6 @@ export const attendanceApi = {
   },
   async upsertDeviceMapping(payload: Partial<StaffDeviceMapping>) {
     return unwrap<StaffDeviceMapping>(await apiClient.post(AttendanceApis.upsertDeviceMapping, payload));
-  },
-  async listMobileDevices() {
-    return unwrap<AttendanceMobileDevice[]>(await apiClient.get(AttendanceApis.mobileDevices));
-  },
-  async decideMobileDevice(id: number, action: "approve" | "reject" | "revoke", reason?: string) {
-    return unwrap<AttendanceMobileDevice>(await apiClient.post(AttendanceApis.mobileDeviceDecision(id, action), { reason }));
   },
 };
 

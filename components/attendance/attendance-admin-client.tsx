@@ -37,7 +37,6 @@ import type {
   AttendanceEntry,
   AttendanceHoliday,
   AttendanceLeave,
-  AttendanceMobileDevice,
   AttendanceOverview,
   AttendanceQrSession,
   AttendanceSchedule,
@@ -180,14 +179,22 @@ function weekMondayIso(value: string) {
   const [year, month, day] = value.split("-").map(Number);
   const local = new Date(year, month - 1, day);
   local.setDate(local.getDate() - ((local.getDay() + 6) % 7));
-  return [local.getFullYear(), String(local.getMonth() + 1).padStart(2, "0"), String(local.getDate()).padStart(2, "0")].join("-");
+  return [
+    local.getFullYear(),
+    String(local.getMonth() + 1).padStart(2, "0"),
+    String(local.getDate()).padStart(2, "0"),
+  ].join("-");
 }
 
 function weekDates(mondayIso: string) {
   const [year, month, day] = mondayIso.split("-").map(Number);
   return WEEKDAY_NAMES.map((_, index) => {
     const local = new Date(year, month - 1, day + index);
-    return [local.getFullYear(), String(local.getMonth() + 1).padStart(2, "0"), String(local.getDate()).padStart(2, "0")].join("-");
+    return [
+      local.getFullYear(),
+      String(local.getMonth() + 1).padStart(2, "0"),
+      String(local.getDate()).padStart(2, "0"),
+    ].join("-");
   });
 }
 
@@ -196,7 +203,11 @@ function firstApplicableDate(effectiveFrom: string, weekday: number) {
   const local = new Date(year, month - 1, day);
   const offset = (weekday - ((local.getDay() + 6) % 7) + 7) % 7;
   local.setDate(local.getDate() + offset);
-  return [local.getFullYear(), String(local.getMonth() + 1).padStart(2, "0"), String(local.getDate()).padStart(2, "0")].join("-");
+  return [
+    local.getFullYear(),
+    String(local.getMonth() + 1).padStart(2, "0"),
+    String(local.getDate()).padStart(2, "0"),
+  ].join("-");
 }
 
 function isOpenEntry(entry: AttendanceEntry) {
@@ -301,7 +312,6 @@ function errorMessage(error: unknown, fallback: string) {
     fallback
   );
 }
-
 function isBiometricAddonError(error: unknown) {
   const candidate = error as {
     response?: {
@@ -321,8 +331,10 @@ function isBiometricAddonError(error: unknown) {
 
 export function AttendanceAdminClient() {
   const user = useAuth((state) => state.user);
-  const mobileAttendancePlan = useEntitlement("attendance.mobile.enabled", true);
-  const biometricAttendancePlan = useEntitlement("attendance.biometric.enabled", true);
+  const biometricAttendancePlan = useEntitlement(
+    "attendance.biometric.enabled",
+    true,
+  );
   const attendanceAccess = getAttendanceUiAccess(user);
   const {
     canView: canViewAttendance,
@@ -356,7 +368,13 @@ export function AttendanceAdminClient() {
       }
       return initialTab;
     });
-  }, [canManageAttendance, canManageDevices, canPayrollExport, canViewAttendance, initialTab]);
+  }, [
+    canManageAttendance,
+    canManageDevices,
+    canPayrollExport,
+    canViewAttendance,
+    initialTab,
+  ]);
   const [loading, setLoading] = useState(true);
   const [payrollExporting, setPayrollExporting] = useState(false);
   const [dateFrom, setDateFrom] = useState(todayIso());
@@ -369,7 +387,6 @@ export function AttendanceAdminClient() {
   const [holidays, setHolidays] = useState<AttendanceHoliday[]>([]);
   const [devices, setDevices] = useState<AttendanceDevice[]>([]);
   const [mappings, setMappings] = useState<StaffDeviceMapping[]>([]);
-  const [mobileDevices, setMobileDevices] = useState<AttendanceMobileDevice[]>([]);
 
   const [staffProfiles, setStaffProfiles] = useState<StaffProfile[]>([]);
   const [staffUsers, setStaffUsers] = useState<StaffUser[]>([]);
@@ -398,14 +415,19 @@ export function AttendanceAdminClient() {
     staff_id: "",
     device_user_id: "",
   });
-  const [admsTestForm, setAdmsTestForm] = useState({ device_id: "", device_user_id: "" });
+  const [admsTestForm, setAdmsTestForm] = useState({
+    device_id: "",
+    device_user_id: "",
+  });
   const [templateForm, setTemplateForm] = useState({
     name: "",
     start_local_time: "09:00",
     end_local_time: "17:00",
     unpaid_break_minutes: "30",
   });
-  const [editingTemplateId, setEditingTemplateId] = useState<number | null>(null);
+  const [editingTemplateId, setEditingTemplateId] = useState<number | null>(
+    null,
+  );
   const [scheduleForm, setScheduleForm] = useState({
     staff_id: "default",
     shift_template_id: "",
@@ -413,7 +435,9 @@ export function AttendanceAdminClient() {
     effective_from: todayIso(),
     is_day_off: false,
   });
-  const [editingScheduleId, setEditingScheduleId] = useState<number | null>(null);
+  const [editingScheduleId, setEditingScheduleId] = useState<number | null>(
+    null,
+  );
   const [weeklyScheduleForm, setWeeklyScheduleForm] = useState({
     staff_ids: [] as number[],
     effective_from: weekMondayIso(todayIso()),
@@ -513,7 +537,9 @@ export function AttendanceAdminClient() {
     try {
       const reportLoadFailure = (error: unknown) => {
         console.error("Failed to load attendance workspace data", error);
-        toast.error(errorMessage(error, "Some attendance data could not be loaded"));
+        toast.error(
+          errorMessage(error, "Some attendance data could not be loaded"),
+        );
       };
       const viewDataPromise = canViewAttendance
         ? Promise.all([
@@ -532,13 +558,7 @@ export function AttendanceAdminClient() {
               AttendanceHoliday[],
             ];
           })
-        : Promise.resolve([
-            null,
-            [],
-            [],
-            [],
-            [],
-          ] as [
+        : Promise.resolve([null, [], [], [], []] as [
             null,
             AttendanceEntry[],
             AttendanceEntry[],
@@ -550,83 +570,85 @@ export function AttendanceAdminClient() {
             attendanceApi.getSettings(),
             attendanceApi.listShiftTemplates(),
             attendanceApi.listSchedules(),
-            mobileAttendancePlan.allowed
-              ? attendanceApi.listMobileDevices()
-              : Promise.resolve([] as AttendanceMobileDevice[]),
           ]).catch((error) => {
             reportLoadFailure(error);
-            return [null, [], [], []] as [
+            return [null, [], []] as [
               null,
               AttendanceShiftTemplate[],
               AttendanceSchedule[],
-              AttendanceMobileDevice[],
             ];
           })
-        : Promise.resolve([
-            null,
-            [],
-            [],
-            [],
-          ] as [
+        : Promise.resolve([null, [], []] as [
             null,
             AttendanceShiftTemplate[],
             AttendanceSchedule[],
-            AttendanceMobileDevice[],
           ]);
       const biometricDataPromise =
         canManageDevices && biometricAttendancePlan.allowed
-        ? Promise.all([
-            attendanceApi.listDevices(),
-            attendanceApi.listDeviceMappings(),
-          ])
-            .then(([deviceData, mappingData]) => ({
-              deviceData,
-              mappingData,
-              unavailable: false,
-            }))
-            .catch((error) => {
-              if (isBiometricAddonError(error)) {
+          ? Promise.all([
+              attendanceApi.listDevices(),
+              attendanceApi.listDeviceMappings(),
+            ])
+              .then(([deviceData, mappingData]) => ({
+                deviceData,
+                mappingData,
+                unavailable: false,
+              }))
+              .catch((error) => {
+                if (isBiometricAddonError(error)) {
+                  return {
+                    deviceData: [] as AttendanceDevice[],
+                    mappingData: [] as StaffDeviceMapping[],
+                    unavailable: true,
+                  };
+                }
+                reportLoadFailure(error);
                 return {
                   deviceData: [] as AttendanceDevice[],
                   mappingData: [] as StaffDeviceMapping[],
-                  unavailable: true,
+                  unavailable: false,
                 };
-              }
+              })
+          : Promise.resolve({
+              deviceData: [] as AttendanceDevice[],
+              mappingData: [] as StaffDeviceMapping[],
+              unavailable: false,
+            });
+      const staffDataPromise =
+        canManageStaff && (canManageAttendance || canManageDevices)
+          ? Promise.all([
+              apiClient.get(StaffProfileApis.list({ limit: 500 })),
+              apiClient.get(StaffApis.list()),
+            ]).catch((error) => {
               reportLoadFailure(error);
-              return {
-                deviceData: [] as AttendanceDevice[],
-                mappingData: [] as StaffDeviceMapping[],
-                unavailable: false,
-              };
+              return [{ data: { data: [] } }, { data: { data: [] } }] as const;
             })
-        : Promise.resolve({
-            deviceData: [] as AttendanceDevice[],
-            mappingData: [] as StaffDeviceMapping[],
-            unavailable: false,
-          });
-      const staffDataPromise = canManageStaff &&
-        (canManageAttendance || canManageDevices)
-        ? Promise.all([
-            apiClient.get(StaffProfileApis.list({ limit: 500 })),
-            apiClient.get(StaffApis.list()),
-          ]).catch((error) => {
-            reportLoadFailure(error);
-            return [{ data: { data: [] } }, { data: { data: [] } }] as const;
-          })
-        : Promise.resolve([{ data: { data: [] } }, { data: { data: [] } }] as const);
+          : Promise.resolve([
+              { data: { data: [] } },
+              { data: { data: [] } },
+            ] as const);
 
-      const [viewData, managementData, biometric, staffData] = await Promise.all([
-        viewDataPromise,
-        managementDataPromise,
-        biometricDataPromise,
-        staffDataPromise,
-      ]);
-      const [overviewData, selectedEntryData, recentEntryData, leaveData, holidayData] = viewData;
-      const [settingsData, templateData, scheduleData, mobileData] = managementData;
+      const [viewData, managementData, biometric, staffData] =
+        await Promise.all([
+          viewDataPromise,
+          managementDataPromise,
+          biometricDataPromise,
+          staffDataPromise,
+        ]);
+      const [
+        overviewData,
+        selectedEntryData,
+        recentEntryData,
+        leaveData,
+        holidayData,
+      ] = viewData;
+      const [settingsData, templateData, scheduleData] = managementData;
       const [profilesRes, usersRes] = staffData;
       if (settingsData) setSettingsForm(settingsToForm(settingsData));
       setOverview(overviewData);
-      setEntries(mergeEntriesWithOpenCarryover(selectedEntryData, recentEntryData));
+      setEntries(
+        mergeEntriesWithOpenCarryover(selectedEntryData, recentEntryData),
+      );
       setTemplates(templateData);
       setSchedules(scheduleData);
       setLeaves(leaveData);
@@ -634,7 +656,6 @@ export function AttendanceAdminClient() {
       setDevices(biometric.deviceData);
       setMappings(biometric.mappingData);
       setBiometricUnavailable(biometric.unavailable);
-      setMobileDevices(mobileData);
       setStaffProfiles(profilesRes.data?.data || []);
       setStaffUsers(usersRes.data?.data || []);
     } catch (error) {
@@ -650,7 +671,6 @@ export function AttendanceAdminClient() {
     canViewAttendance,
     dateFrom,
     dateTo,
-    mobileAttendancePlan.allowed,
   ]);
 
   useEffect(() => {
@@ -1041,7 +1061,10 @@ export function AttendanceAdminClient() {
     }
     setBusy(true);
     try {
-      const result = await attendanceApi.finalizePayrollExport(dateFrom, dateTo);
+      const result = await attendanceApi.finalizePayrollExport(
+        dateFrom,
+        dateTo,
+      );
       await loadAll();
       toast.success(
         result.locked_entries
@@ -1049,7 +1072,9 @@ export function AttendanceAdminClient() {
           : "No approved attendance records to finalize",
       );
     } catch (error) {
-      toast.error(errorMessage(error, "Failed to finalize attendance for payroll"));
+      toast.error(
+        errorMessage(error, "Failed to finalize attendance for payroll"),
+      );
     } finally {
       setBusy(false);
     }
@@ -1099,7 +1124,9 @@ export function AttendanceAdminClient() {
       }
       resetTemplateForm();
       await loadAll();
-      toast.success(editingTemplateId ? "Shift template updated" : "Shift template created");
+      toast.success(
+        editingTemplateId ? "Shift template updated" : "Shift template created",
+      );
     } catch (error) {
       toast.error(errorMessage(error, "Failed to create shift"));
     } finally {
@@ -1263,14 +1290,24 @@ export function AttendanceAdminClient() {
         name: deviceForm.name.trim(),
         device_type: deviceForm.device_type,
         serial_number: deviceForm.serial_number.trim(),
-        ip_address: deviceForm.device_type === "zkteco_lan" ? deviceForm.ip_address.trim() || null : null,
-        port: deviceForm.device_type === "zkteco_lan" ? Number.parseInt(deviceForm.port, 10) || 4370 : null,
+        ip_address:
+          deviceForm.device_type === "zkteco_lan"
+            ? deviceForm.ip_address.trim() || null
+            : null,
+        port:
+          deviceForm.device_type === "zkteco_lan"
+            ? Number.parseInt(deviceForm.port, 10) || 4370
+            : null,
         timezone: deviceForm.timezone.trim() || "UTC",
         is_active: true,
       });
       setDeviceForm((current) => ({ ...current, name: "", serial_number: "" }));
       await loadAll();
-      toast.success(deviceForm.device_type === "zkteco_cloud" ? "Cloud device registered. Map a staff code, then test a punch below." : "Device registered");
+      toast.success(
+        deviceForm.device_type === "zkteco_cloud"
+          ? "Cloud device registered. Map a staff code, then test a punch below."
+          : "Device registered",
+      );
     } catch (error) {
       toast.error(errorMessage(error, "Failed to register device"));
     } finally {
@@ -1279,15 +1316,29 @@ export function AttendanceAdminClient() {
   }
 
   async function sendAdmsTestPunch(clockIn: boolean) {
-    const device = devices.find((item) => item.id === Number(admsTestForm.device_id));
-    if (!device || !admsTestForm.device_user_id.trim()) return toast.error("Select a cloud device and enter a mapped device user code");
+    const device = devices.find(
+      (item) => item.id === Number(admsTestForm.device_id),
+    );
+    if (!device || !admsTestForm.device_user_id.trim())
+      return toast.error(
+        "Select a cloud device and enter a mapped device user code",
+      );
     setBusy(true);
     try {
-      await attendanceApi.sendAdmsTestPunch({ serial_number: device.serial_number, device_user_id: admsTestForm.device_user_id.trim(), clock_in: clockIn });
+      await attendanceApi.sendAdmsTestPunch({
+        serial_number: device.serial_number,
+        device_user_id: admsTestForm.device_user_id.trim(),
+        clock_in: clockIn,
+      });
       await loadAll();
       toast.success(clockIn ? "ADMS clock-in sent" : "ADMS clock-out sent");
     } catch (error) {
-      toast.error(errorMessage(error, "ADMS test punch failed. Check that ADMS is enabled on the test API."));
+      toast.error(
+        errorMessage(
+          error,
+          "ADMS test punch failed. Check that ADMS is enabled on the test API.",
+        ),
+      );
     } finally {
       setBusy(false);
     }
@@ -1311,11 +1362,13 @@ export function AttendanceAdminClient() {
       await attendanceApi.createWeeklySchedules({
         staff_ids: weeklyScheduleForm.staff_ids,
         effective_from: weeklyScheduleForm.effective_from,
-        assignments: weeklyScheduleForm.assignments.map((templateId, weekday) => ({
-          weekday,
-          shift_template_id: templateId ? Number(templateId) : null,
-          is_day_off: !templateId,
-        })),
+        assignments: weeklyScheduleForm.assignments.map(
+          (templateId, weekday) => ({
+            weekday,
+            shift_template_id: templateId ? Number(templateId) : null,
+            is_day_off: !templateId,
+          }),
+        ),
       });
       await loadAll();
       toast.success("Weekly schedules saved");
@@ -1406,26 +1459,6 @@ export function AttendanceAdminClient() {
     }
   }
 
-  async function decideMobile(
-    device: AttendanceMobileDevice,
-    action: "approve" | "reject" | "revoke",
-  ) {
-    if (!canManageAttendance) return;
-    const reason =
-      action === "approve" ? undefined : window.prompt("Reason") || undefined;
-    if (action !== "approve" && !reason) return;
-    setBusy(true);
-    try {
-      await attendanceApi.decideMobileDevice(device.id, action, reason);
-      await loadAll();
-      toast.success("Mobile device updated");
-    } catch (error) {
-      toast.error(errorMessage(error, "Failed to update mobile device"));
-    } finally {
-      setBusy(false);
-    }
-  }
-
   const metricCards = [
     ["Total entries", overview?.total_entries || 0],
     ["Active now", activeEntries.length],
@@ -1443,7 +1476,9 @@ export function AttendanceAdminClient() {
     ),
   );
   const showDateFilters =
-    activeTab === "overview" || activeTab === "timesheets" || activeTab === "payroll-export";
+    activeTab === "overview" ||
+    activeTab === "timesheets" ||
+    activeTab === "payroll-export";
 
   return (
     <AppPage width="wide" className="pb-24">
@@ -1489,161 +1524,219 @@ export function AttendanceAdminClient() {
         ) : null}
       </div>
 
-      <Tabs
-        value={activeTab}
-        onValueChange={changeTab}
-        className="space-y-5"
-      >
+      <Tabs value={activeTab} onValueChange={changeTab} className="space-y-5">
         <div className="2xl:hidden">
           <Select value={activeTab} onValueChange={changeTab}>
             <SelectTrigger className="h-11 w-full rounded-xl">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {canViewAttendance ? <SelectItem value="overview">Overview</SelectItem> : null}
-              {canViewAttendance ? <SelectItem value="timesheets">Timesheets</SelectItem> : null}
-              {canPayrollExport ? <SelectItem value="payroll-export">Payroll export</SelectItem> : null}
-              {canManageAttendance ? <SelectItem value="schedules">Schedule</SelectItem> : null}
-              {canManageAttendance && canViewAttendance ? <SelectItem value="leave">Leave & holidays</SelectItem> : null}
-              {canManageAttendance ? <SelectItem value="qr">QR kiosk</SelectItem> : null}
-              {canManageDevices ? <SelectItem value="devices">Devices</SelectItem> : null}
-              {canManageAttendance ? <SelectItem value="settings">Settings</SelectItem> : null}
+              {canViewAttendance ? (
+                <SelectItem value="overview">Overview</SelectItem>
+              ) : null}
+              {canViewAttendance ? (
+                <SelectItem value="timesheets">Timesheets</SelectItem>
+              ) : null}
+              {canPayrollExport ? (
+                <SelectItem value="payroll-export">Payroll export</SelectItem>
+              ) : null}
+              {canManageAttendance ? (
+                <SelectItem value="schedules">Schedule</SelectItem>
+              ) : null}
+              {canManageAttendance && canViewAttendance ? (
+                <SelectItem value="leave">Leave & holidays</SelectItem>
+              ) : null}
+              {canManageAttendance ? (
+                <SelectItem value="qr">QR kiosk</SelectItem>
+              ) : null}
+              {canManageDevices ? (
+                <SelectItem value="devices">Devices</SelectItem>
+              ) : null}
+              {canManageAttendance ? (
+                <SelectItem value="settings">Settings</SelectItem>
+              ) : null}
             </SelectContent>
           </Select>
         </div>
         <TabsList className="hidden h-auto w-full justify-start gap-1 overflow-x-auto rounded-none border-b bg-transparent p-0 2xl:flex">
-          {canViewAttendance ? <TabsTrigger value="overview" className="min-w-max gap-2">
-            <CalendarDays className="h-4 w-4" />
-            Overview
-          </TabsTrigger> : null}
-          {canViewAttendance ? <TabsTrigger value="timesheets" className="min-w-max gap-2">
-            <Check className="h-4 w-4" />
-            Timesheets
-          </TabsTrigger> : null}
-          {canPayrollExport ? <TabsTrigger value="payroll-export" className="min-w-max gap-2">
-            <Download className="h-4 w-4" />
-            Payroll export
-          </TabsTrigger> : null}
-          {canManageAttendance ? <TabsTrigger value="schedules" className="min-w-max gap-2">
-            <CalendarDays className="h-4 w-4" />
-            Schedule
-          </TabsTrigger> : null}
-          {canManageAttendance && canViewAttendance ? <TabsTrigger value="leave" className="min-w-max gap-2">
-            <CalendarDays className="h-4 w-4" />
-            Leave & holidays
-          </TabsTrigger> : null}
-          {canManageAttendance ? <TabsTrigger value="qr" className="min-w-max gap-2">
-            <QrCode className="h-4 w-4" />
-            QR Kiosk
-          </TabsTrigger> : null}
-          {canManageDevices ? <TabsTrigger value="devices" className="min-w-max gap-2">
-            <Fingerprint className="h-4 w-4" />
-            Devices
-          </TabsTrigger> : null}
-          {canManageAttendance ? <TabsTrigger value="settings" className="min-w-max gap-2">
-            <MapPin className="h-4 w-4" />
-            Settings
-          </TabsTrigger> : null}
+          {canViewAttendance ? (
+            <TabsTrigger value="overview" className="min-w-max gap-2">
+              <CalendarDays className="h-4 w-4" />
+              Overview
+            </TabsTrigger>
+          ) : null}
+          {canViewAttendance ? (
+            <TabsTrigger value="timesheets" className="min-w-max gap-2">
+              <Check className="h-4 w-4" />
+              Timesheets
+            </TabsTrigger>
+          ) : null}
+          {canPayrollExport ? (
+            <TabsTrigger value="payroll-export" className="min-w-max gap-2">
+              <Download className="h-4 w-4" />
+              Payroll export
+            </TabsTrigger>
+          ) : null}
+          {canManageAttendance ? (
+            <TabsTrigger value="schedules" className="min-w-max gap-2">
+              <CalendarDays className="h-4 w-4" />
+              Schedule
+            </TabsTrigger>
+          ) : null}
+          {canManageAttendance && canViewAttendance ? (
+            <TabsTrigger value="leave" className="min-w-max gap-2">
+              <CalendarDays className="h-4 w-4" />
+              Leave & holidays
+            </TabsTrigger>
+          ) : null}
+          {canManageAttendance ? (
+            <TabsTrigger value="qr" className="min-w-max gap-2">
+              <QrCode className="h-4 w-4" />
+              QR Kiosk
+            </TabsTrigger>
+          ) : null}
+          {canManageDevices ? (
+            <TabsTrigger value="devices" className="min-w-max gap-2">
+              <Fingerprint className="h-4 w-4" />
+              Devices
+            </TabsTrigger>
+          ) : null}
+          {canManageAttendance ? (
+            <TabsTrigger value="settings" className="min-w-max gap-2">
+              <MapPin className="h-4 w-4" />
+              Settings
+            </TabsTrigger>
+          ) : null}
         </TabsList>
 
-        {canViewAttendance ? <TabsContent value="overview" className="space-y-7">
-          <WorkforceSection
-            title="Attendance summary"
-            description="Payable time and review position for the selected period."
-          >
-            <WorkforceMetricStrip
-              items={metricCards.map(([label, value]) => ({
-                label: String(label),
-                value: String(value),
-              }))}
-            />
-          </WorkforceSection>
-          <WorkforceSection
-            title="Active now"
-            description="Staff currently clocked in, including entries that started before this date range."
-            contentClassName="overflow-hidden rounded-xl border"
-          >
-            <div className="p-0">
-              <TimesheetTable
-                entries={activeEntries}
-                staffProfiles={staffProfiles}
-                usersById={usersById}
-                onApprove={approveEntry}
-                onReject={rejectEntry}
-                onReopen={reopenEntry}
-                onCorrect={openCorrection}
-                canManage={canManageAttendance}
+        {canViewAttendance ? (
+          <TabsContent value="overview" className="space-y-7">
+            <WorkforceSection
+              title="Attendance summary"
+              description="Payable time and review position for the selected period."
+            >
+              <WorkforceMetricStrip
+                items={metricCards.map(([label, value]) => ({
+                  label: String(label),
+                  value: String(value),
+                }))}
               />
-            </div>
-          </WorkforceSection>
-          <WorkforceSection
-            title="Exceptions"
-            description="Entries that need manager attention before payroll."
-            contentClassName="overflow-hidden rounded-xl border"
-          >
-            <div className="p-0">
-              <TimesheetTable
-                entries={entries.filter(
-                  (entry) =>
-                    entry.exception_code ||
-                    entry.approval_status === "pending" ||
-                    entry.approval_status === "needs_correction",
-                )}
-                staffProfiles={staffProfiles}
-                usersById={usersById}
-                onApprove={approveEntry}
-                onReject={rejectEntry}
-                onReopen={reopenEntry}
-                onCorrect={openCorrection}
-                canManage={canManageAttendance}
-              />
-            </div>
-          </WorkforceSection>
-        </TabsContent> : null}
-
-        {canViewAttendance ? <TabsContent value="timesheets">
-          <WorkforceSection
-            title="Timesheets"
-            description="Review exceptions only. Finalize approved attendance when the payroll period is ready to lock."
-            actions={
-              <div className="flex flex-wrap gap-2">
-                {canExportAttendance ? <Button variant="outline" disabled={busy} onClick={() => void exportTimesheets()}>
-                  <Download className="mr-2 h-4 w-4" />Export CSV
-                </Button> : null}
-                {canFinalizePayroll ? <Button disabled={busy} onClick={() => void finalizePayrollPeriod()}>Finalize payroll period</Button> : null}
+            </WorkforceSection>
+            <WorkforceSection
+              title="Active now"
+              description="Staff currently clocked in, including entries that started before this date range."
+              contentClassName="overflow-hidden rounded-xl border"
+            >
+              <div className="p-0">
+                <TimesheetTable
+                  entries={activeEntries}
+                  staffProfiles={staffProfiles}
+                  usersById={usersById}
+                  onApprove={approveEntry}
+                  onReject={rejectEntry}
+                  onReopen={reopenEntry}
+                  onCorrect={openCorrection}
+                  canManage={canManageAttendance}
+                />
               </div>
-            }
-            contentClassName="overflow-hidden rounded-xl border"
-          >
-            <div className="p-0">
-              <TimesheetTable
-                entries={entries}
-                staffProfiles={staffProfiles}
-                usersById={usersById}
-                onApprove={approveEntry}
-                onReject={rejectEntry}
-                onReopen={reopenEntry}
-                onCorrect={openCorrection}
-                canManage={canManageAttendance}
-              />
-            </div>
-          </WorkforceSection>
-        </TabsContent> : null}
+            </WorkforceSection>
+            <WorkforceSection
+              title="Exceptions"
+              description="Entries that need manager attention before payroll."
+              contentClassName="overflow-hidden rounded-xl border"
+            >
+              <div className="p-0">
+                <TimesheetTable
+                  entries={entries.filter(
+                    (entry) =>
+                      entry.exception_code ||
+                      entry.approval_status === "pending" ||
+                      entry.approval_status === "needs_correction",
+                  )}
+                  staffProfiles={staffProfiles}
+                  usersById={usersById}
+                  onApprove={approveEntry}
+                  onReject={rejectEntry}
+                  onReopen={reopenEntry}
+                  onCorrect={openCorrection}
+                  canManage={canManageAttendance}
+                />
+              </div>
+            </WorkforceSection>
+          </TabsContent>
+        ) : null}
 
-        {canPayrollExport ? <TabsContent value="payroll-export">
-          <WorkforceSection
-            title="Approved payroll export"
-            description="Download approved attendance totals for the selected date range. This export does not expose attendance details or unapproved entries."
-            actions={<Button onClick={() => void exportApprovedPayroll()} disabled={payrollExporting}>
-              {payrollExporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
-              Export payroll CSV
-            </Button>}
-          >
-            <p className="rounded-xl border bg-muted/20 p-4 text-sm text-muted-foreground">
-              The export includes approved totals per staff member for {dateFrom} through {dateTo}.
-            </p>
-          </WorkforceSection>
-        </TabsContent> : null}
+        {canViewAttendance ? (
+          <TabsContent value="timesheets">
+            <WorkforceSection
+              title="Timesheets"
+              description="Review exceptions only. Finalize approved attendance when the payroll period is ready to lock."
+              actions={
+                <div className="flex flex-wrap gap-2">
+                  {canExportAttendance ? (
+                    <Button
+                      variant="outline"
+                      disabled={busy}
+                      onClick={() => void exportTimesheets()}
+                    >
+                      <Download className="mr-2 h-4 w-4" />
+                      Export CSV
+                    </Button>
+                  ) : null}
+                  {canFinalizePayroll ? (
+                    <Button
+                      disabled={busy}
+                      onClick={() => void finalizePayrollPeriod()}
+                    >
+                      Finalize payroll period
+                    </Button>
+                  ) : null}
+                </div>
+              }
+              contentClassName="overflow-hidden rounded-xl border"
+            >
+              <div className="p-0">
+                <TimesheetTable
+                  entries={entries}
+                  staffProfiles={staffProfiles}
+                  usersById={usersById}
+                  onApprove={approveEntry}
+                  onReject={rejectEntry}
+                  onReopen={reopenEntry}
+                  onCorrect={openCorrection}
+                  canManage={canManageAttendance}
+                />
+              </div>
+            </WorkforceSection>
+          </TabsContent>
+        ) : null}
+
+        {canPayrollExport ? (
+          <TabsContent value="payroll-export">
+            <WorkforceSection
+              title="Approved payroll export"
+              description="Download approved attendance totals for the selected date range. This export does not expose attendance details or unapproved entries."
+              actions={
+                <Button
+                  onClick={() => void exportApprovedPayroll()}
+                  disabled={payrollExporting}
+                >
+                  {payrollExporting ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Download className="mr-2 h-4 w-4" />
+                  )}
+                  Export payroll CSV
+                </Button>
+              }
+            >
+              <p className="rounded-xl border bg-muted/20 p-4 text-sm text-muted-foreground">
+                The export includes approved totals per staff member for{" "}
+                {dateFrom} through {dateTo}.
+              </p>
+            </WorkforceSection>
+          </TabsContent>
+        ) : null}
 
         <TabsContent
           value="settings"
@@ -2052,10 +2145,12 @@ export function AttendanceAdminClient() {
                           className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2"
                         >
                           <div className="min-w-0">
-                            <p className="truncate text-sm font-medium">{template.name}</p>
+                            <p className="truncate text-sm font-medium">
+                              {template.name}
+                            </p>
                             <p className="text-xs text-muted-foreground">
-                              {String(template.start_local_time).slice(0, 5)} to {" "}
-                              {String(template.end_local_time).slice(0, 5)} · {" "}
+                              {String(template.start_local_time).slice(0, 5)} to{" "}
+                              {String(template.end_local_time).slice(0, 5)} ·{" "}
                               {template.unpaid_break_minutes} min break
                             </p>
                           </div>
@@ -2089,16 +2184,22 @@ export function AttendanceAdminClient() {
               <CardHeader>
                 <CardTitle>Weekly schedule</CardTitle>
                 <CardDescription>
-                  Set one recurring Mondayâ€“Sunday roster for selected staff. A newer week automatically replaces the prior version.
+                  Set one recurring Mondayâ€“Sunday roster for selected staff. A
+                  newer week automatically replaces the prior version.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <Field label="Staff">
                   <div className="max-h-48 space-y-2 overflow-y-auto rounded-md border p-3">
                     {staffProfiles.map((profile) => (
-                      <label key={profile.id} className="flex cursor-pointer items-center gap-2 text-sm">
+                      <label
+                        key={profile.id}
+                        className="flex cursor-pointer items-center gap-2 text-sm"
+                      >
                         <Checkbox
-                          checked={weeklyScheduleForm.staff_ids.includes(profile.id)}
+                          checked={weeklyScheduleForm.staff_ids.includes(
+                            profile.id,
+                          )}
                           onCheckedChange={(checked) =>
                             toggleWeeklyStaff(profile.id, checked === true)
                           }
@@ -2107,7 +2208,9 @@ export function AttendanceAdminClient() {
                       </label>
                     ))}
                     {staffProfiles.length === 0 ? (
-                      <p className="text-sm text-muted-foreground">No staff profiles available.</p>
+                      <p className="text-sm text-muted-foreground">
+                        No staff profiles available.
+                      </p>
                     ) : null}
                   </div>
                 </Field>
@@ -2125,18 +2228,28 @@ export function AttendanceAdminClient() {
                 </Field>
                 <div className="space-y-3">
                   {WEEKDAY_NAMES.map((day, weekday) => (
-                    <div key={day} className="grid grid-cols-[110px_minmax(0,1fr)] items-center gap-3">
+                    <div
+                      key={day}
+                      className="grid grid-cols-[110px_minmax(0,1fr)] items-center gap-3"
+                    >
                       <div>
                         <Label>{day}</Label>
-                        <p className="text-xs text-muted-foreground">{weeklyScheduleDates[weekday]}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {weeklyScheduleDates[weekday]}
+                        </p>
                       </div>
                       <Select
                         value={weeklyScheduleForm.assignments[weekday] || "off"}
                         onValueChange={(value) =>
                           setWeeklyScheduleForm((current) => ({
                             ...current,
-                            assignments: current.assignments.map((item, index) =>
-                              index === weekday ? (value === "off" ? "" : value) : item,
+                            assignments: current.assignments.map(
+                              (item, index) =>
+                                index === weekday
+                                  ? value === "off"
+                                    ? ""
+                                    : value
+                                  : item,
                             ),
                           }))
                         }
@@ -2147,7 +2260,10 @@ export function AttendanceAdminClient() {
                         <SelectContent>
                           <SelectItem value="off">Day off</SelectItem>
                           {templates.map((template) => (
-                            <SelectItem key={template.id} value={String(template.id)}>
+                            <SelectItem
+                              key={template.id}
+                              value={String(template.id)}
+                            >
                               {template.name}
                             </SelectItem>
                           ))}
@@ -2158,7 +2274,9 @@ export function AttendanceAdminClient() {
                 </div>
                 <Button
                   onClick={saveWeeklySchedule}
-                  disabled={busy || templates.length === 0 || staffProfiles.length === 0}
+                  disabled={
+                    busy || templates.length === 0 || staffProfiles.length === 0
+                  }
                   className="w-full"
                 >
                   <Check className="mr-2 h-4 w-4" />
@@ -2170,7 +2288,8 @@ export function AttendanceAdminClient() {
               <CardHeader>
                 <CardTitle>Weekly exception</CardTitle>
                 <CardDescription>
-                  Override one recurring weekday. Use the weekly roster above for normal staff schedules.
+                  Override one recurring weekday. Use the weekly roster above
+                  for normal staff schedules.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -2202,12 +2321,17 @@ export function AttendanceAdminClient() {
                 <div className="flex items-center justify-between rounded-lg border p-3">
                   <div>
                     <Label>Day off</Label>
-                    <p className="text-xs text-muted-foreground">No shift is expected on this weekday.</p>
+                    <p className="text-xs text-muted-foreground">
+                      No shift is expected on this weekday.
+                    </p>
                   </div>
                   <Switch
                     checked={scheduleForm.is_day_off}
                     onCheckedChange={(checked) =>
-                      setScheduleForm((current) => ({ ...current, is_day_off: checked }))
+                      setScheduleForm((current) => ({
+                        ...current,
+                        is_day_off: checked,
+                      }))
                     }
                   />
                 </div>
@@ -2221,7 +2345,7 @@ export function AttendanceAdminClient() {
                       }))
                     }
                   >
-                  <SelectTrigger disabled={scheduleForm.is_day_off}>
+                    <SelectTrigger disabled={scheduleForm.is_day_off}>
                       <SelectValue placeholder="Select shift" />
                     </SelectTrigger>
                     <SelectContent>
@@ -2270,7 +2394,8 @@ export function AttendanceAdminClient() {
                       }
                     />
                     <p className="text-xs text-muted-foreground">
-                      Applies every selected weekday from the first matching date on or after this date.
+                      Applies every selected weekday from the first matching
+                      date on or after this date.
                     </p>
                   </Field>
                 </div>
@@ -2309,252 +2434,257 @@ export function AttendanceAdminClient() {
           />
         </TabsContent>
 
-        {canManageAttendance && canViewAttendance ? <TabsContent value="leave" className="space-y-5">
-          <div>
-            <h2 className="text-xl font-semibold tracking-tight">
-              Leave and holiday policy
-            </h2>
-            <p className="text-sm text-muted-foreground">
-              Approved paid time contributes to payroll. Pending or conflicting
-              records block payroll readiness.
-            </p>
-          </div>
-          <div className="grid gap-5 xl:grid-cols-2">
-            <Card>
-              <CardHeader>
-                <CardTitle>New Leave Request</CardTitle>
-                <CardDescription>
-                  Record full-day or half-day paid or unpaid leave.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <Field label="Staff">
-                  <Select
-                    value={leaveForm.staff_id}
-                    onValueChange={(value) =>
-                      setLeaveForm((current) => ({
-                        ...current,
-                        staff_id: value,
-                      }))
-                    }
-                    disabled={!staffProfiles.length}
-                  >
-                    <SelectTrigger>
-                      <SelectValue
-                        placeholder={
-                          staffProfiles.length
-                            ? "Select staff"
-                            : "No staff profiles yet"
-                        }
-                      />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {staffProfiles.map((profile) => (
-                        <SelectItem key={profile.id} value={String(profile.id)}>
-                          {staffLabel(profile, usersById)}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </Field>
-                {!staffProfiles.length ? (
-                  <p className="rounded-lg border border-dashed border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-                    Leave needs an employment profile. Open{" "}
-                    <Link
-                      href="/staff"
-                      className="font-semibold text-primary underline-offset-2 hover:underline"
-                    >
-                      Workforce → Staff
-                    </Link>
-                    , open a user, then create their{" "}
-                    <span className="font-medium text-foreground">
-                      Employment and pay profile
-                    </span>
-                    .
-                  </p>
-                ) : null}
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <Field label="From">
-                    <Input
-                      type="date"
-                      value={leaveForm.date_from}
-                      onChange={(event) =>
-                        setLeaveForm((current) => ({
-                          ...current,
-                          date_from: event.target.value,
-                        }))
-                      }
-                    />
-                  </Field>
-                  <Field label="To">
-                    <Input
-                      type="date"
-                      value={leaveForm.date_to}
-                      onChange={(event) =>
-                        setLeaveForm((current) => ({
-                          ...current,
-                          date_to: event.target.value,
-                        }))
-                      }
-                    />
-                  </Field>
-                </div>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <Field label="Leave type">
+        {canManageAttendance && canViewAttendance ? (
+          <TabsContent value="leave" className="space-y-5">
+            <div>
+              <h2 className="text-xl font-semibold tracking-tight">
+                Leave and holiday policy
+              </h2>
+              <p className="text-sm text-muted-foreground">
+                Approved paid time contributes to payroll. Pending or
+                conflicting records block payroll readiness.
+              </p>
+            </div>
+            <div className="grid gap-5 xl:grid-cols-2">
+              <Card>
+                <CardHeader>
+                  <CardTitle>New Leave Request</CardTitle>
+                  <CardDescription>
+                    Record full-day or half-day paid or unpaid leave.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <Field label="Staff">
                     <Select
-                      value={leaveForm.leave_type}
-                      onValueChange={(value: "paid" | "unpaid") =>
-                        setLeaveForm((current) => ({
-                          ...current,
-                          leave_type: value,
-                        }))
-                      }
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="paid">Paid</SelectItem>
-                        <SelectItem value="unpaid">Unpaid</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </Field>
-                  <Field label="Day value">
-                    <Select
-                      value={leaveForm.day_fraction}
+                      value={leaveForm.staff_id}
                       onValueChange={(value) =>
                         setLeaveForm((current) => ({
                           ...current,
-                          day_fraction: value,
+                          staff_id: value,
                         }))
                       }
+                      disabled={!staffProfiles.length}
                     >
                       <SelectTrigger>
-                        <SelectValue />
+                        <SelectValue
+                          placeholder={
+                            staffProfiles.length
+                              ? "Select staff"
+                              : "No staff profiles yet"
+                          }
+                        />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="1">Full day</SelectItem>
-                        <SelectItem value="0.5">Half day</SelectItem>
+                        {staffProfiles.map((profile) => (
+                          <SelectItem
+                            key={profile.id}
+                            value={String(profile.id)}
+                          >
+                            {staffLabel(profile, usersById)}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </Field>
-                </div>
-                <Field label="Reason">
-                  <Input
-                    value={leaveForm.reason}
-                    onChange={(event) =>
-                      setLeaveForm((current) => ({
-                        ...current,
-                        reason: event.target.value,
-                      }))
-                    }
-                  />
-                </Field>
-                <Button
-                  onClick={createLeave}
-                  disabled={busy || !staffProfiles.length}
-                  className="w-full"
-                >
-                  <Plus className="mr-2 h-4 w-4" />
-                  Create leave request
-                </Button>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader>
-                <CardTitle>New Holiday</CardTitle>
-                <CardDescription>
-                  Configure paid status and premium rate when staff work.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <Field label="Holiday name">
-                  <Input
-                    value={holidayForm.name}
-                    onChange={(event) =>
-                      setHolidayForm((current) => ({
-                        ...current,
-                        name: event.target.value,
-                      }))
-                    }
-                  />
-                </Field>
-                <Field label="Date">
-                  <Input
-                    type="date"
-                    value={holidayForm.holiday_date}
-                    onChange={(event) =>
-                      setHolidayForm((current) => ({
-                        ...current,
-                        holiday_date: event.target.value,
-                      }))
-                    }
-                  />
-                </Field>
-                <div className="flex items-center justify-between rounded-lg border p-3">
-                  <div>
-                    <p className="text-sm font-medium">Paid holiday</p>
-                    <p className="text-xs text-muted-foreground">
-                      Scheduled time is payable when attendance is absent.
+                  {!staffProfiles.length ? (
+                    <p className="rounded-lg border border-dashed border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+                      Leave needs an employment profile. Open{" "}
+                      <Link
+                        href="/staff"
+                        className="font-semibold text-primary underline-offset-2 hover:underline"
+                      >
+                        Workforce → Staff
+                      </Link>
+                      , open a user, then create their{" "}
+                      <span className="font-medium text-foreground">
+                        Employment and pay profile
+                      </span>
+                      .
                     </p>
+                  ) : null}
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <Field label="From">
+                      <Input
+                        type="date"
+                        value={leaveForm.date_from}
+                        onChange={(event) =>
+                          setLeaveForm((current) => ({
+                            ...current,
+                            date_from: event.target.value,
+                          }))
+                        }
+                      />
+                    </Field>
+                    <Field label="To">
+                      <Input
+                        type="date"
+                        value={leaveForm.date_to}
+                        onChange={(event) =>
+                          setLeaveForm((current) => ({
+                            ...current,
+                            date_to: event.target.value,
+                          }))
+                        }
+                      />
+                    </Field>
                   </div>
-                  <Switch
-                    checked={holidayForm.is_paid}
-                    onCheckedChange={(checked) =>
-                      setHolidayForm((current) => ({
-                        ...current,
-                        is_paid: checked,
-                      }))
-                    }
-                  />
-                </div>
-                <Field label="Worked holiday rate">
-                  <Input
-                    type="number"
-                    min={1}
-                    max={10}
-                    step={0.01}
-                    value={holidayForm.worked_rate_multiplier}
-                    onChange={(event) =>
-                      setHolidayForm((current) => ({
-                        ...current,
-                        worked_rate_multiplier: event.target.value,
-                      }))
-                    }
-                  />
-                </Field>
-                <Field label="Notes">
-                  <Input
-                    value={holidayForm.notes}
-                    onChange={(event) =>
-                      setHolidayForm((current) => ({
-                        ...current,
-                        notes: event.target.value,
-                      }))
-                    }
-                  />
-                </Field>
-                <Button
-                  onClick={createHoliday}
-                  disabled={busy}
-                  className="w-full"
-                >
-                  <Plus className="mr-2 h-4 w-4" />
-                  Create holiday
-                </Button>
-              </CardContent>
-            </Card>
-          </div>
-          <LeaveHolidayTables
-            leaves={leaves}
-            holidays={holidays}
-            staffProfiles={staffProfiles}
-            usersById={usersById}
-            busy={busy}
-            onDecideLeave={decideLeave}
-            onDeleteHoliday={deleteHoliday}
-          />
-        </TabsContent> : null}
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <Field label="Leave type">
+                      <Select
+                        value={leaveForm.leave_type}
+                        onValueChange={(value: "paid" | "unpaid") =>
+                          setLeaveForm((current) => ({
+                            ...current,
+                            leave_type: value,
+                          }))
+                        }
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="paid">Paid</SelectItem>
+                          <SelectItem value="unpaid">Unpaid</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </Field>
+                    <Field label="Day value">
+                      <Select
+                        value={leaveForm.day_fraction}
+                        onValueChange={(value) =>
+                          setLeaveForm((current) => ({
+                            ...current,
+                            day_fraction: value,
+                          }))
+                        }
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="1">Full day</SelectItem>
+                          <SelectItem value="0.5">Half day</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </Field>
+                  </div>
+                  <Field label="Reason">
+                    <Input
+                      value={leaveForm.reason}
+                      onChange={(event) =>
+                        setLeaveForm((current) => ({
+                          ...current,
+                          reason: event.target.value,
+                        }))
+                      }
+                    />
+                  </Field>
+                  <Button
+                    onClick={createLeave}
+                    disabled={busy || !staffProfiles.length}
+                    className="w-full"
+                  >
+                    <Plus className="mr-2 h-4 w-4" />
+                    Create leave request
+                  </Button>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader>
+                  <CardTitle>New Holiday</CardTitle>
+                  <CardDescription>
+                    Configure paid status and premium rate when staff work.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <Field label="Holiday name">
+                    <Input
+                      value={holidayForm.name}
+                      onChange={(event) =>
+                        setHolidayForm((current) => ({
+                          ...current,
+                          name: event.target.value,
+                        }))
+                      }
+                    />
+                  </Field>
+                  <Field label="Date">
+                    <Input
+                      type="date"
+                      value={holidayForm.holiday_date}
+                      onChange={(event) =>
+                        setHolidayForm((current) => ({
+                          ...current,
+                          holiday_date: event.target.value,
+                        }))
+                      }
+                    />
+                  </Field>
+                  <div className="flex items-center justify-between rounded-lg border p-3">
+                    <div>
+                      <p className="text-sm font-medium">Paid holiday</p>
+                      <p className="text-xs text-muted-foreground">
+                        Scheduled time is payable when attendance is absent.
+                      </p>
+                    </div>
+                    <Switch
+                      checked={holidayForm.is_paid}
+                      onCheckedChange={(checked) =>
+                        setHolidayForm((current) => ({
+                          ...current,
+                          is_paid: checked,
+                        }))
+                      }
+                    />
+                  </div>
+                  <Field label="Worked holiday rate">
+                    <Input
+                      type="number"
+                      min={1}
+                      max={10}
+                      step={0.01}
+                      value={holidayForm.worked_rate_multiplier}
+                      onChange={(event) =>
+                        setHolidayForm((current) => ({
+                          ...current,
+                          worked_rate_multiplier: event.target.value,
+                        }))
+                      }
+                    />
+                  </Field>
+                  <Field label="Notes">
+                    <Input
+                      value={holidayForm.notes}
+                      onChange={(event) =>
+                        setHolidayForm((current) => ({
+                          ...current,
+                          notes: event.target.value,
+                        }))
+                      }
+                    />
+                  </Field>
+                  <Button
+                    onClick={createHoliday}
+                    disabled={busy}
+                    className="w-full"
+                  >
+                    <Plus className="mr-2 h-4 w-4" />
+                    Create holiday
+                  </Button>
+                </CardContent>
+              </Card>
+            </div>
+            <LeaveHolidayTables
+              leaves={leaves}
+              holidays={holidays}
+              staffProfiles={staffProfiles}
+              usersById={usersById}
+              busy={busy}
+              onDecideLeave={decideLeave}
+              onDeleteHoliday={deleteHoliday}
+            />
+          </TabsContent>
+        ) : null}
 
         <TabsContent
           value="qr"
@@ -2665,198 +2795,252 @@ export function AttendanceAdminClient() {
         </TabsContent>
 
         <TabsContent value="devices" className="space-y-5">
-          {canManageAttendance ? (
-            <EntitlementGate
-              entitlement="attendance.mobile.enabled"
-              title="Unlock mobile attendance"
-              description="Let approved staff use their phone to clock in while keeping every attendance record verified."
-            >
-              <MobileDeviceTable
-                devices={mobileDevices}
-                staffProfiles={staffProfiles}
-                usersById={usersById}
-                onDecide={decideMobile}
-              />
-            </EntitlementGate>
-          ) : null}
           {canManageDevices ? (
             <EntitlementGate
               entitlement="attendance.biometric.enabled"
               title="Unlock biometric attendance"
               description="Connect biometric devices and keep staff-device mappings in the same attendance workspace."
             >
-          <div className="grid gap-5 xl:grid-cols-[420px_minmax(0,1fr)]">
-            <div className="space-y-5">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Register ZKTeco Device</CardTitle>
-                  <CardDescription>
-                    Add the physical device identity.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <Field label="Device name">
-                    <Input
-                      value={deviceForm.name}
-                      onChange={(event) =>
-                        setDeviceForm((current) => ({
-                          ...current,
-                          name: event.target.value,
-                        }))
-                      }
-                      placeholder="Main entrance scanner"
-                    />
-                  </Field>
-                  <Field label="Serial number">
-                    <Input
-                      value={deviceForm.serial_number}
-                      onChange={(event) =>
-                        setDeviceForm((current) => ({
-                          ...current,
-                          serial_number: event.target.value,
-                        }))
-                      }
-                    />
-                  </Field>
-                  <p className="text-xs text-muted-foreground">This device pushes attendance directly to Yummy through ADMS. No LAN IP or connector pairing is needed.</p>
-                  <Field label="Timezone">
-                    <TimezoneSelect
-                      value={deviceForm.timezone}
-                      onChange={(timezone) =>
-                        setDeviceForm((current) => ({ ...current, timezone }))
-                      }
-                    />
-                  </Field>
-                  <Button
-                    onClick={createDevice}
-                    disabled={busy}
-                    className="w-full"
-                  >
-                    <Plus className="mr-2 h-4 w-4" />
-                    Register device
-                  </Button>
-                </CardContent>
-              </Card>
-              {devices.some((device) => device.device_type === "zkteco_cloud") ? (
-                <Card>
-                  <CardHeader><CardTitle>Test ADMS Punch</CardTitle><CardDescription>Simulate the push sent after a fingerprint scan.</CardDescription></CardHeader>
-                  <CardContent className="space-y-4">
-                    <Field label="Cloud device">
-                      <Select value={admsTestForm.device_id} onValueChange={(device_id) => setAdmsTestForm((current) => ({ ...current, device_id }))}>
-                        <SelectTrigger><SelectValue placeholder="Select cloud device" /></SelectTrigger>
-                        <SelectContent>{devices.filter((device) => device.device_type === "zkteco_cloud").map((device) => <SelectItem key={device.id} value={String(device.id)}>{device.name} · {device.serial_number}</SelectItem>)}</SelectContent>
-                      </Select>
-                    </Field>
-                    <Field label="Mapped device user code"><Input value={admsTestForm.device_user_id} onChange={(event) => setAdmsTestForm((current) => ({ ...current, device_user_id: event.target.value }))} placeholder="1001" inputMode="numeric" /></Field>
-                    <div className="grid grid-cols-2 gap-3">
-                      <Button onClick={() => void sendAdmsTestPunch(true)} disabled={busy || !admsTestForm.device_id}><LogIn className="mr-2 h-4 w-4" />Clock in</Button>
-                      <Button variant="outline" onClick={() => void sendAdmsTestPunch(false)} disabled={busy || !admsTestForm.device_id}><LogOut className="mr-2 h-4 w-4" />Clock out</Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              ) : null}
-              {canManageStaff ? (
-                <Card>
-                <CardHeader>
-                  <CardTitle>Map Staff User</CardTitle>
-                  <CardDescription>
-                    Link biometric device users to staff profiles.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <Field label="Device">
-                    <Select
-                      value={mappingForm.device_id}
-                      onValueChange={(value) =>
-                        setMappingForm((current) => ({
-                          ...current,
-                          device_id: value,
-                        }))
-                      }
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select device" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {devices.map((device) => (
-                          <SelectItem key={device.id} value={String(device.id)}>
-                            {device.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </Field>
-                  <Field label="Staff">
-                    <Select
-                      value={mappingForm.staff_id}
-                      onValueChange={(value) =>
-                        setMappingForm((current) => ({
-                          ...current,
-                          staff_id: value,
-                        }))
-                      }
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select staff" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {staffProfiles.map((profile) => (
-                          <SelectItem
-                            key={profile.id}
-                            value={String(profile.id)}
+              <div className="grid gap-5 xl:grid-cols-[420px_minmax(0,1fr)]">
+                <div className="space-y-5">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Register ZKTeco Device</CardTitle>
+                      <CardDescription>
+                        Add the physical device identity.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <Field label="Device name">
+                        <Input
+                          value={deviceForm.name}
+                          onChange={(event) =>
+                            setDeviceForm((current) => ({
+                              ...current,
+                              name: event.target.value,
+                            }))
+                          }
+                          placeholder="Main entrance scanner"
+                        />
+                      </Field>
+                      <Field label="Serial number">
+                        <Input
+                          value={deviceForm.serial_number}
+                          onChange={(event) =>
+                            setDeviceForm((current) => ({
+                              ...current,
+                              serial_number: event.target.value,
+                            }))
+                          }
+                        />
+                      </Field>
+                      <p className="text-xs text-muted-foreground">
+                        This device pushes attendance directly to Yummy through
+                        ADMS. No LAN IP or connector pairing is needed.
+                      </p>
+                      <Field label="Timezone">
+                        <TimezoneSelect
+                          value={deviceForm.timezone}
+                          onChange={(timezone) =>
+                            setDeviceForm((current) => ({
+                              ...current,
+                              timezone,
+                            }))
+                          }
+                        />
+                      </Field>
+                      <Button
+                        onClick={createDevice}
+                        disabled={busy}
+                        className="w-full"
+                      >
+                        <Plus className="mr-2 h-4 w-4" />
+                        Register device
+                      </Button>
+                    </CardContent>
+                  </Card>
+                  {devices.some(
+                    (device) => device.device_type === "zkteco_cloud",
+                  ) ? (
+                    <Card>
+                      <CardHeader>
+                        <CardTitle>Test ADMS Punch</CardTitle>
+                        <CardDescription>
+                          Simulate the push sent after a fingerprint scan.
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        <Field label="Cloud device">
+                          <Select
+                            value={admsTestForm.device_id}
+                            onValueChange={(device_id) =>
+                              setAdmsTestForm((current) => ({
+                                ...current,
+                                device_id,
+                              }))
+                            }
                           >
-                            {staffLabel(profile, usersById)}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </Field>
-                  <Field label="Device user ID">
-                    <Input
-                      value={mappingForm.device_user_id}
-                      onChange={(event) =>
-                        setMappingForm((current) => ({
-                          ...current,
-                          device_user_id: event.target.value,
-                        }))
-                      }
-                    />
-                  </Field>
-                  <Button
-                    variant="outline"
-                    onClick={saveMapping}
-                    disabled={busy || !devices.length || !staffProfiles.length}
-                    className="w-full"
-                  >
-                    <Fingerprint className="mr-2 h-4 w-4" />
-                    Save mapping
-                  </Button>
-                </CardContent>
-                </Card>
-              ) : null}
-            </div>
-            <div className="space-y-5">
-              {biometricUnavailable ? (
-                <Card className="border-amber-500/30 bg-amber-500/10">
-                  <CardHeader>
-                    <CardTitle>Biometric Devices Not Enabled</CardTitle>
-                    <CardDescription>
-                      QR/mobile attendance is available. Enable the biometric
-                      attendance add-on before registering ZKTeco devices.
-                    </CardDescription>
-                  </CardHeader>
-                </Card>
-              ) : null}
-              <DeviceTable
-                devices={devices}
-                mappings={mappings}
-                devicesById={devicesById}
-                staffProfiles={staffProfiles}
-                usersById={usersById}
-                onToggle={toggleDevice}
-              />
-            </div>
-          </div>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select cloud device" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {devices
+                                .filter(
+                                  (device) =>
+                                    device.device_type === "zkteco_cloud",
+                                )
+                                .map((device) => (
+                                  <SelectItem
+                                    key={device.id}
+                                    value={String(device.id)}
+                                  >
+                                    {device.name} · {device.serial_number}
+                                  </SelectItem>
+                                ))}
+                            </SelectContent>
+                          </Select>
+                        </Field>
+                        <Field label="Mapped device user code">
+                          <Input
+                            value={admsTestForm.device_user_id}
+                            onChange={(event) =>
+                              setAdmsTestForm((current) => ({
+                                ...current,
+                                device_user_id: event.target.value,
+                              }))
+                            }
+                            placeholder="1001"
+                            inputMode="numeric"
+                          />
+                        </Field>
+                        <div className="grid grid-cols-2 gap-3">
+                          <Button
+                            onClick={() => void sendAdmsTestPunch(true)}
+                            disabled={busy || !admsTestForm.device_id}
+                          >
+                            <LogIn className="mr-2 h-4 w-4" />
+                            Clock in
+                          </Button>
+                          <Button
+                            variant="outline"
+                            onClick={() => void sendAdmsTestPunch(false)}
+                            disabled={busy || !admsTestForm.device_id}
+                          >
+                            <LogOut className="mr-2 h-4 w-4" />
+                            Clock out
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ) : null}
+                  {canManageStaff ? (
+                    <Card>
+                      <CardHeader>
+                        <CardTitle>Map Staff User</CardTitle>
+                        <CardDescription>
+                          Link biometric device users to staff profiles.
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        <Field label="Device">
+                          <Select
+                            value={mappingForm.device_id}
+                            onValueChange={(value) =>
+                              setMappingForm((current) => ({
+                                ...current,
+                                device_id: value,
+                              }))
+                            }
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select device" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {devices.map((device) => (
+                                <SelectItem
+                                  key={device.id}
+                                  value={String(device.id)}
+                                >
+                                  {device.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </Field>
+                        <Field label="Staff">
+                          <Select
+                            value={mappingForm.staff_id}
+                            onValueChange={(value) =>
+                              setMappingForm((current) => ({
+                                ...current,
+                                staff_id: value,
+                              }))
+                            }
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select staff" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {staffProfiles.map((profile) => (
+                                <SelectItem
+                                  key={profile.id}
+                                  value={String(profile.id)}
+                                >
+                                  {staffLabel(profile, usersById)}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </Field>
+                        <Field label="Device user ID">
+                          <Input
+                            value={mappingForm.device_user_id}
+                            onChange={(event) =>
+                              setMappingForm((current) => ({
+                                ...current,
+                                device_user_id: event.target.value,
+                              }))
+                            }
+                          />
+                        </Field>
+                        <Button
+                          variant="outline"
+                          onClick={saveMapping}
+                          disabled={
+                            busy || !devices.length || !staffProfiles.length
+                          }
+                          className="w-full"
+                        >
+                          <Fingerprint className="mr-2 h-4 w-4" />
+                          Save mapping
+                        </Button>
+                      </CardContent>
+                    </Card>
+                  ) : null}
+                </div>
+                <div className="space-y-5">
+                  {biometricUnavailable ? (
+                    <Card className="border-amber-500/30 bg-amber-500/10">
+                      <CardHeader>
+                        <CardTitle>Biometric Devices Not Enabled</CardTitle>
+                        <CardDescription>
+                          QR/mobile attendance is available. Enable the
+                          biometric attendance add-on before registering ZKTeco
+                          devices.
+                        </CardDescription>
+                      </CardHeader>
+                    </Card>
+                  ) : null}
+                  <DeviceTable
+                    devices={devices}
+                    mappings={mappings}
+                    devicesById={devicesById}
+                    staffProfiles={staffProfiles}
+                    usersById={usersById}
+                    onToggle={toggleDevice}
+                  />
+                </div>
+              </div>
             </EntitlementGate>
           ) : null}
         </TabsContent>
@@ -3231,41 +3415,48 @@ function TimesheetTable({
                     {attendanceExceptionLabel(entry.exception_code)}
                   </p>
                 ) : null}
-                {canManage ? <div className="mt-3 flex flex-wrap gap-2">
-                  {entry.approval_status === "approved" ? (
-                    <Button size="sm" variant="outline" onClick={() => onReopen(entry)}>
-                      <Pencil className="mr-1 h-3 w-3" />Review
-                    </Button>
-                  ) : null}
-                  {entry.approval_status !== "payroll_exported" ? (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => onCorrect(entry)}
-                    >
-                      <Pencil className="mr-1 h-3 w-3" />
-                      Correct
-                    </Button>
-                  ) : null}
-                  {entry.approval_status === "pending" ? (
-                    <Button size="sm" onClick={() => onApprove(entry)}>
-                      <Check className="mr-1 h-3 w-3" />
-                      Approve
-                    </Button>
-                  ) : null}
-                  {["pending", "needs_correction", "approved"].includes(
-                    entry.approval_status,
-                  ) ? (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => onReject(entry)}
-                    >
-                      <X className="mr-1 h-3 w-3" />
-                      Reject
-                    </Button>
-                  ) : null}
-                </div> : null}
+                {canManage ? (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {entry.approval_status === "approved" ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => onReopen(entry)}
+                      >
+                        <Pencil className="mr-1 h-3 w-3" />
+                        Review
+                      </Button>
+                    ) : null}
+                    {entry.approval_status !== "payroll_exported" ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => onCorrect(entry)}
+                      >
+                        <Pencil className="mr-1 h-3 w-3" />
+                        Correct
+                      </Button>
+                    ) : null}
+                    {entry.approval_status === "pending" ? (
+                      <Button size="sm" onClick={() => onApprove(entry)}>
+                        <Check className="mr-1 h-3 w-3" />
+                        Approve
+                      </Button>
+                    ) : null}
+                    {["pending", "needs_correction", "approved"].includes(
+                      entry.approval_status,
+                    ) ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => onReject(entry)}
+                      >
+                        <X className="mr-1 h-3 w-3" />
+                        Reject
+                      </Button>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
             );
           })
@@ -3338,41 +3529,48 @@ function TimesheetTable({
                       ) : null}
                     </TableCell>
                     <TableCell className="min-w-[260px] text-right">
-                      {canManage ? <div className="flex justify-end gap-2">
-                        {entry.approval_status === "approved" ? (
-                          <Button size="sm" variant="outline" onClick={() => onReopen(entry)}>
-                            <Pencil className="mr-1 h-3 w-3" />Review
-                          </Button>
-                        ) : null}
-                        {entry.approval_status !== "payroll_exported" ? (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => onCorrect(entry)}
-                          >
-                            <Pencil className="mr-1 h-3 w-3" />
-                            Correct
-                          </Button>
-                        ) : null}
-                        {entry.approval_status === "pending" ? (
-                          <Button size="sm" onClick={() => onApprove(entry)}>
-                            <Check className="mr-1 h-3 w-3" />
-                            Approve
-                          </Button>
-                        ) : null}
-                        {["pending", "needs_correction", "approved"].includes(
-                          entry.approval_status,
-                        ) ? (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => onReject(entry)}
-                          >
-                            <X className="mr-1 h-3 w-3" />
-                            Reject
-                          </Button>
-                        ) : null}
-                      </div> : null}
+                      {canManage ? (
+                        <div className="flex justify-end gap-2">
+                          {entry.approval_status === "approved" ? (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => onReopen(entry)}
+                            >
+                              <Pencil className="mr-1 h-3 w-3" />
+                              Review
+                            </Button>
+                          ) : null}
+                          {entry.approval_status !== "payroll_exported" ? (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => onCorrect(entry)}
+                            >
+                              <Pencil className="mr-1 h-3 w-3" />
+                              Correct
+                            </Button>
+                          ) : null}
+                          {entry.approval_status === "pending" ? (
+                            <Button size="sm" onClick={() => onApprove(entry)}>
+                              <Check className="mr-1 h-3 w-3" />
+                              Approve
+                            </Button>
+                          ) : null}
+                          {["pending", "needs_correction", "approved"].includes(
+                            entry.approval_status,
+                          ) ? (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => onReject(entry)}
+                            >
+                              <X className="mr-1 h-3 w-3" />
+                              Reject
+                            </Button>
+                          ) : null}
+                        </div>
+                      ) : null}
                     </TableCell>
                   </TableRow>
                 );
@@ -3405,11 +3603,20 @@ function ScheduleTable({
   const today = todayIso();
   const currentSchedules = Array.from(
     schedules
-      .filter((item) => item.effective_from <= today && (!item.effective_to || item.effective_to >= today))
+      .filter(
+        (item) =>
+          item.effective_from <= today &&
+          (!item.effective_to || item.effective_to >= today),
+      )
       .reduce((items, item) => {
         const key = `${item.staff_id ?? "default"}-${item.weekday}`;
         const existing = items.get(key);
-        if (!existing || `${item.effective_from}-${item.id}` > `${existing.effective_from}-${existing.id}`) items.set(key, item);
+        if (
+          !existing ||
+          `${item.effective_from}-${item.id}` >
+            `${existing.effective_from}-${existing.id}`
+        )
+          items.set(key, item);
         return items;
       }, new Map<string, AttendanceSchedule>())
       .values(),
@@ -3429,20 +3636,58 @@ function ScheduleTable({
       <CardHeader>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <CardTitle>{showHistory ? "Schedule history" : "Current recurring rules"}</CardTitle>
+            <CardTitle>
+              {showHistory ? "Schedule history" : "Current recurring rules"}
+            </CardTitle>
             <CardDescription>
               {showHistory
                 ? "Previous and future rule versions. Use this only when auditing or correcting a schedule."
                 : "Only rules active today. Use Team schedule to plan the operational week."}
             </CardDescription>
           </div>
-          <div className="flex gap-2"><Button size="sm" variant="outline" asChild><Link href="/attendance/schedule">Team schedule</Link></Button>{showRules ? <Button size="sm" variant="outline" onClick={() => setShowHistory((value) => !value)}>{showHistory ? "Hide history" : `History (${Math.max(0, schedules.length - currentSchedules.length)})`}</Button> : null}<Button size="sm" variant="outline" onClick={() => setShowRules((value) => !value)}>{showRules ? "Hide rules" : "View rules"}</Button></div>
+          <div className="flex gap-2">
+            <Button size="sm" variant="outline" asChild>
+              <Link href="/attendance/schedule">Team schedule</Link>
+            </Button>
+            {showRules ? (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setShowHistory((value) => !value)}
+              >
+                {showHistory
+                  ? "Hide history"
+                  : `History (${Math.max(0, schedules.length - currentSchedules.length)})`}
+              </Button>
+            ) : null}
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setShowRules((value) => !value)}
+            >
+              {showRules ? "Hide rules" : "View rules"}
+            </Button>
+          </div>
         </div>
       </CardHeader>
       <CardContent>
-        {!showRules ? <div className="rounded-xl border border-dashed p-5 text-sm text-muted-foreground">Use <Link className="font-medium text-primary underline" href="/attendance/schedule">Team schedule</Link> to plan the week. Rule details and historical versions stay hidden until you need to audit or edit them.</div> : displayedSchedules.length === 0 ? (
+        {!showRules ? (
+          <div className="rounded-xl border border-dashed p-5 text-sm text-muted-foreground">
+            Use{" "}
+            <Link
+              className="font-medium text-primary underline"
+              href="/attendance/schedule"
+            >
+              Team schedule
+            </Link>{" "}
+            to plan the week. Rule details and historical versions stay hidden
+            until you need to audit or edit them.
+          </div>
+        ) : displayedSchedules.length === 0 ? (
           <div className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">
-            {showHistory ? "No schedule history." : "No recurring rules are active today."}
+            {showHistory
+              ? "No schedule history."
+              : "No recurring rules are active today."}
           </div>
         ) : (
           <>
@@ -3473,7 +3718,8 @@ function ScheduleTable({
                         </p>
                       </div>
                       <Badge variant="outline" className="shrink-0">
-                        Starts {firstApplicableDate(item.effective_from, item.weekday)}
+                        Starts{" "}
+                        {firstApplicableDate(item.effective_from, item.weekday)}
                       </Badge>
                     </div>
                     {item.effective_to ? (
@@ -3482,11 +3728,19 @@ function ScheduleTable({
                       </p>
                     ) : null}
                     <div className="mt-3 flex gap-2">
-                      <Button size="sm" variant="outline" onClick={() => onEdit(item)}>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => onEdit(item)}
+                      >
                         <Pencil className="mr-1 h-3.5 w-3.5" />
                         Edit
                       </Button>
-                      <Button size="sm" variant="outline" onClick={() => onDelete(item)}>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => onDelete(item)}
+                      >
                         Delete
                       </Button>
                     </div>
@@ -3533,17 +3787,31 @@ function ScheduleTable({
                         <TableCell>
                           <p>Every {weekdayNames[item.weekday]}</p>
                           <p className="text-xs text-muted-foreground">
-                            First {firstApplicableDate(item.effective_from, item.weekday)}
-                            {item.effective_to ? ` â€¢ through ${item.effective_to}` : " â€¢ ongoing"}
+                            First{" "}
+                            {firstApplicableDate(
+                              item.effective_from,
+                              item.weekday,
+                            )}
+                            {item.effective_to
+                              ? ` â€¢ through ${item.effective_to}`
+                              : " â€¢ ongoing"}
                           </p>
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-2">
-                            <Button size="sm" variant="outline" onClick={() => onEdit(item)}>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => onEdit(item)}
+                            >
                               <Pencil className="mr-1 h-3.5 w-3.5" />
                               Edit
                             </Button>
-                            <Button size="sm" variant="outline" onClick={() => onDelete(item)}>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => onDelete(item)}
+                            >
                               Delete
                             </Button>
                           </div>
@@ -3560,7 +3828,6 @@ function ScheduleTable({
     </Card>
   );
 }
-
 function DeviceTable({
   devices,
   mappings,
@@ -3672,115 +3939,6 @@ function DeviceTable({
                         >
                           {mapping.is_active ? "Active" : "Inactive"}
                         </Badge>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })
-              )}
-            </TableBody>
-          </Table>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-function MobileDeviceTable({
-  devices,
-  staffProfiles,
-  usersById,
-  onDecide,
-}: {
-  devices: AttendanceMobileDevice[];
-  staffProfiles: StaffProfile[];
-  usersById: Map<number, StaffUser>;
-  onDecide: (
-    device: AttendanceMobileDevice,
-    action: "approve" | "reject" | "revoke",
-  ) => void;
-}) {
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Mobile Approvals</CardTitle>
-        <CardDescription>
-          Approve staff phones for QR attendance scanning.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className="overflow-x-auto rounded-md border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Staff</TableHead>
-                <TableHead>Device</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {devices.length === 0 ? (
-                <TableRow>
-                  <TableCell
-                    colSpan={4}
-                    className="h-20 text-center text-muted-foreground"
-                  >
-                    No mobile attendance devices.
-                  </TableCell>
-                </TableRow>
-              ) : (
-                devices.map((device) => {
-                  const profile = staffProfiles.find(
-                    (item) => item.id === device.staff_id,
-                  );
-                  return (
-                    <TableRow key={device.id}>
-                      <TableCell>{staffLabel(profile, usersById)}</TableCell>
-                      <TableCell>
-                        {device.device_label ||
-                          device.platform ||
-                          "Mobile device"}
-                        <div className="text-xs text-muted-foreground">
-                          Last seen {formatDateTime(device.last_seen_at)}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge
-                          variant={
-                            device.status === "approved"
-                              ? "default"
-                              : "secondary"
-                          }
-                        >
-                          {device.status}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex justify-end gap-2">
-                          {device.status !== "approved" ? (
-                            <Button
-                              size="sm"
-                              onClick={() => onDecide(device, "approve")}
-                            >
-                              <Check className="mr-1 h-3 w-3" />
-                              Approve
-                            </Button>
-                          ) : null}
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() =>
-                              onDecide(
-                                device,
-                                device.status === "approved"
-                                  ? "revoke"
-                                  : "reject",
-                              )
-                            }
-                          >
-                            {device.status === "approved" ? "Revoke" : "Reject"}
-                          </Button>
-                        </div>
                       </TableCell>
                     </TableRow>
                   );
