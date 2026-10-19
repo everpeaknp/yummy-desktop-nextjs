@@ -23,6 +23,18 @@ beforeEach(() => {
 });
 
 describe("attendanceApi", () => {
+  it("scopes earnings detail to self or an explicit staff profile", async () => {
+    await attendanceApi.payrollPeriod("2026-10-01", "2026-10-20", { own: true, staffId: 99 });
+    expect(mocked.get).toHaveBeenLastCalledWith("/attendance/me/payroll-period?date_from=2026-10-01&date_to=2026-10-20");
+    await attendanceApi.payrollPeriod("2026-10-01", "2026-10-20", { staffId: 3 });
+    expect(mocked.get).toHaveBeenLastCalledWith("/staff/3/salary/period?date_from=2026-10-01&date_to=2026-10-20");
+  });
+  it("scopes the self register without accepting another staff id", async () => {
+    await attendanceApi.register({ dateFrom: "2026-10-01", dateTo: "2026-10-20", own: true, staffId: 99 });
+    expect(mocked.get).toHaveBeenCalledWith("/attendance/me/register?date_from=2026-10-01&date_to=2026-10-20");
+    await attendanceApi.register({ dateFrom: "2026-10-01", dateTo: "2026-10-20", staffId: 12 });
+    expect(mocked.get).toHaveBeenCalledWith("/attendance/register?date_from=2026-10-01&date_to=2026-10-20&staff_id=12");
+  });
   it("uses self-only attendance endpoints for a staff member's workspace", async () => {
     await attendanceApi.myStatus();
     await attendanceApi.myEntries({ dateFrom: "2026-10-01", dateTo: "2026-10-07", limit: 6 });

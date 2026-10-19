@@ -139,7 +139,7 @@ export function StaffIdentityHeader({
           </div>
         </div>
         {canEdit ? (
-          <Button className="mt-3 h-11 w-full" onClick={onEdit}>
+          <Button variant="outline" className="mt-2 h-11" onClick={onEdit}>
             Edit staff
           </Button>
         ) : null}

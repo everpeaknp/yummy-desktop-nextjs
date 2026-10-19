@@ -1,5 +1,5 @@
 import apiClient from "@/lib/api-client";
-import { AttendanceApis } from "@/lib/api/endpoints";
+import { AttendanceApis, StaffSalaryApis } from "@/lib/api/endpoints";
 import type {
   AttendanceAudit,
   AttendanceDevice,
@@ -35,6 +35,13 @@ function query(params: Record<string, string | number | undefined | null>) {
 }
 
 export const attendanceApi = {
+  async register(params: { dateFrom: string; dateTo: string; staffId?: number; own?: boolean }) {
+    return unwrap<import("./register").AttendanceRegister>(await apiClient.get(
+      (params.own ? AttendanceApis.myRegister : AttendanceApis.register) + query({
+        date_from: params.dateFrom, date_to: params.dateTo, staff_id: params.own ? undefined : params.staffId,
+      }),
+    ));
+  },
   async myStatus() {
     return unwrap<MyAttendanceStatus>(await apiClient.get(AttendanceApis.myStatus));
   },
@@ -75,6 +82,11 @@ export const attendanceApi = {
   },
   async myPayroll() {
     return unwrap<Record<string, unknown>>(await apiClient.get(AttendanceApis.myPayroll));
+  },
+  async payrollPeriod(dateFrom: string, dateTo: string, options: { own?: boolean; staffId?: number } = {}) {
+    const path = options.own ? AttendanceApis.myPayrollPeriod : options.staffId ? StaffSalaryApis.period(options.staffId) : null;
+    if (!path) return this.payrollPreview(dateFrom, dateTo);
+    return [unwrap<import("./types").AttendancePayrollPreview>(await apiClient.get(path + query({ date_from: dateFrom, date_to: dateTo })))];
   },
   async mySchedule(weekStart: string) {
     return unwrap<import("./types").AttendanceScheduleWeek[]>(await apiClient.get(AttendanceApis.mySchedule(weekStart)));
@@ -209,6 +221,11 @@ export const attendanceApi = {
       await apiClient.get(
         AttendanceApis.payrollExport + query({ date_from: dateFrom, date_to: dateTo }),
       ),
+    );
+  },
+  async payrollPreview(dateFrom: string, dateTo: string) {
+    return unwrap<import("./types").AttendancePayrollPreview[]>(
+      await apiClient.get(AttendanceApis.payrollPreview(dateFrom, dateTo)),
     );
   },
   async finalizePayrollExport(dateFrom: string, dateTo: string) {

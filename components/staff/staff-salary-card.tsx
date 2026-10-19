@@ -1,6 +1,7 @@
 "use client";
+import { mobileDetailClass } from "@/components/attendance/mobile-report-controls";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ArrowDownRight,
   ArrowUpRight,
@@ -55,49 +56,10 @@ function money(value: number | string | null | undefined) {
   return formatCurrency(value);
 }
 
-function salaryTypeLabel(salaryType?: string | null) {
-  switch (salaryType) {
-    case "monthly":
-      return "month";
-    case "weekly":
-      return "week";
-    case "daily":
-      return "day";
-    case "hourly":
-      return "hour";
-    default:
-      return "";
-  }
-}
-
 function breakdownText(balance: StaffSalaryBalance) {
-  const startDate = balance.accrual_start_date
-    ? new Date(balance.accrual_start_date).toLocaleDateString(undefined, {
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-      })
-    : "";
-
-  if (balance.salary_type === "hourly" && balance.mode !== "attendance") {
-    return "Hourly staff only accrue once attendance-based salary is turned on.";
-  }
-
-  if (balance.mode === "attendance") {
-    const b = balance.breakdown || {};
-    const parts = [
-      b.off_days ? `${b.off_days} day(s) off (paid in full)` : null,
-      b.worked_days ? `${b.worked_days} day(s) worked` : null,
-      b.absent_days
-        ? `${b.absent_days} day(s) absent (${formatCurrency(0)})`
-        : null,
-    ].filter(Boolean);
-    const hours =
-      b.worked_hours != null ? ` · ${b.worked_hours.toFixed(1)}h clocked` : "";
-    return `${parts.join(" · ")} since ${startDate}${hours}`;
-  }
-
-  return `${money(balance.daily_rate)}/day (${money(balance.salary_amount)}/${salaryTypeLabel(balance.salary_type)}) × ${balance.days_elapsed} day(s) since ${startDate}`;
+  const since = balance.accrual_start_date ? formatDate(`${balance.accrual_start_date}T12:00:00`) : "the accrual start date";
+  if (balance.salary_type === "hourly" && balance.mode !== "attendance") return "Hourly salary does not accrue while attendance-based salary is off.";
+  return `Cumulative estimate since ${since}. Uses the current pay agreement. The date range above affects period earnings only.`;
 }
 
 function minutes(value: number) {
@@ -135,7 +97,9 @@ export function StaffSalaryCard({
   const [overtime, setOvertime] = useState<StaffOvertimeSummary | null>(null);
   const [history, setHistory] = useState<StaffSalaryTransaction[]>([]);
   const [loading, setLoading] = useState(true);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const requestVersion = useRef(0);
 
   const [entryOpen, setEntryOpen] = useState<"pay" | "deduct" | null>(null);
   const [entryAmount, setEntryAmount] = useState("");
@@ -164,20 +128,23 @@ export function StaffSalaryCard({
   );
 
   const load = useCallback(async () => {
+    const version = ++requestVersion.current;
     setLoading(true);
     setError(null);
+    setBalance(null); setOvertime(null); setHistory([]);
     try {
       const [nextBalance, nextOvertime] = await Promise.all([
         staffSalaryApi.balance(staffId),
         staffSalaryApi.overtime(staffId),
       ]);
-      setBalance(nextBalance);
-      setOvertime(nextOvertime);
       // The salary ledger reuses the credit transaction endpoint, so filter
       // to this card's directions client-side.
       const transactions = (await staffCreditApi.transactions(
         staffId,
       )) as unknown as StaffSalaryTransaction[];
+      if (version !== requestVersion.current) return;
+      setBalance(nextBalance);
+      setOvertime(nextOvertime);
       setHistory(
         transactions.filter((t) =>
           ["salary_paid", "salary_deducted", "overtime_paid"].includes(
@@ -186,16 +153,18 @@ export function StaffSalaryCard({
         ),
       );
     } catch (error) {
+      if (version !== requestVersion.current) return;
       const detail = message(error);
       setError(detail);
       toast.error(detail);
     } finally {
-      setLoading(false);
+      if (version === requestVersion.current) setLoading(false);
     }
   }, [staffId]);
 
   useEffect(() => {
     void load();
+    return () => { requestVersion.current += 1; };
   }, [load]);
 
   const openEntry = (kind: "pay" | "deduct") => {
@@ -334,11 +303,11 @@ export function StaffSalaryCard({
       <section className="space-y-4">
         <div className="flex items-start justify-between gap-3 border-b pb-3">
           <div>
-            <h3 className="text-base font-semibold">Current salary</h3>
+            <h3 className="text-base font-semibold">Salary account · all dates</h3>
             <p className="mt-1 text-sm text-muted-foreground">
               {attendanceBasedSalary
                 ? "Accrues daily, adjusted for attendance"
-                : "Accrues daily from the effective salary"}
+                : "Accrues daily from the current pay agreement"}
             </p>
           </div>
           {canManage && overtime && overtime.outstanding_minutes > 0 ? (
@@ -387,7 +356,7 @@ export function StaffSalaryCard({
               <DataList className="rounded-none border-x-0 bg-transparent">
                 <ListRow
                   leading={<Wallet className="h-4 w-4" />}
-                  title="Pending"
+                  title={balance.balance < 0 ? "Overpaid / adjusted credit" : "Outstanding salary"}
                   trailing={
                     <span className="font-semibold tabular-nums">
                       {money(balance.balance)}
@@ -396,7 +365,7 @@ export function StaffSalaryCard({
                 />
                 <ListRow
                   leading={<TrendingUp className="h-4 w-4" />}
-                  title="Accrued"
+                  title="Total earnings estimate"
                   trailing={
                     <span className="font-semibold tabular-nums">
                       {money(balance.accrued)}
@@ -405,7 +374,7 @@ export function StaffSalaryCard({
                 />
                 <ListRow
                   leading={<CheckCircle2 className="h-4 w-4" />}
-                  title="Paid"
+                  title="Salary paid"
                   trailing={
                     <span className="font-semibold tabular-nums">
                       {money(balance.paid)}
@@ -414,7 +383,7 @@ export function StaffSalaryCard({
                 />
                 <ListRow
                   leading={<Clock className="h-4 w-4" />}
-                  title="Overtime"
+                  title="Overtime awaiting separate resolution"
                   trailing={
                     <span className="font-semibold tabular-nums">
                       {overtime ? minutes(overtime.outstanding_minutes) : "—"}
@@ -422,9 +391,13 @@ export function StaffSalaryCard({
                   }
                 />
               </DataList>
+              <details className="text-sm">
+                <summary className="min-h-11 cursor-pointer py-3 font-medium focus-visible:outline focus-visible:outline-2">How the account balance is calculated</summary>
+              <p className="text-sm tabular-nums">{money(balance.accrued)} earnings − {money(balance.paid)} salary paid − {money(balance.deducted)} deductions = {money(balance.balance)} balance</p>
               <p className="text-xs text-muted-foreground">
                 {breakdownText(balance)}
               </p>
+              </details>
 
               {canManage ? (
                 <div className="grid grid-cols-2 gap-2 sm:flex">
@@ -434,22 +407,22 @@ export function StaffSalaryCard({
                     onClick={() => openEntry("pay")}
                     disabled={balance.balance <= 0}
                   >
-                    Pay salary
+                    Pay outstanding salary
                   </Button>
                   <Button
                     variant="outline"
                     size="sm"
                     onClick={() => openEntry("deduct")}
                   >
-                    Deduct
+                    Record deduction
                   </Button>
                 </div>
               ) : null}
             </>
           ) : null}
 
-          <section className="border-t pt-4">
-            <h3 className="mb-2 text-base font-semibold">Financial history</h3>
+          <Button variant="outline" className="min-h-11 w-full justify-start" onClick={() => setHistoryOpen(true)}>View payments & account history</Button>
+          <Dialog open={historyOpen} onOpenChange={setHistoryOpen}><DialogContent aria-labelledby={undefined} aria-label="Payments & account history" className={`max-h-[85dvh] overflow-y-auto overscroll-contain sm:max-w-2xl ${mobileDetailClass}`}><DialogHeader><DialogTitle>Payments & account history</DialogTitle><DialogDescription>All-date salary transactions and compensation changes. These are not limited to the earnings report dates.</DialogDescription></DialogHeader>
             <div className="divide-y border-y">
               <HistoryDisclosure
                 label="Salary history"
@@ -468,7 +441,7 @@ export function StaffSalaryCard({
               />
               <CompensationHistoryDisclosure records={compensationHistory} />
             </div>
-          </section>
+          </DialogContent></Dialog>
 
           <details className="group border-t pt-1">
             <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between py-2 text-sm font-semibold">
@@ -486,6 +459,7 @@ export function StaffSalaryCard({
                 </p>
               </div>
               <Switch
+                aria-label="Attendance-based salary"
                 checked={attendanceBasedSalary}
                 disabled={!canManage}
                 onCheckedChange={toggleAttendanceBasedSalary}
@@ -524,21 +498,22 @@ export function StaffSalaryCard({
         open={Boolean(entryOpen)}
         onOpenChange={(open) => !open && setEntryOpen(null)}
       >
-        <DialogContent>
+        <DialogContent className={`max-h-[85dvh] overflow-y-auto overscroll-contain [&_button]:min-h-11 ${mobileDetailClass}`}>
           <DialogHeader>
             <DialogTitle>
               {entryOpen === "pay" ? "Pay salary" : "Deduct from salary"}
             </DialogTitle>
             <DialogDescription>
               {entryOpen === "pay"
-                ? "Pays this employee against their accrued salary balance."
-                : "Reduces this employee's salary balance, for example for an absence."}
+                ? "Records a payment against the outstanding salary for all dates. It does not settle only the selected report period."
+                : "Reduces outstanding salary without moving cash. Attendance may already reduce pay for an absence; check the earnings calculation before applying another deduction."}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div>
               <Label>Amount</Label>
               <Input
+                aria-label="Salary amount"
                 type="number"
                 min="0"
                 step="0.01"
@@ -564,6 +539,7 @@ export function StaffSalaryCard({
                   : "Reason (optional)"}
               </Label>
               <Input
+                aria-label="Salary reason"
                 value={entryReason}
                 onChange={(event) => setEntryReason(event.target.value)}
                 placeholder={
@@ -576,6 +552,7 @@ export function StaffSalaryCard({
             <div>
               <Label>Reference (optional)</Label>
               <Input
+                aria-label="Salary reference"
                 value={entryReference}
                 onChange={(event) => setEntryReference(event.target.value)}
                 placeholder="e.g. cheque or transfer number"
@@ -607,7 +584,7 @@ export function StaffSalaryCard({
         open={overtimeRateOpen}
         onOpenChange={(open) => !open && setOvertimeRateOpen(false)}
       >
-        <DialogContent>
+        <DialogContent className={`max-h-[85dvh] overflow-y-auto overscroll-contain [&_button]:min-h-11 ${mobileDetailClass}`}>
           <DialogHeader>
             <DialogTitle>Pay overtime</DialogTitle>
             <DialogDescription>
@@ -615,9 +592,11 @@ export function StaffSalaryCard({
               outstanding. Enter the hourly rate to pay it at.
             </DialogDescription>
           </DialogHeader>
+          {balance?.salary_type === "hourly" && attendanceBasedSalary && <p className="rounded-lg border border-amber-500/40 p-3 text-sm">Hourly overtime is already included in accrued earnings. A separate overtime payout does not reduce the salary balance. Review earlier payments to avoid paying the same hours twice.</p>}
           <div className="space-y-2">
             <Label>Hourly rate</Label>
             <Input
+              aria-label="Overtime hourly rate"
               type="number"
               min="0"
               step="0.01"
@@ -657,7 +636,7 @@ export function StaffSalaryCard({
         open={discardConfirmOpen}
         onOpenChange={(open) => !open && setDiscardConfirmOpen(false)}
       >
-        <DialogContent>
+        <DialogContent className={`max-h-[85dvh] overflow-y-auto overscroll-contain [&_button]:min-h-11 ${mobileDetailClass}`}>
           <DialogHeader>
             <DialogTitle>Discard outstanding overtime?</DialogTitle>
             <DialogDescription>
@@ -692,7 +671,7 @@ export function StaffSalaryCard({
         open={discountOpen}
         onOpenChange={(open) => !open && setDiscountOpen(false)}
       >
-        <DialogContent>
+        <DialogContent className={`max-h-[85dvh] overflow-y-auto overscroll-contain [&_button]:min-h-11 ${mobileDetailClass}`}>
           <DialogHeader>
             <DialogTitle>Staff purchase discount</DialogTitle>
             <DialogDescription>
@@ -703,6 +682,7 @@ export function StaffSalaryCard({
           <div className="space-y-2">
             <Label>Discount percent</Label>
             <Input
+              aria-label="Staff discount percent"
               type="number"
               min="0"
               max="100"

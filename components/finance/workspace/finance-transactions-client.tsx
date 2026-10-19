@@ -129,7 +129,7 @@ function ownerLink(row: FinanceTransactionRow) {
   if (source.includes("purchase")) return "/finance/purchases";
   if (source.includes("inventory")) return "/inventory";
   if (source.includes("salary") || source.includes("payroll"))
-    return "/attendance";
+    return "/attendance?tab=payroll-export";
   if (source.includes("income")) return "/finance/other-income";
   if (source.includes("expense")) return "/finance/expenses";
   return null;

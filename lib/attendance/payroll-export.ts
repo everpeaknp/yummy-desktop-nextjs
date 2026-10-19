@@ -1,7 +1,8 @@
 export type PayrollExportRow = Record<string, string | number | boolean | null | undefined>;
 
 function csvCell(value: PayrollExportRow[string]) {
-  const text = value == null ? "" : String(value);
+  let text = value == null ? "" : String(value);
+  if (/^\s*[=+@-]/.test(text) || /^[\t\r\n]/.test(text)) text = `'${text}`;
   return /[\",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 

@@ -79,12 +79,12 @@ export function WorkforceMetricStrip({
           >
             <dt className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
               {Icon ? <Icon className="h-3.5 w-3.5 shrink-0" /> : null}
-              <span className="truncate">{item.label}</span>
+              <span className="break-words">{item.label}</span>
             </dt>
             <dd
               className={cn(
                 "mt-1 text-base font-semibold tabular-nums sm:text-lg",
-                item.valueClassName ? "" : "truncate",
+                item.valueClassName ? "" : "break-words",
                 item.attention && "text-amber-700 dark:text-amber-400",
                 item.valueClassName,
               )}

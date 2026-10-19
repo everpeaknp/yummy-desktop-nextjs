@@ -1,5 +1,10 @@
 "use client";
 
+import { MobileReportControls } from "@/components/attendance/mobile-report-controls";
+
+import { AttendanceMobileNavigation } from "@/components/attendance/attendance-mobile-navigation";
+import { PayrollPeriodReview } from "@/components/attendance/payroll-period-review";
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
@@ -27,7 +32,6 @@ import { toast } from "sonner";
 import apiClient from "@/lib/api-client";
 import { StaffApis, StaffProfileApis } from "@/lib/api/endpoints";
 import { attendanceApi } from "@/lib/attendance/api";
-import { payrollRowsToCsv } from "@/lib/attendance/payroll-export";
 import { useAuth } from "@/hooks/use-auth";
 import { getAttendanceUiAccess, hasPermission } from "@/lib/role-permissions";
 import { EntitlementGate } from "@/components/subscription/entitlement-gate";
@@ -88,6 +92,7 @@ import { FieldInfo } from "@/components/ui/field-info";
 import LocationPicker from "@/components/manage/profile/location-picker";
 import { forwardGeocode, reverseGeocode } from "@/lib/geocode";
 import { attendanceRadiusLabel } from "./attendance-policy";
+import { AttendanceRegister } from "./attendance-register";
 import TeamSchedule from "@/app/(dashboard)/attendance/schedule/page";
 import {
   attendanceApprovalLabel,
@@ -297,6 +302,14 @@ function minutesLabel(minutes: number) {
   return String(hours) + "h " + String(rest).padStart(2, "0") + "m";
 }
 
+function moneyLabel(value: number) {
+  return new Intl.NumberFormat("en-NP", {
+    style: "currency",
+    currency: "NPR",
+    maximumFractionDigits: 2,
+  }).format(value || 0);
+}
+
 function errorMessage(error: unknown, fallback: string) {
   const candidate = error as {
     response?: {
@@ -351,7 +364,7 @@ export function AttendanceAdminClient() {
   const [activeTab, setActiveTab] = useState<string>(initialTab);
   useEffect(() => {
     setActiveTab((current) => {
-      if (current === "overview" || current === "timesheets") {
+      if (current === "overview" || current === "reports" || current === "timesheets") {
         return canViewAttendance ? current : initialTab;
       }
       if (current === "payroll-export") {
@@ -376,9 +389,9 @@ export function AttendanceAdminClient() {
     initialTab,
   ]);
   const [loading, setLoading] = useState(true);
-  const [payrollExporting, setPayrollExporting] = useState(false);
-  const [dateFrom, setDateFrom] = useState(todayIso());
-  const [dateTo, setDateTo] = useState(todayIso());
+  const [dateFrom, setDateFrom] = useState(() => /^\d{4}-\d{2}-\d{2}$/.test(searchParams.get("from") || "") ? searchParams.get("from")! : todayIso());
+  const [dateTo, setDateTo] = useState(() => /^\d{4}-\d{2}-\d{2}$/.test(searchParams.get("to") || "") ? searchParams.get("to")! : todayIso());
+  const workspaceRequest = useRef(0);
   const [overview, setOverview] = useState<AttendanceOverview | null>(null);
   const [entries, setEntries] = useState<AttendanceEntry[]>([]);
   const [templates, setTemplates] = useState<AttendanceShiftTemplate[]>([]);
@@ -495,6 +508,8 @@ export function AttendanceAdminClient() {
     const requestedTab = searchParams.get("tab");
     const validTabs = new Set([
       "overview",
+      "reports",
+      "payroll-export",
       "timesheets",
       "schedules",
       "leave",
@@ -504,6 +519,10 @@ export function AttendanceAdminClient() {
     ]);
     if (requestedTab && validTabs.has(requestedTab)) setActiveTab(requestedTab);
 
+    const start = searchParams.get("from");
+    const end = searchParams.get("to");
+    if (start && /^\d{4}-\d{2}-\d{2}$/.test(start)) setDateFrom(start);
+    if (end && /^\d{4}-\d{2}-\d{2}$/.test(end)) setDateTo(end);
     const requestedStaffId = searchParams.get("staff_id");
     if (requestedStaffId && /^\d+$/.test(requestedStaffId)) {
       setScheduleForm((current) => ({
@@ -532,10 +551,13 @@ export function AttendanceAdminClient() {
     );
   }, [qrSession?.token]);
 
+  const timesheetStaffId = Number(searchParams.get("staff_id")) || undefined;
   const loadAll = useCallback(async () => {
+    const request = ++workspaceRequest.current;
     setLoading(true);
     try {
       const reportLoadFailure = (error: unknown) => {
+        if (request !== workspaceRequest.current) return;
         console.error("Failed to load attendance workspace data", error);
         toast.error(
           errorMessage(error, "Some attendance data could not be loaded"),
@@ -544,8 +566,8 @@ export function AttendanceAdminClient() {
       const viewDataPromise = canViewAttendance
         ? Promise.all([
             attendanceApi.overview(dateFrom, dateTo),
-            attendanceApi.listEntries({ dateFrom, dateTo, limit: 300 }),
-            attendanceApi.listEntries({ limit: 300 }),
+            attendanceApi.listEntries({ dateFrom, dateTo, staffId: timesheetStaffId, limit: 300 }),
+            attendanceApi.listEntries({ staffId: timesheetStaffId, limit: 300 }),
             attendanceApi.listLeaves(),
             attendanceApi.listHolidays(),
           ]).catch((error) => {
@@ -627,7 +649,6 @@ export function AttendanceAdminClient() {
               { data: { data: [] } },
               { data: { data: [] } },
             ] as const);
-
       const [viewData, managementData, biometric, staffData] =
         await Promise.all([
           viewDataPromise,
@@ -635,6 +656,7 @@ export function AttendanceAdminClient() {
           biometricDataPromise,
           staffDataPromise,
         ]);
+      if (request !== workspaceRequest.current) return;
       const [
         overviewData,
         selectedEntryData,
@@ -661,7 +683,7 @@ export function AttendanceAdminClient() {
     } catch (error) {
       toast.error(errorMessage(error, "Failed to load attendance"));
     } finally {
-      setLoading(false);
+      if (request === workspaceRequest.current) setLoading(false);
     }
   }, [
     biometricAttendancePlan.allowed,
@@ -671,6 +693,7 @@ export function AttendanceAdminClient() {
     canViewAttendance,
     dateFrom,
     dateTo,
+    timesheetStaffId,
   ]);
 
   useEffect(() => {
@@ -1013,33 +1036,6 @@ export function AttendanceAdminClient() {
     }
   }
 
-  async function exportApprovedPayroll() {
-    if (!canPayrollExport) return;
-    setPayrollExporting(true);
-    try {
-      const rows = await attendanceApi.exportApprovedPayroll(dateFrom, dateTo);
-      if (rows.length === 0) {
-        toast.info("No approved attendance entries in this date range");
-        return;
-      }
-      const blob = new Blob([payrollRowsToCsv(rows)], {
-        type: "text/csv;charset=utf-8",
-      });
-      const objectUrl = URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      anchor.href = objectUrl;
-      anchor.download = `attendance-payroll-${dateFrom}-to-${dateTo}.csv`;
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-      URL.revokeObjectURL(objectUrl);
-      toast.success("Approved payroll CSV exported");
-    } catch (error) {
-      toast.error(errorMessage(error, "Failed to export payroll CSV"));
-    } finally {
-      setPayrollExporting(false);
-    }
-  }
 
   function resetTemplateForm() {
     setEditingTemplateId(null);
@@ -1476,9 +1472,7 @@ export function AttendanceAdminClient() {
     ),
   );
   const showDateFilters =
-    activeTab === "overview" ||
-    activeTab === "timesheets" ||
-    activeTab === "payroll-export";
+    activeTab === "timesheets";
 
   return (
     <AppPage width="wide" className="pb-24">
@@ -1490,13 +1484,13 @@ export function AttendanceAdminClient() {
           showDateFilters ? (
             <>
               <Input
-                type="date"
+                type="date" aria-label="From date"
                 value={dateFrom}
                 onChange={(event) => setDateFrom(event.target.value)}
                 className="h-10 w-[160px]"
               />
               <Input
-                type="date"
+                type="date" aria-label="To date"
                 value={dateTo}
                 onChange={(event) => setDateTo(event.target.value)}
                 className="h-10 w-[160px]"
@@ -1505,66 +1499,25 @@ export function AttendanceAdminClient() {
           ) : null
         }
       />
-      <div className="grid w-full min-w-0 max-w-full grid-cols-1 gap-2 2xl:hidden">
-        {showDateFilters ? (
-          <>
-            <Input
-              type="date"
-              value={dateFrom}
-              onChange={(event) => setDateFrom(event.target.value)}
-              className="h-11 w-full min-w-0 rounded-xl text-sm"
-            />
-            <Input
-              type="date"
-              value={dateTo}
-              onChange={(event) => setDateTo(event.target.value)}
-              className="h-11 w-full min-w-0 rounded-xl text-sm"
-            />
-          </>
-        ) : null}
-      </div>
+
 
       <Tabs value={activeTab} onValueChange={changeTab} className="space-y-5">
-        <div className="2xl:hidden">
-          <Select value={activeTab} onValueChange={changeTab}>
-            <SelectTrigger className="h-11 w-full rounded-xl">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {canViewAttendance ? (
-                <SelectItem value="overview">Overview</SelectItem>
-              ) : null}
-              {canViewAttendance ? (
-                <SelectItem value="timesheets">Timesheets</SelectItem>
-              ) : null}
-              {canPayrollExport ? (
-                <SelectItem value="payroll-export">Payroll export</SelectItem>
-              ) : null}
-              {canManageAttendance ? (
-                <SelectItem value="schedules">Schedule</SelectItem>
-              ) : null}
-              {canManageAttendance && canViewAttendance ? (
-                <SelectItem value="leave">Leave & holidays</SelectItem>
-              ) : null}
-              {canManageAttendance ? (
-                <SelectItem value="qr">QR kiosk</SelectItem>
-              ) : null}
-              {canManageDevices ? (
-                <SelectItem value="devices">Devices</SelectItem>
-              ) : null}
-              {canManageAttendance ? (
-                <SelectItem value="settings">Settings</SelectItem>
-              ) : null}
-            </SelectContent>
-          </Select>
-        </div>
+        <AttendanceMobileNavigation
+          activeTab={activeTab}
+          onChange={changeTab}
+          canViewAttendance={canViewAttendance}
+          canPayrollExport={canPayrollExport}
+          canManageAttendance={canManageAttendance}
+          canManageDevices={canManageDevices}
+        />
         <TabsList className="hidden h-auto w-full justify-start gap-1 overflow-x-auto rounded-none border-b bg-transparent p-0 2xl:flex">
           {canViewAttendance ? (
             <TabsTrigger value="overview" className="min-w-max gap-2">
               <CalendarDays className="h-4 w-4" />
-              Overview
+              Daily attendance
             </TabsTrigger>
           ) : null}
+          {canViewAttendance ? <TabsTrigger value="reports" className="min-w-max gap-2"><CalendarDays className="h-4 w-4" />Reports</TabsTrigger> : null}
           {canViewAttendance ? (
             <TabsTrigger value="timesheets" className="min-w-max gap-2">
               <Check className="h-4 w-4" />
@@ -1574,7 +1527,7 @@ export function AttendanceAdminClient() {
           {canPayrollExport ? (
             <TabsTrigger value="payroll-export" className="min-w-max gap-2">
               <Download className="h-4 w-4" />
-              Payroll export
+              Payroll review
             </TabsTrigger>
           ) : null}
           {canManageAttendance ? (
@@ -1610,70 +1563,18 @@ export function AttendanceAdminClient() {
         </TabsList>
 
         {canViewAttendance ? (
-          <TabsContent value="overview" className="space-y-7">
-            <WorkforceSection
-              title="Attendance summary"
-              description="Payable time and review position for the selected period."
-            >
-              <WorkforceMetricStrip
-                items={metricCards.map(([label, value]) => ({
-                  label: String(label),
-                  value: String(value),
-                }))}
-              />
-            </WorkforceSection>
-            <WorkforceSection
-              title="Active now"
-              description="Staff currently clocked in, including entries that started before this date range."
-              contentClassName="overflow-hidden rounded-xl border"
-            >
-              <div className="p-0">
-                <TimesheetTable
-                  entries={activeEntries}
-                  staffProfiles={staffProfiles}
-                  usersById={usersById}
-                  onApprove={approveEntry}
-                  onReject={rejectEntry}
-                  onReopen={reopenEntry}
-                  onCorrect={openCorrection}
-                  canManage={canManageAttendance}
-                />
-              </div>
-            </WorkforceSection>
-            <WorkforceSection
-              title="Exceptions"
-              description="Entries that need manager attention before payroll."
-              contentClassName="overflow-hidden rounded-xl border"
-            >
-              <div className="p-0">
-                <TimesheetTable
-                  entries={entries.filter(
-                    (entry) =>
-                      entry.exception_code ||
-                      entry.approval_status === "pending" ||
-                      entry.approval_status === "needs_correction",
-                  )}
-                  staffProfiles={staffProfiles}
-                  usersById={usersById}
-                  onApprove={approveEntry}
-                  onReject={rejectEntry}
-                  onReopen={reopenEntry}
-                  onCorrect={openCorrection}
-                  canManage={canManageAttendance}
-                />
-              </div>
-            </WorkforceSection>
-          </TabsContent>
+          <TabsContent value="overview"><AttendanceRegister daily canExport={canExportAttendance} /></TabsContent>
         ) : null}
 
+        {canViewAttendance ? <TabsContent value="reports"><AttendanceRegister canExport={canExportAttendance} /></TabsContent> : null}
         {canViewAttendance ? (
           <TabsContent value="timesheets">
             <WorkforceSection
               title="Timesheets"
-              description="Review exceptions only. Finalize approved attendance when the payroll period is ready to lock."
+              description="Check recorded hours, resolve exceptions and approve time for payroll."
               actions={
                 <div className="flex flex-wrap gap-2">
-                  {canExportAttendance ? (
+                  {canExportAttendance && !timesheetStaffId ? (
                     <Button
                       variant="outline"
                       disabled={busy}
@@ -1683,12 +1584,12 @@ export function AttendanceAdminClient() {
                       Export CSV
                     </Button>
                   ) : null}
-                  {canFinalizePayroll ? (
+                  {canFinalizePayroll && !timesheetStaffId ? (
                     <Button
                       disabled={busy}
                       onClick={() => void finalizePayrollPeriod()}
                     >
-                      Finalize payroll period
+                      Lock approved attendance
                     </Button>
                   ) : null}
                 </div>
@@ -1696,8 +1597,19 @@ export function AttendanceAdminClient() {
               contentClassName="overflow-hidden rounded-xl border"
             >
               <div className="p-0">
+                <div className="space-y-3 border-b p-3 2xl:hidden">
+                  <div className="md:hidden">
+                    <p className="mb-1.5 text-xs font-medium text-muted-foreground">Attendance period</p>
+                    <MobileReportControls from={dateFrom} to={dateTo} loading={loading} onChange={(from, to) => { setDateFrom(from); setDateTo(to); }} onRefresh={() => void loadAll()} />
+                  </div>
+                  <div className="hidden gap-3 md:flex 2xl:hidden">
+                    <label className="min-w-0 flex-1 space-y-1 text-sm">From<Input type="date" value={dateFrom} onChange={event => setDateFrom(event.target.value)} /></label>
+                    <label className="min-w-0 flex-1 space-y-1 text-sm">To<Input type="date" value={dateTo} onChange={event => setDateTo(event.target.value)} /></label>
+                  </div>
+                </div>
+                {timesheetStaffId && <div className="flex items-center justify-between gap-3 border-b bg-muted/30 px-3 py-2 text-sm"><div className="min-w-0"><p className="text-xs text-muted-foreground">Staff member</p><p className="break-words font-medium">{staffLabel(staffProfiles.find(profile => profile.id === timesheetStaffId), usersById)}</p></div><Button asChild variant="ghost" className="min-h-11 shrink-0 text-primary"><Link href={`/attendance?tab=timesheets&from=${dateFrom}&to=${dateTo}`}>All staff</Link></Button></div>}
                 <TimesheetTable
-                  entries={entries}
+                  entries={entries.filter(entry => !searchParams.get("staff_id") || entry.staff_id === Number(searchParams.get("staff_id")))}
                   staffProfiles={staffProfiles}
                   usersById={usersById}
                   onApprove={approveEntry}
@@ -1711,32 +1623,7 @@ export function AttendanceAdminClient() {
           </TabsContent>
         ) : null}
 
-        {canPayrollExport ? (
-          <TabsContent value="payroll-export">
-            <WorkforceSection
-              title="Approved payroll export"
-              description="Download approved attendance totals for the selected date range. This export does not expose attendance details or unapproved entries."
-              actions={
-                <Button
-                  onClick={() => void exportApprovedPayroll()}
-                  disabled={payrollExporting}
-                >
-                  {payrollExporting ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : (
-                    <Download className="mr-2 h-4 w-4" />
-                  )}
-                  Export payroll CSV
-                </Button>
-              }
-            >
-              <p className="rounded-xl border bg-muted/20 p-4 text-sm text-muted-foreground">
-                The export includes approved totals per staff member for{" "}
-                {dateFrom} through {dateTo}.
-              </p>
-            </WorkforceSection>
-          </TabsContent>
-        ) : null}
+        {canPayrollExport ? <TabsContent value="payroll-export"><PayrollPeriodReview canExport canViewAttendance={canViewAttendance} canOpenStaff={canManageStaff} /></TabsContent> : null}
 
         <TabsContent
           value="settings"
@@ -3399,11 +3286,11 @@ function TimesheetTable({
                   {minutesLabel(entry.break_minutes)} / OT{" "}
                   {minutesLabel(entry.overtime_minutes)}
                 </p>
-                <p className="mt-1 text-xs text-muted-foreground">
+                <details className="mt-1 text-xs text-muted-foreground"><summary className="min-h-11 cursor-pointer py-3">Time details</summary><p>
                   Late {minutesLabel(entry.late_arrival_minutes)} / early
                   departure {minutesLabel(entry.early_departure_minutes)} /
                   rejected OT {minutesLabel(entry.rejected_excess_minutes)}
-                </p>
+                </p></details>
                 {entry.scheduled_start_at ? (
                   <p className="mt-1 text-xs text-muted-foreground">
                     Scheduled {formatDateTime(entry.scheduled_start_at)} to{" "}
@@ -3416,7 +3303,7 @@ function TimesheetTable({
                   </p>
                 ) : null}
                 {canManage ? (
-                  <div className="mt-3 flex flex-wrap gap-2">
+                  <details className="mt-3"><summary className="min-h-11 cursor-pointer py-3 text-sm font-medium">Manage entry</summary><div className="mt-3 flex flex-wrap gap-2 [&_button]:min-h-11">
                     {entry.approval_status === "approved" ? (
                       <Button
                         size="sm"
@@ -3455,7 +3342,7 @@ function TimesheetTable({
                         Reject
                       </Button>
                     ) : null}
-                  </div>
+                  </div></details>
                 ) : null}
               </div>
             );

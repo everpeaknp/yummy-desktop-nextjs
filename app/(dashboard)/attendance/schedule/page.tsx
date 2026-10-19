@@ -11,7 +11,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { attendanceApi } from "@/lib/attendance/api";
-import type { AttendanceScheduleAudit, AttendanceScheduleWeek, AttendanceShiftTemplate, AttendanceStaffReport } from "@/lib/attendance/types";
+import type { AttendanceScheduleAudit, AttendanceScheduleWeek, AttendanceShiftTemplate } from "@/lib/attendance/types";
 
 const DAY_OFF = "day_off";
 const weekDays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
@@ -41,12 +41,12 @@ const emptyTemplate = (): TemplateForm => ({ id: null, name: "", start_local_tim
 
 export default function TeamSchedule() {
   const [selectedDate, setSelectedDate] = useState(() => localDateKey(new Date()));
+  const [mobileDay, setMobileDay] = useState(() => (new Date().getDay() + 6) % 7);
+  const [mobileStaff, setMobileStaff] = useState("all");
+  const [showRoster, setShowRoster] = useState(false);
   const [rows, setRows] = useState<AttendanceScheduleWeek[]>([]);
   const [templates, setTemplates] = useState<AttendanceShiftTemplate[]>([]);
   const [scheduleAudit, setScheduleAudit] = useState<AttendanceScheduleAudit[]>([]);
-  const [report, setReport] = useState<AttendanceStaffReport[]>([]);
-  const [reportFrom, setReportFrom] = useState(() => `${localDateKey(new Date()).slice(0, 7)}-01`);
-  const [reportTo, setReportTo] = useState(() => localDateKey(new Date()));
   const [selectedStaff, setSelectedStaff] = useState<number[]>([]);
   const [assignments, setAssignments] = useState<string[]>(Array(7).fill(DAY_OFF));
   const [templateForm, setTemplateForm] = useState<TemplateForm>(emptyTemplate);
@@ -76,10 +76,7 @@ export default function TeamSchedule() {
   }, [week]);
 
   useEffect(() => { void load(); }, [load]);
-  useEffect(() => {
-    if (reportFrom > reportTo) return;
-    void attendanceApi.staffReport(reportFrom, reportTo).then(setReport).catch(() => setReport([]));
-  }, [reportFrom, reportTo]);
+
 
   const dates = rows[0]?.days.map((day) => day.date) || Array.from({ length: 7 }, (_, index) => {
     const date = new Date(`${week}T00:00:00`);
@@ -93,7 +90,6 @@ export default function TeamSchedule() {
   );
   const recentChanges = sortedChanges.slice(0, 8);
   const staffNames = useMemo(() => new Map(rows.map((row) => [row.staff_id, row.staff_name])), [rows]);
-
   function selectStaff(staffId: number, checked: boolean) {
     setSelectedStaff((current) => checked
       ? (current.includes(staffId) ? current : [...current, staffId])
@@ -196,7 +192,8 @@ export default function TeamSchedule() {
           <CardTitle>Apply weekly roster</CardTitle>
           <CardDescription>{isPastWeek ? "Past weeks are locked. Select a future Monday to apply a full weekly roster." : `Select staff in the table, choose each day once, then apply it from Monday ${dateLabel(week)} onward.`}</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <Button variant="outline" className="mx-6 mb-4 min-h-11 md:hidden" aria-expanded={showRoster} onClick={() => setShowRoster(value => !value)}>{showRoster ? "Close bulk assignment" : "Assign a week to multiple staff"}</Button>
+        <CardContent className={`space-y-4 ${showRoster ? "" : "hidden md:block"}`}>
           <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-7">
             {weekDays.map((day, index) => <label key={day} className="space-y-1 text-sm font-medium">{day}
               <OptionSelect aria-label="Weekly shift template" className="h-10 w-full" value={assignments[index]} onValueChange={(event) => setAssignments((current) => current.map((item, itemIndex) => itemIndex === index ? event : item))}>
@@ -212,7 +209,16 @@ export default function TeamSchedule() {
         </CardContent>
       </Card>
 
-      <section className="overflow-x-auto rounded-xl border bg-card">
+      <section className="space-y-3 md:hidden" aria-label="Mobile team schedule">
+        <div className="grid grid-cols-7 gap-1 rounded-lg border p-1" aria-label="Schedule day">{dates.map((date, index) => <button key={date} className="min-h-12 rounded px-1 text-center text-xs focus-visible:outline focus-visible:outline-2 aria-pressed:bg-primary/10 aria-pressed:font-semibold aria-pressed:text-primary" aria-pressed={mobileDay === index} onClick={() => setMobileDay(index)}><span className="block">{weekDays[index].slice(0, 3)}</span><span className="block text-sm tabular-nums">{date.slice(8)}</span></button>)}</div>
+        <label className="block space-y-1 text-sm font-medium">View staff<select className="h-11 w-full rounded-md border bg-background px-3 text-foreground focus-visible:outline focus-visible:outline-2" value={mobileStaff} onChange={event => setMobileStaff(event.target.value)}><option value="all">All staff · selected day</option>{rows.map(row => <option key={row.staff_id} value={row.staff_id}>{row.staff_name} · full week</option>)}</select></label>
+        <div className="flex min-h-11 items-center gap-2"><Checkbox aria-label="Select all staff for weekly assignment" checked={selectedAll} onCheckedChange={checked => setSelectedStaff(checked ? rows.map(row => row.staff_id) : [])} /><span className="text-sm">{selectedStaff.length} selected for weekly assignment</span></div>
+        <div className="divide-y rounded-xl border">{loading ? <p role="status" className="p-4 text-sm text-muted-foreground">Loading schedule…</p> : rows.filter(row => mobileStaff === "all" || row.staff_id === Number(mobileStaff)).map(row => <div key={row.staff_id} className="space-y-3 p-3">
+          <label className="flex min-h-11 items-center gap-3 text-sm font-semibold"><Checkbox checked={selectedStaff.includes(row.staff_id)} onCheckedChange={checked => selectStaff(row.staff_id, checked === true)} />{row.staff_name}</label>
+          {(mobileStaff === "all" ? [row.days[mobileDay]] : row.days).filter(Boolean).map(day => <div key={day.date} className="space-y-1"><p className="text-xs text-muted-foreground">{dateLabel(day.date)}</p><ScheduleCell day={day} templates={templates} disabled={saving} locked={day.date < today} onChange={value => void saveCell(row.staff_id, row.days.findIndex(item => item.date === day.date), day.date, value)} /></div>)}
+        </div>)}</div>
+      </section>
+      <section className="hidden overflow-x-auto rounded-xl border bg-card md:block">
         <table className="w-full min-w-[1080px] text-sm">
           <thead className="border-b bg-muted/30"><tr>
             <th className="sticky left-0 z-10 w-52 bg-muted/30 p-3 text-left font-medium"><div className="flex items-center gap-2"><Checkbox aria-label="Select all staff" checked={selectedAll} onCheckedChange={(checked) => setSelectedStaff(checked ? rows.map((row) => row.staff_id) : [])} />Staff</div></th>
@@ -223,11 +229,6 @@ export default function TeamSchedule() {
           </tr>) : <tr><td colSpan={8} className="p-8 text-center text-muted-foreground">No staff schedules are available.</td></tr>}</tbody>
         </table>
       </section>
-
-      <Card>
-        <CardHeader><div className="flex flex-wrap items-end justify-between gap-3"><div><CardTitle>Attendance report</CardTitle><CardDescription>Approved attendance by staff for the selected period. Pending entries need review before they count as present.</CardDescription></div><div className="flex flex-wrap gap-2"><label className="text-sm font-medium">From<Input aria-label="Report start date" type="date" value={reportFrom} max={reportTo} onChange={(event) => setReportFrom(event.target.value)} /></label><label className="text-sm font-medium">To<Input aria-label="Report end date" type="date" value={reportTo} min={reportFrom} max={today} onChange={(event) => setReportTo(event.target.value)} /></label></div></div></CardHeader>
-        <CardContent className="overflow-x-auto"><table className="w-full min-w-[680px] text-sm"><thead><tr className="border-b text-left text-muted-foreground"><th className="p-2">Staff</th><th className="p-2">Present days</th><th className="p-2">Regular hours</th><th className="p-2">Overtime</th><th className="p-2">Pending</th></tr></thead><tbody>{report.map((item) => <tr key={item.staff_id} className="border-b last:border-0"><td className="p-2 font-medium">{item.staff_name}</td><td className="p-2">{item.present_days}</td><td className="p-2">{(item.regular_minutes / 60).toFixed(1)}h</td><td className="p-2">{(item.overtime_minutes / 60).toFixed(1)}h</td><td className="p-2">{item.pending_entries || "—"}</td></tr>)}</tbody></table></CardContent>
-      </Card>
 
       <div className="grid gap-5 xl:grid-cols-[1.3fr_0.7fr]">
         <Card>

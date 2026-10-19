@@ -88,6 +88,30 @@ export type AttendanceScheduleDay = {
 };
 export type AttendanceScheduleWeek = { staff_id: number; staff_name: string; days: AttendanceScheduleDay[] };
 export type AttendanceStaffReport = { staff_id: number; staff_name: string; present_days: number; pending_entries: number; regular_minutes: number; overtime_minutes: number };
+export type AttendancePayrollPreview = {
+  staff_id: number;
+  staff_name: string;
+  salary_type: "monthly" | "weekly" | "daily" | "hourly" | null;
+  salary_amount: number;
+  attendance_based_salary: boolean;
+  estimated_payable: number;
+  date_from: string;
+  date_to: string;
+  breakdown: Record<string, number | boolean>;
+  user_id?: number;
+  effective_from: string | null;
+  daily_rate: number | string;
+  timezone: string;
+  as_of: string;
+  review_count: number;
+  warnings: string[];
+  days: PayrollCalculationDay[];
+};
+
+export type PayrollCalculationDay = {
+  date: string; reason: string; units: number | string; rate: number | string;
+  multiplier: number | string; overtime_amount: number | string; amount: number | string; entry_ids: number[];
+};
 
 export type AttendanceOverview = {
   date_from: string;

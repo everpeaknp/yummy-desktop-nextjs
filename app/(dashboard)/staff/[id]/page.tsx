@@ -1,4 +1,6 @@
 "use client";
+import { AttendanceRegister } from "@/components/attendance/attendance-register";
+import { PayrollPeriodReview } from "@/components/attendance/payroll-period-review";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
@@ -953,7 +955,7 @@ export default function StaffWorkspacePage() {
         clock_out_at: clockOut.toISOString(),
         reason,
       });
-      toast.success("Attendance corrected and returned to draft");
+      toast.success("Attendance correction saved");
       setCorrectionEntry(null);
       await loadWorkspace(true);
     } catch (error: any) {
@@ -1223,7 +1225,7 @@ export default function StaffWorkspacePage() {
           onSectionChange={selectSection}
         />
         <StaffDetailContent>
-          {activeSection !== "overview" ? (
+          {activeSection !== "overview" && activeSection !== "attendance" ? (
             <StaffSectionHeading section={activeSection} />
           ) : null}
 
@@ -1316,105 +1318,29 @@ export default function StaffWorkspacePage() {
 
           {activeSection === "attendance" && canViewAttendance ? (
             <section className="space-y-5" aria-label="Attendance">
-              <WorkforceSection
-                title="Period"
-                description={`${dateOnly(dateFrom)} – ${dateOnly(dateTo)}`}
-                contentClassName="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"
-              >
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <Label className="text-xs">From</Label>
-                    <Input
-                      type="date"
-                      value={dateFrom}
-                      onChange={(event) => setDateFrom(event.target.value)}
-                    />
-                  </div>
-                  <div>
-                    <Label className="text-xs">To</Label>
-                    <Input
-                      type="date"
-                      value={dateTo}
-                      onChange={(event) => setDateTo(event.target.value)}
-                    />
-                  </div>
-                </div>
-              </WorkforceSection>
-              <WorkforceSection title="Summary">
-                {attendanceAvailable ? (
-                  <DataList className="rounded-none border-x-0 bg-transparent">
-                    <ListRow
-                      title="Regular time"
-                      trailing={
-                        <span className="font-semibold tabular-nums">
-                          {minutes(totals.regular)}
-                        </span>
-                      }
-                    />
-                    <ListRow
-                      title="Overtime"
-                      trailing={
-                        <span className="font-semibold tabular-nums">
-                          {minutes(totals.overtime)}
-                        </span>
-                      }
-                    />
-                    <ListRow
-                      title="Exceptions"
-                      description={
-                        totals.pending
-                          ? `${totals.pending} record${totals.pending === 1 ? "" : "s"} need review`
-                          : undefined
-                      }
-                      trailing={
-                        <span
-                          className={cn(
-                            "font-semibold tabular-nums",
-                            totals.exceptions > 0 &&
-                              "text-amber-700 dark:text-amber-400",
-                          )}
-                        >
-                          {totals.exceptions}
-                        </span>
-                      }
-                    />
-                  </DataList>
-                ) : (
-                  <p className="border-y py-3 text-sm text-muted-foreground">
-                    Attendance information is unavailable for your access level.
-                  </p>
-                )}
-              </WorkforceSection>
-              <div className="space-y-6">
-                {attendanceAvailable ? (
-                  <WorkforceSection
-                    title="Timesheet"
-                    description="Attendance records for the selected period."
-                  >
-                    <AttendanceList
-                      entries={entries}
-                      canManage={canManageAttendance}
-                      onAction={updateAttendance}
-                      onCorrect={openAttendanceCorrection}
-                    />
-                  </WorkforceSection>
-                ) : null}
-                <div className="space-y-5">
-                  <ScheduleCard
-                    schedules={schedules}
-                    templates={templates}
-                    available={scheduleAvailable}
-                  />
-                  <LeaveCard leaves={leaves} available={leaveAvailable} />
-                </div>
-              </div>
+              {profile ? <AttendanceRegister staffId={profile.id} /> : <p className="text-sm text-muted-foreground">Create an employment profile to view attendance.</p>}
             </section>
           ) : null}
 
           {activeSection === "financials" && canViewPayroll ? (
-            <section aria-label="Financials">
+            <section aria-label="Financials" className="flex flex-col">
               <div className="grid min-w-0 gap-7 lg:grid-cols-[minmax(0,1.2fr)_minmax(320px,.8fr)] lg:items-start">
                 <div className="min-w-0 space-y-7">
+                  {profile ? (
+                    <StaffSalaryCard
+                      staffId={profile.id}
+                      canManage={canManagePayroll}
+                      attendanceBasedSalary={
+                        profile.attendance_based_salary ?? false
+                      }
+                      selfDiscountPercent={profile.self_discount_percent}
+                      compensationHistory={salaryHistory}
+                      onSettingsChanged={() => loadWorkspace(true)}
+                    />
+                  ) : null}
+                  {profile && <PayrollPeriodReview staffId={profile.id} canViewAttendance={canViewAttendance} />}
+                  <details className="rounded-xl border p-3">
+                    <summary className="min-h-11 cursor-pointer text-sm font-medium focus-visible:outline focus-visible:outline-2">Pay agreement · {profile ? `${money(profile.salary_amount)} / ${salaryFrequency(profile.salary_type)}` : "Not configured"}</summary>
                   <WorkforceSection
                     title="Compensation"
                     className="[&>div:first-child]:flex-row [&>div:first-child]:items-center [&>div:first-child]:justify-between"
@@ -1488,28 +1414,18 @@ export default function StaffWorkspacePage() {
                       />
                     )}
                   </WorkforceSection>
-                  {profile ? (
-                    <StaffSalaryCard
-                      staffId={profile.id}
-                      canManage={canManagePayroll}
-                      attendanceBasedSalary={
-                        profile.attendance_based_salary ?? false
-                      }
-                      selfDiscountPercent={profile.self_discount_percent}
-                      compensationHistory={salaryHistory}
-                      onSettingsChanged={() => loadWorkspace(true)}
-                    />
-                  ) : null}
+                  </details>
                 </div>
                 {profile ? (
-                  <div className="min-w-0 lg:sticky lg:top-24">
+                  <details className="min-w-0 rounded-xl border p-3 lg:sticky lg:top-24">
+                    <summary className="min-h-11 cursor-pointer text-sm font-medium focus-visible:outline focus-visible:outline-2">Advances & repayments</summary>
                     <StaffCreditCard
                       staffId={profile.id}
                       canManage={canManagePayroll}
                       discountLimitAmount={profile.discount_limit_amount}
                       onDiscountLimitChanged={updateDiscountLimit}
                     />
-                  </div>
+                  </details>
                 ) : null}
               </div>
             </section>

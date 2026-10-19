@@ -1,4 +1,5 @@
 "use client";
+import { mobileDetailClass } from "@/components/attendance/mobile-report-controls";
 
 import { useCallback, useEffect, useState } from "react";
 import {
@@ -344,7 +345,7 @@ export function StaffCreditCard({
         open={Boolean(entryOpen)}
         onOpenChange={(open) => !open && setEntryOpen(null)}
       >
-        <DialogContent>
+        <DialogContent className={`max-h-[85dvh] overflow-y-auto overscroll-contain [&_button]:min-h-11 ${mobileDetailClass}`}>
           <DialogHeader>
             <DialogTitle>
               {entryOpen === "advance"
@@ -415,7 +416,7 @@ export function StaffCreditCard({
           if (!open && !reversalSaving) setReversing(null);
         }}
       >
-        <DialogContent>
+        <DialogContent className={`max-h-[85dvh] overflow-y-auto overscroll-contain [&_button]:min-h-11 ${mobileDetailClass}`}>
           <DialogHeader>
             <DialogTitle>Reverse transaction</DialogTitle>
             <DialogDescription>
@@ -460,7 +461,7 @@ export function StaffCreditCard({
         open={limitOpen}
         onOpenChange={(open) => !open && setLimitOpen(false)}
       >
-        <DialogContent>
+        <DialogContent className={`max-h-[85dvh] overflow-y-auto overscroll-contain [&_button]:min-h-11 ${mobileDetailClass}`}>
           <DialogHeader>
             <DialogTitle>Discount authorization limit</DialogTitle>
             <DialogDescription>

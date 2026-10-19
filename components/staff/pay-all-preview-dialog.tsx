@@ -105,9 +105,8 @@ export function PayAllPreviewDialog({
         <DialogHeader>
           <DialogTitle>Pay all outstanding salaries?</DialogTitle>
           <DialogDescription>
-            Review each staff member&apos;s current balance before paying
-            everyone in full. Click a name to pay, deduct, or add a bonus for
-            just that person instead.
+            Pays each employee&apos;s cumulative outstanding salary across all dates.
+            Open an employee&apos;s salary account to review their earnings and payments first.
           </DialogDescription>
         </DialogHeader>
 
@@ -126,7 +125,7 @@ export function PayAllPreviewDialog({
                 {items.map((item) => (
                   <Link
                     key={item.staff_id}
-                    href={item.user_id ? `/staff/${item.user_id}` : "#"}
+                    href={item.user_id ? `/staff/${item.user_id}?tab=financials` : "/staff"}
                     onClick={() => onOpenChange(false)}
                     className="flex items-center justify-between px-4 py-2.5 text-sm hover:bg-muted/50"
                   >
@@ -154,6 +153,7 @@ export function PayAllPreviewDialog({
               <div>
                 <Label>Reason (optional)</Label>
                 <Input
+                  aria-label="Payment reason"
                   value={reason}
                   onChange={(event) => setReason(event.target.value)}
                   placeholder="e.g. August payroll run"
@@ -162,6 +162,7 @@ export function PayAllPreviewDialog({
               <div>
                 <Label>Reference (optional)</Label>
                 <Input
+                  aria-label="Payment reference"
                   value={reference}
                   onChange={(event) => setReference(event.target.value)}
                   placeholder="e.g. bank batch number"
