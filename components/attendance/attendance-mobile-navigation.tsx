@@ -57,9 +57,9 @@ export function AttendanceMobileNavigation(props: Props) {
         ) : null}
       </div>
       {sections.length > 0 ? (
-        <TabsList aria-label="Attendance sections" ref={listRef} className="flex h-auto w-full min-w-0 justify-start gap-2 overflow-x-auto rounded-none bg-transparent px-0 py-1 [scrollbar-width:thin]">
+        <TabsList aria-label="Attendance sections" ref={listRef} className="flex h-auto w-full min-w-0 justify-start gap-1 overflow-x-auto rounded-xl bg-muted p-1 [scrollbar-width:thin]">
           {sections.map((section) => (
-            <TabsTrigger key={section.value} value={section.value} className="min-h-11 shrink-0 gap-2 rounded-full border border-border bg-background px-4 py-2.5 text-sm font-medium text-muted-foreground shadow-none transition-colors hover:bg-muted hover:text-foreground data-[state=active]:border-primary/40 data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-none">
+            <TabsTrigger key={section.value} value={section.value} className="min-h-11 shrink-0 gap-2 rounded-lg px-4 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground motion-reduce:transition-none data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm">
               <section.icon className="h-4 w-4 shrink-0" aria-hidden="true" />
               {section.label}
             </TabsTrigger>
