@@ -212,9 +212,7 @@ export const useAuth = create<AuthState>()(
                   (restored.restaurant_id != null ||
                     (restored.roles?.length ?? 0) > 0)
                 ) {
-                  if (restored.photo_url === undefined) {
-                    void get().syncUserProfile();
-                  }
+                  await get().syncUserProfile();
                   return;
                 }
               }

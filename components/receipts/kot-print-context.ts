@@ -43,6 +43,17 @@ export function getKotTableName(data: any): string {
   );
 }
 
+export function getKotTableType(data: any): string {
+  const kot = data?.kot || data || {};
+  const order = data?.order || kot?.order || {};
+  return String(
+    kot?.table_category || order?.table_category_name ||
+    order?.table_type_name || order?.table?.table_category ||
+    order?.table?.table_type_name ||
+    order?.table?.table_type?.name || "",
+  ).trim();
+}
+
 export function getKotDisplayOrderId(data: any): string | number {
   const kot = data?.kot || data || {};
   const order = data?.order || kot?.order || {};

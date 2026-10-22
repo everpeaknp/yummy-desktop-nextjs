@@ -2,7 +2,7 @@
 
 import React from "react";
 import { KOTUpdate } from "@/types/order";
-import { getKotDisplayOrderId, getKotPrintContext, getKotTableName } from "@/components/receipts/kot-print-context";
+import { getKotDisplayOrderId, getKotPrintContext, getKotTableName, getKotTableType } from "@/components/receipts/kot-print-context";
 
 interface ThermalKOTProps {
     data: any; // Using any to accommodate the KOT data structure which might include order info
@@ -12,6 +12,7 @@ interface ThermalKOTProps {
 export function ThermalKOT({ data, template }: ThermalKOTProps) {
     const { kot, order, restaurant, activeItems, cancelledItems, title } = getKotPrintContext(data);
     const tableName = getKotTableName(data);
+    const tableType = getKotTableType(data);
     const orderId = getKotDisplayOrderId(data);
 
     const row = (a: React.ReactNode, b: React.ReactNode, style?: React.CSSProperties): React.ReactNode => (
@@ -68,6 +69,7 @@ export function ThermalKOT({ data, template }: ThermalKOTProps) {
                 <div style={{ borderBottom: '2px solid #000', paddingBottom: '8px', marginBottom: '8px' }}>
                     {row(<span style={{ fontWeight: 600 }}>KOT No:</span>, <span style={{ fontWeight: 800 }}>{kot.kot_number || kot.id}</span>)}
                     {row(<span style={{ fontWeight: 600 }}>Table:</span>, <span style={{ fontWeight: 800 }}>{tableName}</span>)}
+                    {tableType && row(<span style={{ fontWeight: 600 }}>Table type:</span>, <span>{tableType}</span>)}
                     {row(<span style={{ fontWeight: 600 }}>Time:</span>, <span>{new Date(kot.created_at || new Date()).toLocaleTimeString()}</span>)}
                 </div>
                 <div>
@@ -136,6 +138,7 @@ function renderKotBlock(block: any, global: any, kot: any, order: any, restauran
     const { config, type } = block;
     const { activeItems, cancelledItems } = getKotPrintContext({ kot, order, restaurant });
     const tableName = getKotTableName({ kot, order });
+    const tableType = getKotTableType({ kot, order });
     const orderId = getKotDisplayOrderId({ kot, order });
     
     // Exact mapping from designer-components.tsx style block
@@ -224,6 +227,7 @@ function renderKotBlock(block: any, global: any, kot: any, order: any, restauran
                                     {showTable && <span className="text-right">{config.table_label || 'TABLE'}: {tableName}</span>}
                                 </div>
                             )}
+                            {config.show_category !== false && tableType && <div>{config.category_label || 'Table type'}: {tableType}</div>}
                             {(showOrderId || showDate) && (
                                 <div className="flex justify-between">
                                     {showOrderId && <span>{config.order_label || 'Ref'}: #{orderId}</span>}
@@ -232,7 +236,7 @@ function renderKotBlock(block: any, global: any, kot: any, order: any, restauran
                             )}
                             {(showUser || showTime) && (
                                 <div className="flex justify-between">
-                                    {showUser && <span>{config.user_label || 'USER'}: {order.waiter_name || kot.created_by_staff_name || 'N/A'}</span>}
+                                    {showUser && <span>{config.user_label || 'USER'}: {kot.created_by_staff_name || 'N/A'}</span>}
                                     {showTime && <span className="text-right">{config.time_label || 'TIME'}: {timeStr}</span>}
                                 </div>
                             )}
@@ -253,6 +257,7 @@ function renderKotBlock(block: any, global: any, kot: any, order: any, restauran
                                     <span>{config.table_label || 'Table'}: {tableName}</span>
                                 </div>
                             )}
+                            {config.show_category !== false && tableType && <div>{config.category_label || 'Table type'}: {tableType}</div>}
                         </>
                     )}
                     <div className="w-full overflow-hidden border-t border-dashed border-black mt-1" />

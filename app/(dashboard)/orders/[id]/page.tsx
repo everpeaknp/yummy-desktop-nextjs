@@ -116,7 +116,8 @@ import { PendingItemRequests } from "@/components/orders/pending-item-requests";
 import { TableBillSwitcher } from "@/components/orders/table-bill-switcher";
 import { usePosBillingPermissions } from "@/hooks/use-pos-billing-permissions";
 import { getOrderDiscountLabel, getRecordedOrderDiscount } from "@/lib/order-totals";
-import { KotEmbeddedTicketCard } from "@/components/kitchen/kot-ticket-card";
+import { KotEmbeddedTicketCard, KotTicketDetail, type KitchenTicket, type KotActivityEntry } from "@/components/kitchen/kot-ticket-card";
+import { KotTicketItems } from "@/components/kitchen/kot-ticket-items";
 import { SalesDocumentDetailSheet } from "@/components/finance/transaction-detail/sales-document-detail-sheet";
 import { useMobileAppBarTitle } from "@/components/layout/mobile-app-bar-title";
 
@@ -1026,7 +1027,7 @@ function OrderDetailContent({ orderId }: { orderId: number }) {
       </nav>
 
       {/* ── Content Grid ── */}
-      <div className="w-full max-w-3xl min-w-0">
+      <div className={cn("w-full min-w-0", activeTab === "kots" ? "max-w-none" : "max-w-3xl")}>
         <div className="space-y-4">
           {activeTab === "details" && (
             <>
@@ -1053,6 +1054,8 @@ function OrderDetailContent({ orderId }: { orderId: number }) {
               kots={context.kots}
               onStatusChange={handleKotStatusChange}
               onReject={handleKotReject}
+              onItemUpdated={(updated) => updateKotLocal(updated.id, { ...updated, kot_number: updated.kot_number == null ? null : String(updated.kot_number) } as Partial<KOTUpdate>)}
+              canOperate={hasPermission(user, "pos.view")}
               updatingKotIds={kotUpdatingIds}
             />
           )}
@@ -1876,13 +1879,49 @@ function KOTsTab({
   kots,
   onStatusChange,
   onReject,
+  onItemUpdated,
+  canOperate,
   updatingKotIds,
 }: {
   kots: KOTUpdate[];
   onStatusChange?: (kotId: number, status: string) => void;
   onReject?: (kotId: number) => void;
+  onItemUpdated: (updated: KitchenTicket) => void;
+  canOperate: boolean;
   updatingKotIds?: ReadonlySet<number>;
 }) {
+  const [selectedKotId, setSelectedKotId] = useState<number | null>(null);
+  const [detailTicket, setDetailTicket] = useState<KitchenTicket | null>(null);
+  const [activity, setActivity] = useState<KotActivityEntry[]>([]);
+  const [activityLoading, setActivityLoading] = useState(false);
+  const [detailError, setDetailError] = useState("");
+  const selectedKot = kots.find((kot) => kot.id === selectedKotId);
+
+  useEffect(() => {
+    if (selectedKotId === null) return;
+    let cancelled = false;
+    setActivityLoading(true);
+    setDetailError("");
+    Promise.allSettled([
+      apiClient.get(KotApis.getKotById(selectedKotId)),
+      apiClient.get(KotApis.getKotActivity(selectedKotId), { params: { skip: 0, limit: 100 } }),
+    ]).then(([ticketResult, activityResult]) => {
+      if (cancelled) return;
+      if (ticketResult.status === "fulfilled" && ticketResult.value.data?.status === "success") {
+        setDetailTicket(ticketResult.value.data.data);
+      } else {
+        setDetailError("Could not refresh ticket details. Close and reopen to retry.");
+      }
+      if (activityResult.status === "fulfilled" && activityResult.value.data?.status === "success") {
+        setActivity(activityResult.value.data.data?.items || []);
+      } else {
+        setDetailError((current) => current ? `${current} Activity could not be loaded.` : "Could not load activity. Close and reopen to retry.");
+      }
+      setActivityLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [selectedKotId, selectedKot?.status]);
+
   if (!kots || kots.length === 0) {
     return (
       <Card className="border-border/50 bg-card shadow-sm">
@@ -1901,8 +1940,11 @@ function KOTsTab({
     );
   }
 
+  const detail = selectedKot ? { ...selectedKot, ...(detailTicket || {}), status: selectedKot.status, items: selectedKot.items } : detailTicket;
+
   return (
-    <div className="space-y-3">
+    <>
+    <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-2 2xl:grid-cols-3">
       {kots.map((kot) => {
         const next = nextKotStatus(kot.status);
         const action = kotActionLabel(kot.status);
@@ -1921,10 +1963,40 @@ function KOTsTab({
                 : null
             }
             onReject={next && onReject ? () => onReject(kot.id) : undefined}
+            onOpenDetails={() => { setDetailTicket(null); setActivity([]); setActivityLoading(true); setSelectedKotId(kot.id); }}
           />
         );
       })}
     </div>
+    <Dialog open={selectedKotId !== null} onOpenChange={(open) => { if (!open) { setSelectedKotId(null); setDetailTicket(null); setActivity([]); } }}>
+      {detail ? <KotTicketDetail
+        ticket={detail}
+        activity={activity}
+        activityLoading={activityLoading}
+        activityAction={detailError ? <p role="status" className="text-xs text-destructive">{detailError}</p> : null}
+        onClose={() => setSelectedKotId(null)}
+        items={<KotTicketItems ticket={detail} canOperate={canOperate} onUpdated={async (updated) => {
+          setDetailTicket(updated);
+          onItemUpdated(updated);
+          setActivityLoading(true);
+          try {
+            const response = await apiClient.get(KotApis.getKotActivity(updated.id), { params: { skip: 0, limit: 100 } });
+            if (response.data?.status !== "success") throw new Error("Could not load activity");
+            setActivity(response.data.data?.items || []);
+            setDetailError("");
+          } catch {
+            setDetailError("Could not load activity. Close and reopen to retry.");
+          } finally {
+            setActivityLoading(false);
+          }
+        }} />}
+        actions={selectedKot && onStatusChange && nextKotStatus(selectedKot.status) ? <>
+          <Button type="button" className="h-11 w-full font-semibold sm:w-auto" disabled={Boolean(updatingKotIds?.has(selectedKot.id))} onClick={() => onStatusChange(selectedKot.id, selectedKot.status)}>{kotActionLabel(selectedKot.status)}</Button>
+          {onReject ? <Button type="button" variant="outline" className="h-11 w-full border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive sm:w-auto" disabled={Boolean(updatingKotIds?.has(selectedKot.id))} onClick={() => onReject(selectedKot.id)}>Reject ticket</Button> : null}
+        </> : null}
+      /> : null}
+    </Dialog>
+    </>
   );
 }
 

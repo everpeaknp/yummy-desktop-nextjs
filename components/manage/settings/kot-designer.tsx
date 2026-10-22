@@ -66,6 +66,7 @@ const DEFAULT_KOT_BLOCKS: ReceiptBlock[] = [
     config: {
       show_kot_number: true,
       show_table: true,
+      show_category: true,
       show_station: false,
       show_kot_type: true,
       show_order_id: true,
@@ -74,6 +75,7 @@ const DEFAULT_KOT_BLOCKS: ReceiptBlock[] = [
       show_user: false,
       kot_label: "KOT",
       table_label: "Table",
+      category_label: "Table type",
     },
     isVisible: true,
     showOnBill: true,
@@ -448,6 +450,7 @@ export function KOTDesigner({
                     station_ticket_title: "INITIAL TICKET",
                     type: "Initial Ticket",
                     table_name: "M1",
+                    category: "Garden",
                     order_id: "10",
                     date: "03/02/2026",
                     time: "15:30",

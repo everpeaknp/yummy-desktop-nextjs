@@ -9,6 +9,7 @@ import {
   getKotItems,
   getKotPrintContext,
   getKotTableName,
+  getKotTableType,
 } from "@/components/receipts/kot-print-context";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -103,6 +104,7 @@ function buildEscPosKot(kotData: any, template: any[] = []): string {
     const kotNumber = kot.kot_number || String(id);
     const station = kot.station || "";
     const table = getKotTableName({ kot, order });
+    const tableType = getKotTableType({ kot, order });
     const date = new Date().toLocaleString();
     const items: any[] = activeItems;
     const nameW = WIDTH - 6;
@@ -114,6 +116,7 @@ function buildEscPosKot(kotData: any, template: any[] = []): string {
     p += `KOT: #${kotNumber}${LF}`;
     if (station) p += `STATION: ${station.toUpperCase()}${LF}`;
     if (table) p += `TABLE: ${table}${LF}`;
+    if (tableType) p += `Table type: ${tableType}${LF}`;
     p += `DATE: ${date}${LF}`;
     p += `${SEP}${LF}`;
     p += `${"ITEM".padEnd(nameW, " ")}${"QTY".padStart(6, " ")}${LF}`;
@@ -236,6 +239,10 @@ function buildEscPosKot(kotData: any, template: any[] = []): string {
             const tbl = getKotTableName({ kot, order });
             p += `${cfg.table_label || "TABLE"}: ${tbl}${LF}`;
           }
+          const tableType = getKotTableType({ kot, order });
+          if (cfg.show_category !== false && tableType) {
+            p += `${cfg.category_label || "Table type"}: ${tableType}${LF}`;
+          }
 
           if (cfg.show_order_id !== false) {
             p += `${cfg.order_label || "ORDER"}: #${getKotDisplayOrderId({ kot, order })}${LF}`;
@@ -251,7 +258,7 @@ function buildEscPosKot(kotData: any, template: any[] = []): string {
 
           if (cfg.show_user === true) {
             const user =
-              order.waiter_name || kot.created_by_staff_name || "N/A";
+              kot.created_by_staff_name || "N/A";
             p += `${cfg.user_label || "USER"}: ${user}${LF}`;
           }
 

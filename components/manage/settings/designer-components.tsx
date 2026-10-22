@@ -1069,7 +1069,7 @@ function renderBlockPreview(
       const showDate = config.show_date ?? true;
       const showUser = config.show_user ?? true;
       const showTime = config.show_time ?? true;
-      const showCategory = config.show_category === true; // default false
+      const showCategory = config.show_category ?? (config.show_kot_number === true);
 
       // Legacy fallback: if no KOT/detail flags are set, show simple bill format
       const hasDetailFlags =
@@ -1149,7 +1149,7 @@ function renderBlockPreview(
               {showCategory && (
                 <div>
                   <span>
-                    {config.category_label || "CATEGORY"}:{" "}
+                    {config.category_label || "Table type"}:{" "}
                     {context?.category || "GARDEN"}
                   </span>
                 </div>
@@ -1556,6 +1556,11 @@ function renderConfigFields(
               value={config.show_table}
               onChange={(v) => update("show_table", v)}
             />
+            {mode === "kot" && <ToggleItem
+              label="Table type"
+              value={config.show_category ?? true}
+              onChange={(v) => update("show_category", v)}
+            />}
             <ToggleItem
               label="Date"
               value={config.show_date}
@@ -1578,6 +1583,11 @@ function renderConfigFields(
               value={config.table_label || "TABLE"}
               onChange={(v) => update("table_label", v)}
             />
+            {mode === "kot" && <LabelInput
+              label="Table type label"
+              value={config.category_label || "Table type"}
+              onChange={(v) => update("category_label", v)}
+            />}
           </div>
         </div>
       );

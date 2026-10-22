@@ -107,11 +107,17 @@ export default function MyProfilePage() {
     if (normalizedName === user?.full_name) return setEditingProfile(false);
     try {
       setSavingName(true);
-      await apiClient.patch(AuthApis.meProfile, { name: normalizedName });
+      const saved = await apiClient.patch(AuthApis.meProfile, { name: normalizedName });
+      if (saved.data?.status !== "success" || saved.data?.data?.name !== normalizedName) {
+        throw new Error("The server did not confirm your new name");
+      }
       await useAuth.getState().syncUserProfile();
+      if (useAuth.getState().user?.full_name !== normalizedName) {
+        throw new Error("Could not verify your saved name. Please try again.");
+      }
       setEditingProfile(false);
       toast.success("Profile updated");
-    } catch (error: any) { toast.error(error?.response?.data?.detail || "Could not update your profile"); }
+    } catch (error: any) { toast.error(error?.response?.data?.detail || error?.message || "Could not update your profile"); }
     finally { setSavingName(false); }
   };
 

@@ -83,11 +83,11 @@ import {
 } from "@/components/ui/popover";
 import { EmptyState as SharedEmptyState } from "@/components/patterns/feedback/feedback-state";
 import {
-  humanizeKotEvent,
   isKotDelayed,
   KotCompactTicketCard,
-  KotTicketHeader,
+  KotTicketDetail,
 } from "@/components/kitchen/kot-ticket-card";
+import { KotTicketItems } from "@/components/kitchen/kot-ticket-items";
 import type { FinanceOrderSettlementSummary } from "@/types/finance-sales";
 
 interface OrdersKotItem {
@@ -609,6 +609,7 @@ export default function OrdersPage() {
   const [selectedKot, setSelectedKot] = useState<OrdersKot | null>(null);
   const [kotActivity, setKotActivity] = useState<OrdersKotActivity[]>([]);
   const [kotActivityLoading, setKotActivityLoading] = useState(false);
+  const [kotActivityError, setKotActivityError] = useState(false);
   const [kotStatusUpdating, setKotStatusUpdating] = useState(false);
   const user = useAuth((state) => state.user);
   const me = useAuth((state) => state.me);
@@ -940,18 +941,18 @@ export default function OrdersPage() {
 
     let cancelled = false;
     setKotActivityLoading(true);
+    setKotActivityError(false);
     apiClient
       .get(KotApis.getKotActivity(selectedKot.id), {
         params: { skip: 0, limit: 100 },
       })
       .then((res) => {
         if (cancelled) return;
-        setKotActivity(
-          res.data?.status === "success" ? res.data?.data?.items || [] : [],
-        );
+        if (res.data?.status === "success") setKotActivity(res.data?.data?.items || []);
+        else setKotActivityError(true);
       })
       .catch(() => {
-        if (!cancelled) setKotActivity([]);
+        if (!cancelled) setKotActivityError(true);
       })
       .finally(() => {
         if (!cancelled) setKotActivityLoading(false);
@@ -1274,6 +1275,10 @@ export default function OrdersPage() {
         />
       </>
     );
+
+  const selectedKotItemCount = selectedKot?.items?.filter(
+    (item) => !item.is_deleted && Math.abs(item.qty_change || 0) > 0,
+  ).length ?? 0;
 
   return (
     <AppPage
@@ -1695,217 +1700,26 @@ export default function OrdersPage() {
           }
         }}
       >
-        <DialogContent className="flex h-[100dvh] w-full max-w-none min-w-0 flex-col overflow-hidden rounded-none p-0 sm:h-auto sm:max-h-[90vh] sm:w-[calc(100vw-3rem)] sm:max-w-[760px] sm:rounded-2xl">
-          {selectedKot ? (
-            <DialogHeader className="min-w-0 border-b border-border/50 bg-muted/20 p-4 pr-12 text-left sm:p-6 sm:pr-14">
-              <KotTicketHeader
-                ticket={selectedKot}
-                delayed={isKotDelayed(selectedKot)}
-              />
-              <DialogTitle className="sr-only">
-                KOT {selectedKot.kot_number || `#${selectedKot.id}`}
-              </DialogTitle>
-              <DialogDescription className="sr-only">
-                Kitchen ticket details
-              </DialogDescription>
-              {nextKotStatus(selectedKot.status) ? (
-                <div className="mt-3 flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
-                  <Button
-                    type="button"
-                    className="h-11 w-full font-semibold sm:w-auto"
-                    disabled={kotStatusUpdating}
-                    onClick={() => {
-                      const next = nextKotStatus(selectedKot.status);
-                      if (next) void updateKotStatus(selectedKot.id, next);
-                    }}
-                  >
-                    {kotNextActionLabel(selectedKot.status)}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="h-11 w-full border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive sm:w-auto"
-                    disabled={kotStatusUpdating}
-                    onClick={() => void rejectKot(selectedKot.id)}
-                  >
-                    Reject
-                  </Button>
-                </div>
-              ) : null}
-            </DialogHeader>
-          ) : null}
-
-          {selectedKot ? (
-            <div className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain p-4 sm:p-6">
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                <div className="rounded-xl border border-border/50 bg-card p-4">
-                  <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
-                    Created
-                  </p>
-                  <p className="mt-1 text-sm font-bold">
-                    {selectedKot.created_at
-                      ? formatDateTime(selectedKot.created_at)
-                      : "—"}
-                  </p>
-                </div>
-                <div className="rounded-xl border border-border/50 bg-card p-4">
-                  <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
-                    Recorded by
-                  </p>
-                  <p className="mt-1 truncate text-sm font-bold">
-                    {selectedKot.created_by_staff_name || "System"}
-                  </p>
-                </div>
-                <div className="rounded-xl border border-border/50 bg-card p-4">
-                  <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
-                    Order
-                  </p>
-                  <Link
-                    href={`/orders/${selectedKot.order_id}`}
-                    className="mt-1 inline-block text-sm font-bold text-primary hover:underline"
-                  >
-                    Order #{selectedKot.order_id}
-                  </Link>
-                </div>
-              </div>
-
-              <section className="rounded-xl border border-border/50 bg-card">
-                <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 border-b border-border/50 px-4 py-3">
-                  <div>
-                    <h3 className="text-sm font-black">Items to prepare</h3>
-                    <p className="text-xs text-muted-foreground">
-                      Everything recorded on this kitchen ticket.
-                    </p>
-                  </div>
-                  <Badge variant="secondary" className="rounded-lg text-xs">
-                    {selectedKot.items?.filter(
-                      (item) =>
-                        !item.is_deleted && Math.abs(item.qty_change || 0) > 0,
-                    ).length || 0}{" "}
-                    items
-                  </Badge>
-                </div>
-                <div className="divide-y divide-border/40">
-                  {(selectedKot.items || [])
-                    .filter(
-                      (item) =>
-                        !item.is_deleted && Math.abs(item.qty_change || 0) > 0,
-                    )
-                    .map((item) => {
-                      const quantity = Math.abs(item.qty_change || 0);
-                      const ready = Math.min(
-                        Math.abs(item.qty_ready || 0),
-                        quantity,
-                      );
-                      return (
-                        <div
-                          key={item.id}
-                          className="flex min-w-0 flex-col gap-2 px-4 py-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4"
-                        >
-                          <div className="min-w-0 flex-1">
-                            <p className="break-words text-sm font-bold">
-                              {quantity}× {item.item_name}
-                            </p>
-                            {item.modifiers?.length ? (
-                              <ul className="mt-1.5 space-y-0.5 text-xs text-muted-foreground">
-                                {item.modifiers.map((modifier) => (
-                                  <li key={modifier.id}>
-                                    • {modifier.modifier_name_snapshot}
-                                  </li>
-                                ))}
-                              </ul>
-                            ) : null}
-                            {item.notes ? (
-                              <p className="mt-2 break-words border-l-2 border-amber-500/70 pl-2 text-xs font-medium text-foreground">
-                                <span className="mr-1 text-[10px] font-bold text-amber-700 dark:text-amber-400">
-                                  NOTE
-                                </span>
-                                {item.notes}
-                              </p>
-                            ) : null}
-                          </div>
-                          <div className="flex min-w-0 flex-wrap items-center gap-2 text-xs font-semibold text-muted-foreground sm:shrink-0 sm:justify-end">
-                            <span
-                              className={cn(
-                                "rounded-md px-2 py-1",
-                                ready >= quantity
-                                  ? "bg-emerald-500/10 text-emerald-700"
-                                  : "bg-muted text-muted-foreground",
-                              )}
-                            >
-                              {ready}/{quantity} ready
-                            </span>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  {!(selectedKot.items || []).some(
-                    (item) =>
-                      !item.is_deleted && Math.abs(item.qty_change || 0) > 0,
-                  ) ? (
-                    <p className="px-4 py-6 text-sm text-muted-foreground">
-                      No active items on this ticket.
-                    </p>
-                  ) : null}
-                </div>
-              </section>
-
-              <section className="rounded-xl border border-border/50 bg-card">
-                <div className="border-b border-border/50 px-4 py-3">
-                  <h3 className="text-sm font-black">Activity</h3>
-                  <p className="text-xs text-muted-foreground">
-                    Status and preparation changes for this ticket.
-                  </p>
-                </div>
-                <div className="divide-y divide-border/40">
-                  {kotActivityLoading ? (
-                    <div className="flex items-center gap-2 px-4 py-6 text-sm text-muted-foreground">
-                      <Loader2 className="h-4 w-4 animate-spin" /> Loading
-                      activity…
-                    </div>
-                  ) : kotActivity.length === 0 ? (
-                    <p className="px-4 py-6 text-sm text-muted-foreground">
-                      No activity recorded yet.
-                    </p>
-                  ) : (
-                    kotActivity.map((activity) => (
-                      <div
-                        key={activity.id}
-                        className="flex min-w-0 flex-col gap-2 px-4 py-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4"
-                      >
-                        <div className="min-w-0">
-                          <p className="break-words text-sm font-semibold">
-                            {humanizeKotEvent(activity.event)}
-                          </p>
-                          <p className="mt-0.5 text-xs text-muted-foreground">
-                            {activity.actor_name ||
-                              activity.actor_role ||
-                              "System"}
-                          </p>
-                        </div>
-                        <time className="text-xs text-muted-foreground sm:shrink-0 sm:whitespace-nowrap">
-                          {activity.created_at
-                            ? formatDateTime(activity.created_at)
-                            : "—"}
-                        </time>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </section>
-            </div>
-          ) : null}
-          <DialogFooter className="border-t border-border/50 bg-muted/20 p-4 sm:p-5">
-            <Button
-              type="button"
-              variant="outline"
-              className="h-10 w-full rounded-xl sm:w-auto"
-              onClick={() => setKotDetailsOpen(false)}
-            >
-              Close
-            </Button>
-          </DialogFooter>
-        </DialogContent>
+        {selectedKot ? (
+          <KotTicketDetail
+            ticket={selectedKot}
+            activity={kotActivity}
+            activityLoading={kotActivityLoading}
+            activityAction={kotActivityError ? <p role="alert" className="text-xs text-destructive">Could not load activity. Close and reopen to retry.</p> : null}
+            onClose={() => setKotDetailsOpen(false)}
+            actions={nextKotStatus(selectedKot.status) ? <>
+              <Button type="button" className="h-11 w-full font-semibold sm:w-auto" disabled={kotStatusUpdating} onClick={() => { const next = nextKotStatus(selectedKot.status); if (next) void updateKotStatus(selectedKot.id, next); }}>
+                {kotNextActionLabel(selectedKot.status)}
+              </Button>
+              <Button type="button" variant="outline" className="h-11 w-full border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive sm:w-auto" disabled={kotStatusUpdating} onClick={() => void rejectKot(selectedKot.id)}>Reject ticket</Button>
+            </> : null}
+            items={<KotTicketItems ticket={selectedKot} canOperate={hasPermission(user, "pos.view")} onUpdated={async (updated) => {
+              setSelectedKot((current) => current?.id === updated.id ? { ...current, ...updated } as OrdersKot : current);
+              setKots((current) => current.map((kot) => kot.id === updated.id ? { ...kot, ...updated } as OrdersKot : kot));
+              await fetchKotData();
+            }} />}
+          />
+        ) : null}
       </Dialog>
     </AppPage>
   );

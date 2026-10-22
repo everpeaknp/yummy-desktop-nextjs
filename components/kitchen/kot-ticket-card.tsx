@@ -1,7 +1,10 @@
 import { AlertTriangle, CheckCircle2, Clock, Loader2 } from "lucide-react";
-import { useEffect, useState, type ReactNode } from "react";
+import Link from "next/link";
+import { formatDateTime } from "@/lib/utils";
+import { useEffect, useId, useState, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
+import { DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 
 export interface KitchenTicketItem {
@@ -160,6 +163,7 @@ export function kotItemProgressLabel(item: KitchenTicketItem): string {
   if (ordered > 0 && Number(item.qty_ready || 0) >= ordered) return "Ready";
   if (Number(item.qty_ready || 0) > 0 || Number(item.qty_served || 0) > 0)
     return "Partially ready";
+  if (String(item.item_status || "").toUpperCase() === "PREPARING") return "Preparing";
   return "Waiting";
 }
 
@@ -180,6 +184,113 @@ function serviceContext(ticket: KitchenTicket): string | undefined {
   if (ticket.order?.business_line === "hotel")
     return ticket.table_name || "Room service";
   return ticket.table_name || ticket.customer_name || kotTypeLabel(ticket.type);
+}
+
+export function KotTicketMeta({ ticket, compact = false }: { ticket: KitchenTicket; compact?: boolean }) {
+  return (
+    <dl className={cn("grid gap-3 border-y border-border/60 py-4 text-sm", compact ? "sm:grid-cols-2" : "sm:grid-cols-3")}>
+      <div className="min-w-0 sm:border-r sm:border-border/60 sm:pr-4">
+        <dt className="text-xs text-muted-foreground">Created</dt>
+        <dd className="mt-1 font-semibold text-foreground">{ticket.created_at ? formatDateTime(ticket.created_at) : "Unknown"}</dd>
+      </div>
+      <div className={cn("min-w-0", !compact && "sm:border-r sm:border-border/60 sm:pr-4")}>
+        <dt className="text-xs text-muted-foreground">Recorded by</dt>
+        <dd className="mt-1 break-words font-semibold text-foreground">{ticket.created_by_staff_name || "Unknown"}</dd>
+      </div>
+      {!compact ? <div className="min-w-0">
+        <dt className="text-xs text-muted-foreground">Order</dt>
+        <dd className="mt-1 font-semibold">{ticket.order_id ? <Link className="rounded-sm text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary" href={`/orders/${ticket.order_id}`}>Order #{ticket.restaurant_order_id || ticket.order_id}</Link> : "Unknown"}</dd>
+      </div> : null}
+    </dl>
+  );
+}
+
+export interface KotActivityEntry {
+  id: number;
+  event: string;
+  actor_name?: string | null;
+  actor_role?: string | null;
+  created_at?: string | null;
+  change_field?: string | null;
+  new_value?: Record<string, unknown> | null;
+}
+
+export function KotTicketActivity({ entries, loading }: { entries: KotActivityEntry[]; loading: boolean }) {
+  return (
+    <section className="min-w-0 overflow-hidden rounded-xl border border-border/60 bg-card">
+      <div className="border-b border-border/60 px-4 py-3">
+        <h3 className="text-sm font-semibold text-foreground">Activity</h3>
+        <p className="mt-0.5 text-xs text-muted-foreground">Changes to this ticket</p>
+      </div>
+      {loading ? <p className="px-4 py-6 text-sm text-muted-foreground">Loading activity…</p> : entries.length === 0 ? <p className="px-4 py-6 text-sm text-muted-foreground">No activity recorded yet.</p> : (
+        <ol className="divide-y divide-border/50">
+          {entries.map((entry) => <li key={entry.id} className="flex min-w-0 flex-col gap-1 px-4 py-3 sm:flex-row sm:justify-between sm:gap-4">
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-foreground">{humanizeKotEvent(entry.event)}</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">{entry.actor_name || entry.actor_role || "System"}{entry.change_field ? ` · ${entry.change_field}` : ""}</p>
+              {entry.new_value?.reason ? <p className="mt-1 break-words text-xs text-muted-foreground">Reason: {String(entry.new_value.reason)}</p> : null}
+              {entry.new_value?.status ? <p className="mt-1 text-xs text-muted-foreground">Status: {kotStatusLabel(String(entry.new_value.status))}</p> : null}
+            </div>
+            <time dateTime={entry.created_at || undefined} className="shrink-0 text-xs text-muted-foreground">{entry.created_at ? formatDateTime(entry.created_at) : "Unknown time"}</time>
+          </li>)}
+        </ol>
+      )}
+    </section>
+  );
+}
+
+export function KotTicketDetail({
+  ticket,
+  actions,
+  items,
+  activity,
+  activityLoading,
+  activityAction,
+  onClose,
+}: {
+  ticket: KitchenTicket;
+  actions?: ReactNode;
+  items: ReactNode;
+  activity: KotActivityEntry[];
+  activityLoading: boolean;
+  activityAction?: ReactNode;
+  onClose: () => void;
+}) {
+  const titleId = useId();
+  const descriptionId = useId();
+  const itemCount = ticket.items.filter(
+    (item) => !item.is_deleted && !String(item.item_name || "").toLowerCase().includes("room charge") && Math.abs(Number(item.qty_change || 0)) > 0,
+  ).length;
+
+  return (
+    <DialogContent aria-labelledby={titleId} aria-describedby={descriptionId} className="flex h-[100dvh] w-full max-w-none min-w-0 flex-col gap-0 overflow-hidden rounded-none border-border bg-card p-0 sm:h-auto sm:max-h-[min(88vh,800px)] sm:w-[calc(100vw-3rem)] sm:max-w-[900px] sm:rounded-2xl">
+      <DialogHeader className="shrink-0 border-b border-border/60 p-0 text-left">
+        <div className="pr-12 sm:pr-14"><KotTicketHeader ticket={ticket} delayed={isKotDelayed(ticket)} /></div>
+        <DialogTitle id={titleId} className="sr-only">KOT #{ticket.kot_number || ticket.id} details</DialogTitle>
+        <DialogDescription id={descriptionId} className="sr-only">Kitchen ticket items and activity</DialogDescription>
+      </DialogHeader>
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 sm:p-5">
+        <KotTicketMeta ticket={ticket} />
+        {actions ? <div className="mt-4 flex flex-wrap items-center gap-2">{actions}</div> : null}
+        <div className="mt-5 grid min-w-0 grid-cols-1 items-start gap-5 lg:grid-cols-2">
+          <section className="min-w-0 overflow-hidden rounded-xl border border-border/60 bg-card">
+            <div className="flex items-center justify-between gap-3 border-b border-border/60 px-4 py-3">
+              <h3 className="text-sm font-semibold text-foreground">Items to prepare</h3>
+              <span className="text-xs font-medium tabular-nums text-muted-foreground">{itemCount} {itemCount === 1 ? "item" : "items"}</span>
+            </div>
+            {items}
+          </section>
+          <div className="min-w-0 space-y-2">
+            {activityAction ? <div className="flex justify-end">{activityAction}</div> : null}
+            <KotTicketActivity entries={activity} loading={activityLoading} />
+          </div>
+        </div>
+      </div>
+      <DialogFooter className="shrink-0 border-t border-border/60 bg-muted/20 p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:p-5">
+        <Button type="button" variant="outline" className="h-10 w-full sm:w-auto" onClick={onClose}>Close</Button>
+      </DialogFooter>
+    </DialogContent>
+  );
 }
 
 export function KotTicketStatusBadge({
@@ -275,12 +386,12 @@ export function KotTicketHeader({
     <header
       className={cn(
         "min-w-0",
-        compact ? "px-3 py-3" : "px-4 pb-3 pt-4 sm:px-5",
+        compact ? "px-3 py-3" : "px-4 py-4 sm:px-5",
       )}
     >
       <div className="flex min-w-0 items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-sm font-bold tracking-tight text-foreground">
+          <p className={cn("font-bold tracking-tight text-foreground", compact ? "text-sm" : "text-lg")}>
             KOT #{ticket.kot_number || ticket.id}
           </p>
           <p className="mt-1 truncate text-xs font-medium text-muted-foreground">
@@ -311,11 +422,13 @@ export function KotTicketItemList({
   items,
   limit,
   compact = false,
+  showProgress = false,
   renderAction,
 }: {
   items: KitchenTicketItem[];
   limit?: number;
   compact?: boolean;
+  showProgress?: boolean;
   renderAction?: (item: KitchenTicketItem) => ReactNode;
 }) {
   const visibleItems = items.filter(
@@ -328,9 +441,11 @@ export function KotTicketItemList({
 
   return (
     <div className="divide-y divide-border/45">
+      {visibleItems.length === 0 ? <p className="px-4 py-6 text-sm text-muted-foreground sm:px-5">No active items on this ticket.</p> : null}
       {displayedItems.map((item) => {
         const itemStatus = kotItemProgressLabel(item);
         const quantity = Math.abs(Number(item.qty_change || 0));
+        const action = renderAction?.(item);
         return (
           <div
             key={item.id}
@@ -375,6 +490,11 @@ export function KotTicketItemList({
                       {item.notes}
                     </p>
                   ) : null}
+                  {showProgress && quantity > 0 ? (
+                    <p className="mt-2 text-xs tabular-nums text-muted-foreground">
+                      Ready: {item.qty_ready || 0} · Served: {item.qty_served || 0}
+                    </p>
+                  ) : null}
                 </div>
               </div>
               <div className="flex min-w-0 flex-wrap items-center gap-2 sm:justify-end">
@@ -392,9 +512,9 @@ export function KotTicketItemList({
                     aria-hidden="true"
                   />
                 ) : null}
-                {renderAction ? renderAction(item) : null}
               </div>
             </div>
+            {action ? <div className="mt-3 flex flex-wrap justify-end gap-2 border-t border-border/45 pt-3">{action}</div> : null}
           </div>
         );
       })}
@@ -502,6 +622,7 @@ export function KotCompactTicketCard({
     <button
       type="button"
       onClick={onOpenDetails}
+      aria-label={`Open KOT ${kot.kot_number || kot.id} details`}
       className="block h-full w-full text-left outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
     >
       <article className="flex h-full min-w-0 flex-col overflow-hidden rounded-xl border border-border/70 bg-card shadow-sm transition-[border-color,box-shadow] hover:border-primary/35 hover:shadow-md">
@@ -518,11 +639,13 @@ export function KotEmbeddedTicketCard({
   kot,
   primaryAction,
   onReject,
+  onOpenDetails,
   isUpdating,
 }: {
   kot: KitchenTicket;
   primaryAction?: KitchenTicketPrimaryAction | null;
   onReject?: () => void;
+  onOpenDetails?: () => void;
   isUpdating?: boolean;
 }) {
   const isTerminal = TERMINAL_STATUSES.has(
@@ -535,12 +658,15 @@ export function KotEmbeddedTicketCard({
         isKotDelayed(kot) && "border-destructive/35",
       )}
     >
-      <div className="border-b border-dashed border-border/70">
-        <KotTicketHeader ticket={kot} delayed={isKotDelayed(kot)} compact />
-      </div>
-      <KotTicketItemList items={kot.items} compact />
+      <button type="button" className="w-full min-w-0 text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary" onClick={onOpenDetails} aria-label={`Open KOT ${kot.kot_number || kot.id} details`}>
+        <div className="border-b border-dashed border-border/70">
+          <KotTicketHeader ticket={kot} delayed={isKotDelayed(kot)} compact />
+        </div>
+        <div className="px-3 sm:px-4"><KotTicketMeta ticket={kot} compact /></div>
+        <KotTicketItemList items={kot.items} compact />
+      </button>
       {primaryAction || (!isTerminal && onReject) ? (
-        <footer className="flex min-w-0 items-center gap-2 border-t border-dashed border-border/70 bg-muted/20 p-3">
+        <footer className="flex min-w-0 flex-wrap items-center gap-2 border-t border-dashed border-border/70 bg-muted/20 p-3">
           {primaryAction ? (
             <Button
               type="button"
