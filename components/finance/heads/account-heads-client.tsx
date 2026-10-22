@@ -98,6 +98,7 @@ export function AccountHeadsClient() {
   );
 
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [treeData, setTreeData] = useState<FinanceReportingTreeNode[]>([]);
   const [allHeads, setAllHeads] = useState<FinanceReportingHeadRead[]>([]);
   const [expandedNodeIds, setExpandedNodeIds] = useState<Set<number>>(new Set());
@@ -127,6 +128,7 @@ export function AccountHeadsClient() {
   const loadData = async () => {
     if (!restaurantId) return;
     setLoading(true);
+    setLoadError(null);
     try {
       const [treeRes, headsRes, activityRes, custodyRes] = await Promise.all([
         financeReportingApi.getTree(restaurantId),
@@ -152,8 +154,8 @@ export function AccountHeadsClient() {
         root.children.forEach((child) => defaultExpanded.add(child.id));
       });
       setExpandedNodeIds(defaultExpanded);
-    } catch (err: any) {
-      toast.error(err.message || "Couldn't load categories");
+    } catch {
+      setLoadError("Could not load categories. Check your connection and retry.");
     } finally {
       setLoading(false);
     }
@@ -544,6 +546,11 @@ export function AccountHeadsClient() {
           <div className="flex flex-col items-center justify-center py-16 text-muted-foreground gap-2">
             <Loader2 className="h-7 w-7 animate-spin text-primary" />
             <p className="text-xs">Loading categories...</p>
+          </div>
+        ) : loadError && treeData.length === 0 ? (
+          <div role="alert" className="flex flex-col items-center gap-3 px-4 py-16 text-center">
+            <p className="text-sm text-foreground">{loadError}</p>
+            <Button variant="outline" size="sm" onClick={loadData}>Retry</Button>
           </div>
         ) : filteredTree.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-center text-muted-foreground gap-3">

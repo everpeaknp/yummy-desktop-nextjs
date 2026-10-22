@@ -21,6 +21,16 @@ beforeEach(() => {
 });
 
 describe("financeReportingApi reports", () => {
+  it("loads COA heads from the canonical slash-terminated route", async () => {
+    mocked.get.mockResolvedValueOnce({ data: { data: [] } });
+
+    await financeReportingApi.listHeads(52, { is_active: true });
+
+    expect(mocked.get).toHaveBeenCalledWith("/finance/reporting-heads/", {
+      params: { restaurant_id: 52, is_active: true },
+    });
+  });
+
   it("uses only independent reporting-ledger report routes", async () => {
     const period = {
       date_from: "2026-08-01",

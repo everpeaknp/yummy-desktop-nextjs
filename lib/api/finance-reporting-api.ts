@@ -52,7 +52,7 @@ export const financeReportingApi = {
     },
   ): Promise<FinanceReportingHeadRead[]> => {
     const res = await apiClient.get<ApiResponse<FinanceReportingHeadRead[]>>(
-      "/finance/reporting-heads",
+      "/finance/reporting-heads/",
       {
         params: {
           restaurant_id: restaurantId,
