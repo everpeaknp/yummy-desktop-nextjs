@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CreditCard, Loader2, Pencil, Plus, QrCode } from "lucide-react";
+import jsQR from "jsqr";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -91,6 +92,10 @@ export function PaymentInstrumentsPanel({
   const [bankId, setBankId] = useState("none");
   const [checkoutEnabled, setCheckoutEnabled] = useState(true);
   const [checkoutDetail, setCheckoutDetail] = useState("");
+  const [scanningQr, setScanningQr] = useState(false);
+  const [readingQrImage, setReadingQrImage] = useState(false);
+  const qrVideoRef = useRef<HTMLVideoElement>(null);
+  const qrFileRef = useRef<HTMLInputElement>(null);
   const [dynamicFonepay, setDynamicFonepay] = useState(false);
   const migratedLegacyRef = useRef(false);
   const isCard = method === "card";
@@ -98,6 +103,87 @@ export function PaymentInstrumentsPanel({
     !isCard && ["qr", "bank_qr", "static_qr"].includes(instrumentType);
   const isDynamicFonepay =
     method === "fonepay" && instrumentType === "qr" && dynamicFonepay;
+
+  useEffect(() => {
+    if (!scanningQr || !open || !isCheckoutQr || isDynamicFonepay) return;
+    let stopped = false;
+    let stream: MediaStream | null = null;
+    let timer: number | undefined;
+    const video = qrVideoRef.current;
+    const start = async () => {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+        if (stopped || !video) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+        video.srcObject = stream;
+        await video.play();
+        const canvas = document.createElement("canvas");
+        const context = canvas.getContext("2d", { willReadFrequently: true });
+        timer = window.setInterval(() => {
+          if (!context || video.readyState < 2) return;
+          canvas.width = video.videoWidth;
+          canvas.height = video.videoHeight;
+          context.drawImage(video, 0, 0);
+          const image = context.getImageData(0, 0, canvas.width, canvas.height);
+          const payload = jsQR(image.data, image.width, image.height)?.data.trim();
+          if (payload) {
+            if (payload.length > 500) {
+              toast.error("This QR payload is too long for a payment instrument.");
+            } else {
+              setCheckoutDetail(payload);
+            }
+            setScanningQr(false);
+          }
+        }, 250);
+      } catch {
+        if (!stopped) {
+          setScanningQr(false);
+          toast.error("Could not open the camera. Upload a QR image instead.");
+        }
+      }
+    };
+    void start();
+    return () => {
+      stopped = true;
+      if (timer !== undefined) window.clearInterval(timer);
+      stream?.getTracks().forEach((track) => track.stop());
+      if (video) video.srcObject = null;
+    };
+  }, [scanningQr, open, isCheckoutQr, isDynamicFonepay]);
+
+  const readQrImage = async (file?: File) => {
+    if (!file) return;
+    setReadingQrImage(true);
+    try {
+      const bitmap = await createImageBitmap(file);
+      try {
+        const canvas = document.createElement("canvas");
+        canvas.width = bitmap.width;
+        canvas.height = bitmap.height;
+        const context = canvas.getContext("2d", { willReadFrequently: true });
+        if (!context) throw new Error("Canvas unavailable");
+        context.drawImage(bitmap, 0, 0);
+        const image = context.getImageData(0, 0, canvas.width, canvas.height);
+        const payload = jsQR(image.data, image.width, image.height)?.data.trim();
+        if (!payload) {
+          toast.error("No QR code found in that image.");
+        } else if (payload.length > 500) {
+          toast.error("This QR payload is too long for a payment instrument.");
+        } else {
+          setCheckoutDetail(payload);
+          setScanningQr(false);
+        }
+      } finally {
+        bitmap.close();
+      }
+    } catch {
+      toast.error("Could not read that QR image. Try another image.");
+    } finally {
+      setReadingQrImage(false);
+    }
+  };
   const basePermittedTypes =
     instrumentTypesByMethod[method] ?? instrumentTypesByMethod.card;
   // Existing rows may use a historical type. Keep it visible during editing so
@@ -115,6 +201,7 @@ export function PaymentInstrumentsPanel({
       ];
 
   const changeMethod = (nextMethod: string) => {
+    setScanningQr(false);
     const permitted =
       instrumentTypesByMethod[nextMethod] ?? instrumentTypesByMethod.card;
     setMethod(nextMethod);
@@ -125,6 +212,7 @@ export function PaymentInstrumentsPanel({
   };
 
   const changeInstrumentType = (nextType: string) => {
+    setScanningQr(false);
     setInstrumentType(nextType);
     if (method !== "fonepay" || nextType !== "qr") setDynamicFonepay(false);
   };
@@ -199,6 +287,7 @@ export function PaymentInstrumentsPanel({
   };
 
   const closeEditor = () => {
+    setScanningQr(false);
     setOpen(false);
     setEditing(null);
   };
@@ -532,16 +621,31 @@ export function PaymentInstrumentsPanel({
                 value={checkoutDetail}
                 onChange={(event) => setCheckoutDetail(event.target.value)}
                 disabled={isDynamicFonepay}
+                readOnly={isCheckoutQr && !isDynamicFonepay}
                 placeholder={
                   isDynamicFonepay
                     ? "Generated separately by FonePay for every sale"
                     : isCard
                       ? "Terminal ID or last four digits"
                       : isCheckoutQr
-                        ? "Paste the QR payment string"
+                      ? "Scan or upload the payment QR"
                         : "Optional checkout detail"
                 }
               />
+              {isCheckoutQr && !isDynamicFonepay ? (
+                <>
+                  <div className="flex flex-wrap gap-2">
+                    <Button type="button" variant="outline" className="min-h-11" onClick={() => setScanningQr((value) => !value)} disabled={saving}>
+                      {scanningQr ? "Stop camera" : "Scan QR"}
+                    </Button>
+                    <Button type="button" variant="outline" className="min-h-11" onClick={() => qrFileRef.current?.click()} disabled={saving || readingQrImage}>
+                      {readingQrImage ? "Reading image…" : "Upload QR image"}
+                    </Button>
+                    <input ref={qrFileRef} type="file" accept="image/*" className="hidden" tabIndex={-1} aria-label="Choose payment QR image" onChange={(event) => { void readQrImage(event.target.files?.[0]); event.target.value = ""; }} />
+                  </div>
+                  {scanningQr ? <video ref={qrVideoRef} muted playsInline aria-label="Payment QR camera preview" className="aspect-video w-full rounded-lg bg-muted object-cover" /> : null}
+                </>
+              ) : null}
               {isDynamicFonepay ? (
                 <p className="text-xs text-muted-foreground">
                   FonePay generates a fresh QR for every sale; no static payload
