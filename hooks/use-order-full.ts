@@ -8,6 +8,20 @@ export function useOrderFull(orderId: string | number) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Quietly refresh additions without replacing the accepted bill with a loader.
+  useEffect(() => {
+    if (!context?.order.table_id || ["completed", "canceled", "cancelled"].includes(context.order.status)) return;
+    let disposed = false;
+    const timer = setInterval(async () => {
+      if (document.visibilityState !== "visible") return;
+      try {
+        const response = await apiClient.get(OrderApis.getOrderFull(Number(orderId)));
+        if (!disposed && response.data.status === "success") setContext(current => current?.order.id === Number(orderId) ? response.data.data : current);
+      } catch { /* Preserve the last confirmed bill; explicit refresh surfaces errors. */ }
+    }, 10000);
+    return () => { disposed = true; clearInterval(timer); };
+  }, [orderId, context?.order.table_id, context?.order.status]);
+
   const fetchContext = useCallback(async () => {
     if (!orderId) return;
     
@@ -133,8 +147,22 @@ export function useOrderFull(orderId: string | number) {
     });
   }, [context?.tables, context?.order?.table_id, context?.order?.table_ids]);
 
+  // Update a single ticket locally so status actions do not reload the whole
+  // order context (and consequently reset the user's scroll position).
+  const updateKotLocal = useCallback((kotId: number, patch: Partial<KOTUpdate>) => {
+    setContext((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        kots: prev.kots.map((kot) =>
+          kot.id === kotId ? { ...kot, ...patch } : kot,
+        ),
+      };
+    });
+  }, []);
+
   const isFullyPaid = context ? context.payments.filter(p => !p.status || p.status.toLowerCase() === 'success').reduce((sum, p) => sum + Number(p.amount), 0) >= (Number(context.order.grand_total) - 0.01) : false;
   const allKotsServed = context ? (context.kots.length === 0 || context.kots.every(kot => ['served', 'completed', 'ready', 'rejected', 'cancelled'].includes(kot.status?.toLowerCase()))) : false;
 
-  return { context, loading, error, fetchContext, isFullyPaid, allKotsServed };
+  return { context, loading, error, fetchContext, updateKotLocal, isFullyPaid, allKotsServed };
 }

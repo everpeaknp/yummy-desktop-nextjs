@@ -18,6 +18,7 @@ import {
   DateRangeDropdown,
   type DateRangePreset,
 } from "@/components/ui/date-range-dropdown";
+import { ReportFilters } from "@/components/reports/report-filters";
 
 export type DatePreset = DateRangePreset;
 export type AccountingReportBasis = "posted_journals" | "finance_events" | "both";
@@ -74,20 +75,24 @@ export function FinancialReportFilters({
   } | ${reportBasisLabel}`;
 
   return (
-    <div className="flex flex-col gap-3 border-y border-border bg-background px-4 py-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Active scope</div>
-          <div className="text-sm font-medium text-foreground">{activeScope}</div>
+    <div className="space-y-2">
+      <div className="flex min-w-0 items-center justify-between gap-2 rounded-xl bg-muted/50 px-3 py-2.5">
+        <div className="min-w-0">
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Active scope</div>
+          <div className="truncate text-xs font-medium text-foreground sm:text-sm">{activeScope}</div>
         </div>
         {onReset && (
-          <Button variant="ghost" size="sm" onClick={onReset}>
+          <Button variant="ghost" className="h-9 shrink-0 rounded-lg px-2.5 text-xs" onClick={onReset}>
             Reset filters
           </Button>
         )}
       </div>
-      <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-        <div className="flex flex-wrap items-end gap-3">
+      <ReportFilters
+        title="Report filters"
+        activeCount={Number(Boolean(station)) + Number(businessLine !== "restaurant") + Number(reportBasis !== "posted_journals")}
+      >
+      <div className="flex w-full flex-col gap-3 md:flex-row md:items-end md:justify-between">
+        <div className="grid min-w-0 flex-1 gap-3 sm:grid-cols-2 md:flex md:flex-wrap md:items-end">
           <div className="grid gap-1.5">
             <Label className="text-xs text-muted-foreground">Date range</Label>
             <DateRangeDropdown
@@ -116,13 +121,14 @@ export function FinancialReportFilters({
                   onDateToChange(`${year}-${month}-${day}`);
                 }
               }}
+              className="h-11 w-full rounded-xl md:w-auto"
             />
           </div>
           {onBusinessLineChange && (
             <div className="grid gap-1.5">
               <Label className="text-xs text-muted-foreground">Business line</Label>
               <Select value={businessLine || "restaurant"} onValueChange={onBusinessLineChange}>
-                <SelectTrigger className="h-9 w-[150px]">
+                <SelectTrigger className="h-11 w-full rounded-xl md:w-[150px]">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -139,7 +145,7 @@ export function FinancialReportFilters({
                 value={reportBasis}
                 onValueChange={(value) => onReportBasisChange(value as AccountingReportBasis)}
               >
-                <SelectTrigger className="h-9 w-[170px]">
+                <SelectTrigger className="h-11 w-full rounded-xl md:w-[170px]">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -160,7 +166,7 @@ export function FinancialReportFilters({
                 value={station}
                 onChange={(event: React.ChangeEvent<HTMLInputElement>) => onStationChange(event.target.value)}
                 placeholder="Leave blank for all stations"
-                className="h-9 w-[180px]"
+                className="h-11 w-full rounded-xl md:w-[180px]"
               />
               <p className="text-[11px] text-muted-foreground">
                 Optional source station filter, like `bar` or `frontdesk`. Enter `mixed` for Unassigned / mixed station.
@@ -170,18 +176,19 @@ export function FinancialReportFilters({
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {actions}
-          <Button variant="outline" size="sm" onClick={onRefresh} disabled={refreshing}>
+          <Button variant="outline" className="h-11 rounded-xl" onClick={onRefresh} disabled={refreshing}>
             <RefreshCw className={refreshing ? "mr-2 h-4 w-4 animate-spin" : "mr-2 h-4 w-4"} />
             Refresh
           </Button>
           {onExport && (
-            <Button variant="outline" size="sm" onClick={onExport} disabled={exportDisabled}>
+            <Button variant="outline" className="h-11 rounded-xl" onClick={onExport} disabled={exportDisabled}>
               <Download className="mr-2 h-4 w-4" />
               Export
             </Button>
           )}
         </div>
       </div>
+      </ReportFilters>
     </div>
   );
 }

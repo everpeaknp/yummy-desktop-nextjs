@@ -91,7 +91,6 @@ export default function Home() {
 
   // Helper: handle successful auth response (login or google)
   const handleAuthSuccess = useCallback((data: any) => {
-    setRedirecting(true);
     const {
       access_token,
       refresh_token,
@@ -125,6 +124,9 @@ export default function Home() {
     console.log("[Auth] Constructed User Object:", user);
     
     setAuth(user, access_token, refresh_token);
+    // setAuth clears redirect state for normal session updates. Interactive
+    // auth must turn it back on until the restaurant-aware route is resolved.
+    setRedirecting(true);
     markInteractiveSessionReady();
 
     // New registrations have no restaurant — clear any stale persisted profile

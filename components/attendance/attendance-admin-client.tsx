@@ -1,5 +1,10 @@
 "use client";
 
+import { MobileReportControls } from "@/components/attendance/mobile-report-controls";
+
+import { AttendanceMobileNavigation } from "@/components/attendance/attendance-mobile-navigation";
+import { PayrollPeriodReview } from "@/components/attendance/payroll-period-review";
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
@@ -12,6 +17,8 @@ import {
   Copy,
   Download,
   Fingerprint,
+  LogIn,
+  LogOut,
   Loader2,
   MapPin,
   Pencil,
@@ -25,12 +32,15 @@ import { toast } from "sonner";
 import apiClient from "@/lib/api-client";
 import { StaffApis, StaffProfileApis } from "@/lib/api/endpoints";
 import { attendanceApi } from "@/lib/attendance/api";
+import { useAuth } from "@/hooks/use-auth";
+import { getAttendanceUiAccess, hasPermission } from "@/lib/role-permissions";
+import { EntitlementGate } from "@/components/subscription/entitlement-gate";
+import { useEntitlement } from "@/hooks/use-subscription";
 import type {
   AttendanceDevice,
   AttendanceEntry,
   AttendanceHoliday,
   AttendanceLeave,
-  AttendanceMobileDevice,
   AttendanceOverview,
   AttendanceQrSession,
   AttendanceSchedule,
@@ -40,21 +50,60 @@ import type {
 } from "@/lib/attendance/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { TimezoneSelect } from "@/components/ui/timezone-select";
 import { FieldInfo } from "@/components/ui/field-info";
 import LocationPicker from "@/components/manage/profile/location-picker";
 import { forwardGeocode, reverseGeocode } from "@/lib/geocode";
 import { attendanceRadiusLabel } from "./attendance-policy";
+import { AttendanceRegister } from "./attendance-register";
+import TeamSchedule from "@/app/(dashboard)/attendance/schedule/page";
+import {
+  attendanceApprovalLabel,
+  attendanceExceptionLabel,
+} from "@/lib/presentation/workforce";
+import { AppPage } from "@/components/patterns/page/app-page";
+import { PageHeader } from "@/components/patterns/page/page-header";
+import {
+  WorkforceMetricStrip,
+  WorkforceSection,
+} from "@/components/workforce/workforce-presentation";
 
 type StaffProfile = { id: number; user_id: number; account_number?: string };
 type StaffUser = {
@@ -67,6 +116,16 @@ type StaffUser = {
   roles?: string[];
 };
 
+const WEEKDAY_NAMES = [
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+  "Sunday",
+];
+
 function staffRoleLabel(user?: StaffUser) {
   const raw =
     user?.primary_role ||
@@ -78,10 +137,18 @@ function staffRoleLabel(user?: StaffUser) {
     .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
-function staffLabel(profile: StaffProfile | undefined, usersById: Map<number, StaffUser>) {
+function staffLabel(
+  profile: StaffProfile | undefined,
+  usersById: Map<number, StaffUser>,
+) {
   if (!profile) return "Unknown staff";
   const user = usersById.get(profile.user_id);
-  const name = user?.name || user?.full_name || user?.email || profile.account_number || "Staff #" + profile.id;
+  const name =
+    user?.name ||
+    user?.full_name ||
+    user?.email ||
+    profile.account_number ||
+    "Staff #" + profile.id;
   const role = staffRoleLabel(user);
   return role ? `${name} · ${role}` : name;
 }
@@ -113,11 +180,49 @@ const todayIso = () => {
   return `${year}-${month}-${day}`;
 };
 
+function weekMondayIso(value: string) {
+  const [year, month, day] = value.split("-").map(Number);
+  const local = new Date(year, month - 1, day);
+  local.setDate(local.getDate() - ((local.getDay() + 6) % 7));
+  return [
+    local.getFullYear(),
+    String(local.getMonth() + 1).padStart(2, "0"),
+    String(local.getDate()).padStart(2, "0"),
+  ].join("-");
+}
+
+function weekDates(mondayIso: string) {
+  const [year, month, day] = mondayIso.split("-").map(Number);
+  return WEEKDAY_NAMES.map((_, index) => {
+    const local = new Date(year, month - 1, day + index);
+    return [
+      local.getFullYear(),
+      String(local.getMonth() + 1).padStart(2, "0"),
+      String(local.getDate()).padStart(2, "0"),
+    ].join("-");
+  });
+}
+
+function firstApplicableDate(effectiveFrom: string, weekday: number) {
+  const [year, month, day] = effectiveFrom.split("-").map(Number);
+  const local = new Date(year, month - 1, day);
+  const offset = (weekday - ((local.getDay() + 6) % 7) + 7) % 7;
+  local.setDate(local.getDate() + offset);
+  return [
+    local.getFullYear(),
+    String(local.getMonth() + 1).padStart(2, "0"),
+    String(local.getDate()).padStart(2, "0"),
+  ].join("-");
+}
+
 function isOpenEntry(entry: AttendanceEntry) {
   return entry.status === "open" || !entry.clock_out_at;
 }
 
-function mergeEntriesWithOpenCarryover(selectedEntries: AttendanceEntry[], recentEntries: AttendanceEntry[]) {
+function mergeEntriesWithOpenCarryover(
+  selectedEntries: AttendanceEntry[],
+  recentEntries: AttendanceEntry[],
+) {
   const merged = new Map<number, AttendanceEntry>();
   for (const entry of selectedEntries) merged.set(entry.id, entry);
   for (const entry of recentEntries) {
@@ -137,13 +242,27 @@ function settingsToForm(settings: AttendanceSettings): AttendanceSettingsForm {
     latitude: settings.latitude != null ? String(settings.latitude) : "",
     longitude: settings.longitude != null ? String(settings.longitude) : "",
     geofence_radius_meters: String(settings.geofence_radius_meters || 150),
-    required_location_accuracy_meters: String(settings.required_location_accuracy_meters || 100),
-    early_clock_in_tolerance_minutes: String(settings.early_clock_in_tolerance_minutes ?? 15),
-    late_clock_out_tolerance_minutes: String(settings.late_clock_out_tolerance_minutes ?? 15),
-    rapid_repeat_window_seconds: String(settings.rapid_repeat_window_seconds ?? 30),
-    automatic_break_after_minutes: String(settings.automatic_break_after_minutes ?? 360),
-    automatic_break_duration_minutes: String(settings.automatic_break_duration_minutes ?? 30),
-    missing_checkout_review_after_minutes: String(settings.missing_checkout_review_after_minutes ?? 240),
+    required_location_accuracy_meters: String(
+      settings.required_location_accuracy_meters || 100,
+    ),
+    early_clock_in_tolerance_minutes: String(
+      settings.early_clock_in_tolerance_minutes ?? 15,
+    ),
+    late_clock_out_tolerance_minutes: String(
+      settings.late_clock_out_tolerance_minutes ?? 15,
+    ),
+    rapid_repeat_window_seconds: String(
+      settings.rapid_repeat_window_seconds ?? 30,
+    ),
+    automatic_break_after_minutes: String(
+      settings.automatic_break_after_minutes ?? 360,
+    ),
+    automatic_break_duration_minutes: String(
+      settings.automatic_break_duration_minutes ?? 30,
+    ),
+    missing_checkout_review_after_minutes: String(
+      settings.missing_checkout_review_after_minutes ?? 240,
+    ),
     overtime_rate_multiplier: String(settings.overtime_rate_multiplier ?? 1),
     full_day_minimum_percent: String(settings.full_day_minimum_percent ?? 75),
     half_day_minimum_percent: String(settings.half_day_minimum_percent ?? 50),
@@ -183,8 +302,21 @@ function minutesLabel(minutes: number) {
   return String(hours) + "h " + String(rest).padStart(2, "0") + "m";
 }
 
+function moneyLabel(value: number) {
+  return new Intl.NumberFormat("en-NP", {
+    style: "currency",
+    currency: "NPR",
+    maximumFractionDigits: 2,
+  }).format(value || 0);
+}
+
 function errorMessage(error: unknown, fallback: string) {
-  const candidate = error as { response?: { data?: { message?: string; detail?: string | { message?: string } } }; message?: string };
+  const candidate = error as {
+    response?: {
+      data?: { message?: string; detail?: string | { message?: string } };
+    };
+    message?: string;
+  };
   const detail = candidate.response?.data?.detail;
   return (
     candidate.response?.data?.message ||
@@ -193,22 +325,73 @@ function errorMessage(error: unknown, fallback: string) {
     fallback
   );
 }
-
 function isBiometricAddonError(error: unknown) {
-  const candidate = error as { response?: { data?: { message?: string; errors?: Array<{ code?: string; message?: string }> } } };
+  const candidate = error as {
+    response?: {
+      data?: {
+        message?: string;
+        errors?: Array<{ code?: string; message?: string }>;
+      };
+    };
+  };
   const data = candidate.response?.data;
   return Boolean(
-    data?.errors?.some((item) => item.code === "ATTENDANCE_BIOMETRIC_REQUIRED") ||
-      data?.message?.includes("Biometric-device attendance is not enabled"),
+    data?.errors?.some(
+      (item) => item.code === "ATTENDANCE_BIOMETRIC_REQUIRED",
+    ) || data?.message?.includes("Biometric-device attendance is not enabled"),
   );
 }
 
 export function AttendanceAdminClient() {
+  const user = useAuth((state) => state.user);
+  const biometricAttendancePlan = useEntitlement(
+    "attendance.biometric.enabled",
+    true,
+  );
+  const attendanceAccess = getAttendanceUiAccess(user);
+  const {
+    canView: canViewAttendance,
+    canManage: canManageAttendance,
+    canManageDevices,
+    canExport: canExportAttendance,
+    canPayrollExport,
+    initialTab,
+  } = attendanceAccess;
+  const canManageStaff = hasPermission(user, "admin.staff.view");
   const searchParams = useSearchParams();
-  const [activeTab, setActiveTab] = useState("overview");
+  const canManageQrExpiry = hasPermission(user, "attendance.qr.expiry.manage");
+  const canFinalizePayroll = hasPermission(user, "attendance.payroll.export");
+  const [activeTab, setActiveTab] = useState<string>(initialTab);
+  useEffect(() => {
+    setActiveTab((current) => {
+      if (current === "overview" || current === "reports" || current === "timesheets") {
+        return canViewAttendance ? current : initialTab;
+      }
+      if (current === "payroll-export") {
+        return canPayrollExport ? current : initialTab;
+      }
+      if (["schedules", "qr", "settings"].includes(current)) {
+        return canManageAttendance ? current : initialTab;
+      }
+      if (current === "leave") {
+        return canManageAttendance && canViewAttendance ? current : initialTab;
+      }
+      if (current === "devices") {
+        return canManageDevices ? current : initialTab;
+      }
+      return initialTab;
+    });
+  }, [
+    canManageAttendance,
+    canManageDevices,
+    canPayrollExport,
+    canViewAttendance,
+    initialTab,
+  ]);
   const [loading, setLoading] = useState(true);
-  const [dateFrom, setDateFrom] = useState(todayIso());
-  const [dateTo, setDateTo] = useState(todayIso());
+  const [dateFrom, setDateFrom] = useState(() => /^\d{4}-\d{2}-\d{2}$/.test(searchParams.get("from") || "") ? searchParams.get("from")! : todayIso());
+  const [dateTo, setDateTo] = useState(() => /^\d{4}-\d{2}-\d{2}$/.test(searchParams.get("to") || "") ? searchParams.get("to")! : todayIso());
+  const workspaceRequest = useRef(0);
   const [overview, setOverview] = useState<AttendanceOverview | null>(null);
   const [entries, setEntries] = useState<AttendanceEntry[]>([]);
   const [templates, setTemplates] = useState<AttendanceShiftTemplate[]>([]);
@@ -217,24 +400,82 @@ export function AttendanceAdminClient() {
   const [holidays, setHolidays] = useState<AttendanceHoliday[]>([]);
   const [devices, setDevices] = useState<AttendanceDevice[]>([]);
   const [mappings, setMappings] = useState<StaffDeviceMapping[]>([]);
-  const [mobileDevices, setMobileDevices] = useState<AttendanceMobileDevice[]>([]);
+
   const [staffProfiles, setStaffProfiles] = useState<StaffProfile[]>([]);
   const [staffUsers, setStaffUsers] = useState<StaffUser[]>([]);
   const [biometricUnavailable, setBiometricUnavailable] = useState(false);
-  const [correctionEntry, setCorrectionEntry] = useState<AttendanceEntry | null>(null);
-  const [correctionForm, setCorrectionForm] = useState({ clockIn: "", clockOut: "", reason: "" });
+  const [correctionEntry, setCorrectionEntry] =
+    useState<AttendanceEntry | null>(null);
+  const [correctionForm, setCorrectionForm] = useState({
+    clockIn: "",
+    clockOut: "",
+    reason: "",
+  });
   const [qrSession, setQrSession] = useState<AttendanceQrSession | null>(null);
   const [qrDataUrl, setQrDataUrl] = useState("");
   const [stationLabel, setStationLabel] = useState("Restaurant attendance");
-  const [ttlSeconds, setTtlSeconds] = useState("60");
-  const [pairingCode, setPairingCode] = useState<{ code: string; expires_at: string } | null>(null);
-  const [deviceForm, setDeviceForm] = useState({ name: "", serial_number: "", ip_address: "", port: "4370", timezone: "Asia/Kathmandu" });
-  const [mappingForm, setMappingForm] = useState({ device_id: "", staff_id: "", device_user_id: "" });
-  const [templateForm, setTemplateForm] = useState({ name: "", start_local_time: "09:00", end_local_time: "17:00", unpaid_break_minutes: "30" });
-  const [scheduleForm, setScheduleForm] = useState({ staff_id: "default", shift_template_id: "", weekday: "1", effective_from: todayIso() });
-  const [leaveForm, setLeaveForm] = useState({ staff_id: "", date_from: todayIso(), date_to: todayIso(), leave_type: "paid" as "paid" | "unpaid", day_fraction: "1", reason: "" });
-  const [holidayForm, setHolidayForm] = useState({ holiday_date: todayIso(), name: "", is_paid: true, worked_rate_multiplier: "1", notes: "" });
+  const [qrExpirySeconds, setQrExpirySeconds] = useState("15");
+  const [deviceForm, setDeviceForm] = useState({
+    name: "",
+    device_type: "zkteco_cloud" as AttendanceDevice["device_type"],
+    serial_number: "",
+    ip_address: "",
+    port: "4370",
+    timezone: "Asia/Kathmandu",
+  });
+  const [mappingForm, setMappingForm] = useState({
+    device_id: "",
+    staff_id: "",
+    device_user_id: "",
+  });
+  const [admsTestForm, setAdmsTestForm] = useState({
+    device_id: "",
+    device_user_id: "",
+  });
+  const [templateForm, setTemplateForm] = useState({
+    name: "",
+    start_local_time: "09:00",
+    end_local_time: "17:00",
+    unpaid_break_minutes: "30",
+  });
+  const [editingTemplateId, setEditingTemplateId] = useState<number | null>(
+    null,
+  );
+  const [scheduleForm, setScheduleForm] = useState({
+    staff_id: "default",
+    shift_template_id: "",
+    weekday: "1",
+    effective_from: todayIso(),
+    is_day_off: false,
+  });
+  const [editingScheduleId, setEditingScheduleId] = useState<number | null>(
+    null,
+  );
+  const [weeklyScheduleForm, setWeeklyScheduleForm] = useState({
+    staff_ids: [] as number[],
+    effective_from: weekMondayIso(todayIso()),
+    assignments: ["", "", "", "", "", "", ""],
+  });
+  const [leaveForm, setLeaveForm] = useState({
+    staff_id: "",
+    date_from: todayIso(),
+    date_to: todayIso(),
+    leave_type: "paid" as "paid" | "unpaid",
+    day_fraction: "1",
+    reason: "",
+  });
+  const [holidayForm, setHolidayForm] = useState({
+    holiday_date: todayIso(),
+    name: "",
+    is_paid: true,
+    worked_rate_multiplier: "1",
+    notes: "",
+  });
   const [busy, setBusy] = useState(false);
+  const weeklyScheduleDates = useMemo(
+    () => weekDates(weeklyScheduleForm.effective_from),
+    [weeklyScheduleForm.effective_from],
+  );
   const [settingsForm, setSettingsForm] = useState<AttendanceSettingsForm>({
     timezone: "Asia/Kathmandu",
     address: "",
@@ -255,62 +496,181 @@ export function AttendanceAdminClient() {
     device_clocking_enabled: true,
   });
   const [resolvingAddress, setResolvingAddress] = useState(false);
-  const reverseGeocodeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const forwardGeocodeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reverseGeocodeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const forwardGeocodeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
   const geocodeRequestIdRef = useRef(0);
 
   useEffect(() => {
     const requestedTab = searchParams.get("tab");
-    const validTabs = new Set(["overview", "timesheets", "schedules", "leave", "qr", "devices", "settings"]);
+    const validTabs = new Set([
+      "overview",
+      "reports",
+      "payroll-export",
+      "timesheets",
+      "schedules",
+      "leave",
+      "qr",
+      "devices",
+      "settings",
+    ]);
     if (requestedTab && validTabs.has(requestedTab)) setActiveTab(requestedTab);
 
+    const start = searchParams.get("from");
+    const end = searchParams.get("to");
+    if (start && /^\d{4}-\d{2}-\d{2}$/.test(start)) setDateFrom(start);
+    if (end && /^\d{4}-\d{2}-\d{2}$/.test(end)) setDateTo(end);
     const requestedStaffId = searchParams.get("staff_id");
     if (requestedStaffId && /^\d+$/.test(requestedStaffId)) {
-      setScheduleForm((current) => ({ ...current, staff_id: requestedStaffId }));
+      setScheduleForm((current) => ({
+        ...current,
+        staff_id: requestedStaffId,
+      }));
     }
   }, [searchParams]);
 
-  const usersById = useMemo(() => new Map(staffUsers.map((user) => [user.id, user])), [staffUsers]);
-  const devicesById = useMemo(() => new Map(devices.map((device) => [device.id, device])), [devices]);
+  const changeTab = useCallback((value: string) => setActiveTab(value), []);
+
+  const usersById = useMemo(
+    () => new Map(staffUsers.map((user) => [user.id, user])),
+    [staffUsers],
+  );
+  const devicesById = useMemo(
+    () => new Map(devices.map((device) => [device.id, device])),
+    [devices],
+  );
   const activeEntries = useMemo(() => entries.filter(isOpenEntry), [entries]);
 
   const qrPayload = useMemo(() => {
     if (!qrSession?.token) return "";
-    return "yummy-attendance://clock?token=" + encodeURIComponent(qrSession.token);
+    return (
+      "yummy-attendance://clock?token=" + encodeURIComponent(qrSession.token)
+    );
   }, [qrSession?.token]);
 
+  const timesheetStaffId = Number(searchParams.get("staff_id")) || undefined;
   const loadAll = useCallback(async () => {
+    const request = ++workspaceRequest.current;
     setLoading(true);
     try {
-      const biometricData = Promise.all([
-        attendanceApi.listDevices(),
-        attendanceApi.listDeviceMappings(),
-      ])
-        .then(([deviceData, mappingData]) => ({ deviceData, mappingData, unavailable: false }))
-        .catch((error) => {
-          if (isBiometricAddonError(error)) {
-            return { deviceData: [] as AttendanceDevice[], mappingData: [] as StaffDeviceMapping[], unavailable: true };
-          }
-          throw error;
-        });
-
-      const [settingsData, overviewData, selectedEntryData, recentEntryData, templateData, scheduleData, leaveData, holidayData, biometric, mobileData, profilesRes, usersRes] = await Promise.all([
-        attendanceApi.getSettings(),
-        attendanceApi.overview(dateFrom, dateTo),
-        attendanceApi.listEntries({ dateFrom, dateTo, limit: 300 }),
-        attendanceApi.listEntries({ limit: 300 }),
-        attendanceApi.listShiftTemplates(),
-        attendanceApi.listSchedules(),
-        attendanceApi.listLeaves(),
-        attendanceApi.listHolidays(),
-        biometricData,
-        attendanceApi.listMobileDevices(),
-        apiClient.get(StaffProfileApis.list({ limit: 500 })),
-        apiClient.get(StaffApis.list()),
-      ]);
-      setSettingsForm(settingsToForm(settingsData));
+      const reportLoadFailure = (error: unknown) => {
+        if (request !== workspaceRequest.current) return;
+        console.error("Failed to load attendance workspace data", error);
+        toast.error(
+          errorMessage(error, "Some attendance data could not be loaded"),
+        );
+      };
+      const viewDataPromise = canViewAttendance
+        ? Promise.all([
+            attendanceApi.overview(dateFrom, dateTo),
+            attendanceApi.listEntries({ dateFrom, dateTo, staffId: timesheetStaffId, limit: 300 }),
+            attendanceApi.listEntries({ staffId: timesheetStaffId, limit: 300 }),
+            attendanceApi.listLeaves(),
+            attendanceApi.listHolidays(),
+          ]).catch((error) => {
+            reportLoadFailure(error);
+            return [null, [], [], [], []] as [
+              null,
+              AttendanceEntry[],
+              AttendanceEntry[],
+              AttendanceLeave[],
+              AttendanceHoliday[],
+            ];
+          })
+        : Promise.resolve([null, [], [], [], []] as [
+            null,
+            AttendanceEntry[],
+            AttendanceEntry[],
+            AttendanceLeave[],
+            AttendanceHoliday[],
+          ]);
+      const managementDataPromise = canManageAttendance
+        ? Promise.all([
+            attendanceApi.getSettings(),
+            attendanceApi.listShiftTemplates(),
+            attendanceApi.listSchedules(),
+          ]).catch((error) => {
+            reportLoadFailure(error);
+            return [null, [], []] as [
+              null,
+              AttendanceShiftTemplate[],
+              AttendanceSchedule[],
+            ];
+          })
+        : Promise.resolve([null, [], []] as [
+            null,
+            AttendanceShiftTemplate[],
+            AttendanceSchedule[],
+          ]);
+      const biometricDataPromise =
+        canManageDevices && biometricAttendancePlan.allowed
+          ? Promise.all([
+              attendanceApi.listDevices(),
+              attendanceApi.listDeviceMappings(),
+            ])
+              .then(([deviceData, mappingData]) => ({
+                deviceData,
+                mappingData,
+                unavailable: false,
+              }))
+              .catch((error) => {
+                if (isBiometricAddonError(error)) {
+                  return {
+                    deviceData: [] as AttendanceDevice[],
+                    mappingData: [] as StaffDeviceMapping[],
+                    unavailable: true,
+                  };
+                }
+                reportLoadFailure(error);
+                return {
+                  deviceData: [] as AttendanceDevice[],
+                  mappingData: [] as StaffDeviceMapping[],
+                  unavailable: false,
+                };
+              })
+          : Promise.resolve({
+              deviceData: [] as AttendanceDevice[],
+              mappingData: [] as StaffDeviceMapping[],
+              unavailable: false,
+            });
+      const staffDataPromise =
+        canManageStaff && (canManageAttendance || canManageDevices)
+          ? Promise.all([
+              apiClient.get(StaffProfileApis.list({ limit: 500 })),
+              apiClient.get(StaffApis.list()),
+            ]).catch((error) => {
+              reportLoadFailure(error);
+              return [{ data: { data: [] } }, { data: { data: [] } }] as const;
+            })
+          : Promise.resolve([
+              { data: { data: [] } },
+              { data: { data: [] } },
+            ] as const);
+      const [viewData, managementData, biometric, staffData] =
+        await Promise.all([
+          viewDataPromise,
+          managementDataPromise,
+          biometricDataPromise,
+          staffDataPromise,
+        ]);
+      if (request !== workspaceRequest.current) return;
+      const [
+        overviewData,
+        selectedEntryData,
+        recentEntryData,
+        leaveData,
+        holidayData,
+      ] = viewData;
+      const [settingsData, templateData, scheduleData] = managementData;
+      const [profilesRes, usersRes] = staffData;
+      if (settingsData) setSettingsForm(settingsToForm(settingsData));
       setOverview(overviewData);
-      setEntries(mergeEntriesWithOpenCarryover(selectedEntryData, recentEntryData));
+      setEntries(
+        mergeEntriesWithOpenCarryover(selectedEntryData, recentEntryData),
+      );
       setTemplates(templateData);
       setSchedules(scheduleData);
       setLeaves(leaveData);
@@ -318,15 +678,23 @@ export function AttendanceAdminClient() {
       setDevices(biometric.deviceData);
       setMappings(biometric.mappingData);
       setBiometricUnavailable(biometric.unavailable);
-      setMobileDevices(mobileData);
       setStaffProfiles(profilesRes.data?.data || []);
       setStaffUsers(usersRes.data?.data || []);
     } catch (error) {
       toast.error(errorMessage(error, "Failed to load attendance"));
     } finally {
-      setLoading(false);
+      if (request === workspaceRequest.current) setLoading(false);
     }
-  }, [dateFrom, dateTo]);
+  }, [
+    biometricAttendancePlan.allowed,
+    canManageAttendance,
+    canManageDevices,
+    canManageStaff,
+    canViewAttendance,
+    dateFrom,
+    dateTo,
+    timesheetStaffId,
+  ]);
 
   useEffect(() => {
     void loadAll();
@@ -334,19 +702,26 @@ export function AttendanceAdminClient() {
 
   useEffect(() => {
     return () => {
-      if (reverseGeocodeTimerRef.current) clearTimeout(reverseGeocodeTimerRef.current);
-      if (forwardGeocodeTimerRef.current) clearTimeout(forwardGeocodeTimerRef.current);
+      if (reverseGeocodeTimerRef.current)
+        clearTimeout(reverseGeocodeTimerRef.current);
+      if (forwardGeocodeTimerRef.current)
+        clearTimeout(forwardGeocodeTimerRef.current);
     };
   }, []);
 
   const handleLocationChange = useCallback((lat: string, lng: string) => {
-    setSettingsForm((current) => ({ ...current, latitude: lat, longitude: lng }));
+    setSettingsForm((current) => ({
+      ...current,
+      latitude: lat,
+      longitude: lng,
+    }));
 
     if (forwardGeocodeTimerRef.current) {
       clearTimeout(forwardGeocodeTimerRef.current);
       forwardGeocodeTimerRef.current = null;
     }
-    if (reverseGeocodeTimerRef.current) clearTimeout(reverseGeocodeTimerRef.current);
+    if (reverseGeocodeTimerRef.current)
+      clearTimeout(reverseGeocodeTimerRef.current);
 
     const requestId = ++geocodeRequestIdRef.current;
     setResolvingAddress(true);
@@ -374,7 +749,8 @@ export function AttendanceAdminClient() {
       clearTimeout(reverseGeocodeTimerRef.current);
       reverseGeocodeTimerRef.current = null;
     }
-    if (forwardGeocodeTimerRef.current) clearTimeout(forwardGeocodeTimerRef.current);
+    if (forwardGeocodeTimerRef.current)
+      clearTimeout(forwardGeocodeTimerRef.current);
 
     const trimmed = value.trim();
     if (trimmed.length < 8) {
@@ -410,16 +786,27 @@ export function AttendanceAdminClient() {
       setQrDataUrl("");
       return;
     }
-    QRCode.toDataURL(qrPayload, { margin: 2, width: 520, color: { dark: "#111827", light: "#ffffff" } })
+    QRCode.toDataURL(qrPayload, {
+      margin: 2,
+      width: 520,
+      color: { dark: "#111827", light: "#ffffff" },
+    })
       .then(setQrDataUrl)
       .catch(() => toast.error("Failed to render attendance QR"));
   }, [qrPayload]);
 
   async function createQrSession() {
+    if (!canManageAttendance) return;
     setBusy(true);
     try {
-      const ttl = Math.min(300, Math.max(15, Number.parseInt(ttlSeconds, 10) || 60));
-      const session = await attendanceApi.createQrSession({ station_label: stationLabel.trim(), ttl_seconds: ttl });
+      const ttlSeconds = Math.min(
+        3600,
+        Math.max(1, Number.parseInt(qrExpirySeconds, 10) || 15),
+      );
+      const session = await attendanceApi.createQrSession({
+        station_label: stationLabel.trim(),
+        ...(canManageQrExpiry ? { ttl_seconds: ttlSeconds } : {}),
+      });
       setQrSession(session);
       toast.success("Attendance QR generated");
     } catch (error) {
@@ -430,10 +817,19 @@ export function AttendanceAdminClient() {
   }
 
   async function saveSettings() {
+    if (!canManageAttendance) return;
     const fullDay = Number(settingsForm.full_day_minimum_percent);
     const halfDay = Number(settingsForm.half_day_minimum_percent);
-    if (!Number.isFinite(fullDay) || !Number.isFinite(halfDay) || halfDay >= fullDay || fullDay > 100 || halfDay <= 0) {
-      return toast.error("Half-day threshold must be above 0 and below the full-day threshold");
+    if (
+      !Number.isFinite(fullDay) ||
+      !Number.isFinite(halfDay) ||
+      halfDay >= fullDay ||
+      fullDay > 100 ||
+      halfDay <= 0
+    ) {
+      return toast.error(
+        "Half-day threshold must be above 0 and below the full-day threshold",
+      );
     }
     const lat = settingsForm.latitude.trim();
     const lng = settingsForm.longitude.trim();
@@ -441,7 +837,14 @@ export function AttendanceAdminClient() {
     if (hasLocation) {
       const latNum = Number(lat);
       const lngNum = Number(lng);
-      if (!Number.isFinite(latNum) || !Number.isFinite(lngNum) || latNum < -90 || latNum > 90 || lngNum < -180 || lngNum > 180) {
+      if (
+        !Number.isFinite(latNum) ||
+        !Number.isFinite(lngNum) ||
+        latNum < -90 ||
+        latNum > 90 ||
+        lngNum < -180 ||
+        lngNum > 180
+      ) {
         return toast.error("Set a valid map location before saving");
       }
     }
@@ -453,17 +856,35 @@ export function AttendanceAdminClient() {
         ...(hasLocation
           ? { latitude: Number(lat), longitude: Number(lng) }
           : {}),
-        geofence_radius_meters: Number.parseInt(settingsForm.geofence_radius_meters, 10) || 150,
-        required_location_accuracy_meters: Number.parseInt(settingsForm.required_location_accuracy_meters, 10) || 100,
-        early_clock_in_tolerance_minutes: Number.parseInt(settingsForm.early_clock_in_tolerance_minutes, 10) || 0,
-        late_clock_out_tolerance_minutes: Number.parseInt(settingsForm.late_clock_out_tolerance_minutes, 10) || 0,
-        rapid_repeat_window_seconds: Number.parseInt(settingsForm.rapid_repeat_window_seconds, 10) || 30,
-        automatic_break_after_minutes: Number.parseInt(settingsForm.automatic_break_after_minutes, 10) || 0,
-        automatic_break_duration_minutes: Number.parseInt(settingsForm.automatic_break_duration_minutes, 10) || 0,
-        missing_checkout_review_after_minutes: Number.parseInt(settingsForm.missing_checkout_review_after_minutes, 10) || 0,
-        overtime_rate_multiplier: Number.parseFloat(settingsForm.overtime_rate_multiplier) || 1,
-        full_day_minimum_percent: Number.parseFloat(settingsForm.full_day_minimum_percent) || 75,
-        half_day_minimum_percent: Number.parseFloat(settingsForm.half_day_minimum_percent) || 50,
+        geofence_radius_meters:
+          Number.parseInt(settingsForm.geofence_radius_meters, 10) || 150,
+        required_location_accuracy_meters:
+          Number.parseInt(settingsForm.required_location_accuracy_meters, 10) ||
+          100,
+        early_clock_in_tolerance_minutes:
+          Number.parseInt(settingsForm.early_clock_in_tolerance_minutes, 10) ||
+          0,
+        late_clock_out_tolerance_minutes:
+          Number.parseInt(settingsForm.late_clock_out_tolerance_minutes, 10) ||
+          0,
+        rapid_repeat_window_seconds:
+          Number.parseInt(settingsForm.rapid_repeat_window_seconds, 10) || 30,
+        automatic_break_after_minutes:
+          Number.parseInt(settingsForm.automatic_break_after_minutes, 10) || 0,
+        automatic_break_duration_minutes:
+          Number.parseInt(settingsForm.automatic_break_duration_minutes, 10) ||
+          0,
+        missing_checkout_review_after_minutes:
+          Number.parseInt(
+            settingsForm.missing_checkout_review_after_minutes,
+            10,
+          ) || 0,
+        overtime_rate_multiplier:
+          Number.parseFloat(settingsForm.overtime_rate_multiplier) || 1,
+        full_day_minimum_percent:
+          Number.parseFloat(settingsForm.full_day_minimum_percent) || 75,
+        half_day_minimum_percent:
+          Number.parseFloat(settingsForm.half_day_minimum_percent) || 50,
         mobile_clocking_enabled: settingsForm.mobile_clocking_enabled,
         device_clocking_enabled: settingsForm.device_clocking_enabled,
       });
@@ -482,6 +903,7 @@ export function AttendanceAdminClient() {
   }
 
   async function submitEntry(entry: AttendanceEntry) {
+    if (!canManageAttendance) return;
     setBusy(true);
     try {
       await attendanceApi.submitEntry(entry.id, "Submitted from web");
@@ -495,12 +917,28 @@ export function AttendanceAdminClient() {
   }
 
   async function approveEntry(entry: AttendanceEntry) {
-    const approved = Number.parseInt(window.prompt("Approved overtime minutes", String(entry.overtime_minutes || 0)) || "", 10);
-    if (Number.isNaN(approved) || approved < 0 || approved > entry.overtime_minutes) return;
+    if (!canManageAttendance) return;
+    const approved = Number.parseInt(
+      window.prompt(
+        "Approved overtime minutes",
+        String(entry.overtime_minutes || 0),
+      ) || "",
+      10,
+    );
+    if (
+      Number.isNaN(approved) ||
+      approved < 0 ||
+      approved > entry.overtime_minutes
+    )
+      return;
     const rejected = entry.overtime_minutes - approved;
     setBusy(true);
     try {
-      await attendanceApi.approveEntry(entry.id, { approved_overtime_minutes: approved, rejected_overtime_minutes: rejected, reason: "Approved from web" });
+      await attendanceApi.approveEntry(entry.id, {
+        approved_overtime_minutes: approved,
+        rejected_overtime_minutes: rejected,
+        reason: "Approved from web",
+      });
       await loadAll();
       toast.success("Attendance approved");
     } catch (error) {
@@ -511,6 +949,7 @@ export function AttendanceAdminClient() {
   }
 
   async function rejectEntry(entry: AttendanceEntry) {
+    if (!canManageAttendance) return;
     const reason = window.prompt("Rejection reason");
     if (!reason) return;
     setBusy(true);
@@ -535,6 +974,7 @@ export function AttendanceAdminClient() {
   }
 
   async function saveCorrection() {
+    if (!canManageAttendance) return;
     if (!correctionEntry) return;
     const clockIn = new Date(correctionForm.clockIn);
     const clockOut = new Date(correctionForm.clockOut);
@@ -564,7 +1004,7 @@ export function AttendanceAdminClient() {
       });
       setCorrectionEntry(null);
       await loadAll();
-      toast.success("Attendance corrected and returned to draft");
+      toast.success("Attendance recalculated");
     } catch (error) {
       toast.error(errorMessage(error, "Failed to correct attendance"));
     } finally {
@@ -573,9 +1013,13 @@ export function AttendanceAdminClient() {
   }
 
   async function exportTimesheets() {
+    if (!canExportAttendance) return;
     setBusy(true);
     try {
-      const { blob, filename } = await attendanceApi.downloadExportCsv(dateFrom, dateTo);
+      const { blob, filename } = await attendanceApi.downloadExportCsv(
+        dateFrom,
+        dateTo,
+      );
       const objectUrl = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = objectUrl;
@@ -592,20 +1036,93 @@ export function AttendanceAdminClient() {
     }
   }
 
-  async function createTemplate() {
+
+  function resetTemplateForm() {
+    setEditingTemplateId(null);
+    setTemplateForm({
+      name: "",
+      start_local_time: "09:00",
+      end_local_time: "17:00",
+      unpaid_break_minutes: "30",
+    });
+  }
+
+  async function finalizePayrollPeriod() {
+    if (
+      !window.confirm(
+        `Finalize approved attendance from ${dateFrom} to ${dateTo}? Finalized records are locked and cannot be edited.`,
+      )
+    ) {
+      return;
+    }
+    setBusy(true);
+    try {
+      const result = await attendanceApi.finalizePayrollExport(
+        dateFrom,
+        dateTo,
+      );
+      await loadAll();
+      toast.success(
+        result.locked_entries
+          ? `${result.locked_entries} attendance record${result.locked_entries === 1 ? "" : "s"} finalized for payroll`
+          : "No approved attendance records to finalize",
+      );
+    } catch (error) {
+      toast.error(
+        errorMessage(error, "Failed to finalize attendance for payroll"),
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function reopenEntry(entry: AttendanceEntry) {
+    const reason = window.prompt("Why does this approved record need review?");
+    if (!reason) return;
+    setBusy(true);
+    try {
+      await attendanceApi.reopenEntry(entry.id, reason);
+      await loadAll();
+      toast.success("Attendance moved to review");
+    } catch (error) {
+      toast.error(errorMessage(error, "Failed to reopen attendance"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function editTemplate(template: AttendanceShiftTemplate) {
+    setEditingTemplateId(template.id);
+    setTemplateForm({
+      name: template.name,
+      start_local_time: String(template.start_local_time).slice(0, 5),
+      end_local_time: String(template.end_local_time).slice(0, 5),
+      unpaid_break_minutes: String(template.unpaid_break_minutes),
+    });
+  }
+
+  async function saveTemplate() {
+    if (!canManageAttendance) return;
     if (!templateForm.name.trim()) return toast.error("Shift name is required");
     setBusy(true);
     try {
-      await attendanceApi.createShiftTemplate({
+      const payload = {
         name: templateForm.name.trim(),
         start_local_time: templateForm.start_local_time,
         end_local_time: templateForm.end_local_time,
-        unpaid_break_minutes: Number.parseInt(templateForm.unpaid_break_minutes, 10) || 0,
-        is_active: true,
-      });
-      setTemplateForm((current) => ({ ...current, name: "" }));
+        unpaid_break_minutes:
+          Number.parseInt(templateForm.unpaid_break_minutes, 10) || 0,
+      };
+      if (editingTemplateId) {
+        await attendanceApi.updateShiftTemplate(editingTemplateId, payload);
+      } else {
+        await attendanceApi.createShiftTemplate(payload);
+      }
+      resetTemplateForm();
       await loadAll();
-      toast.success("Shift template created");
+      toast.success(
+        editingTemplateId ? "Shift template updated" : "Shift template created",
+      );
     } catch (error) {
       toast.error(errorMessage(error, "Failed to create shift"));
     } finally {
@@ -613,19 +1130,57 @@ export function AttendanceAdminClient() {
     }
   }
 
-  async function createSchedule() {
-    if (!scheduleForm.shift_template_id) return toast.error("Select a shift template");
+  function resetScheduleForm() {
+    setEditingScheduleId(null);
+    setScheduleForm({
+      staff_id: "default",
+      shift_template_id: "",
+      weekday: "1",
+      effective_from: todayIso(),
+      is_day_off: false,
+    });
+  }
+
+  function editSchedule(schedule: AttendanceSchedule) {
+    setEditingScheduleId(schedule.id);
+    setScheduleForm({
+      staff_id: schedule.staff_id ? String(schedule.staff_id) : "default",
+      shift_template_id: schedule.shift_template_id
+        ? String(schedule.shift_template_id)
+        : "",
+      weekday: String(schedule.weekday),
+      effective_from: schedule.effective_from,
+      is_day_off: schedule.is_day_off,
+    });
+  }
+
+  async function saveSchedule() {
+    if (!canManageAttendance) return;
+    if (!scheduleForm.is_day_off && !scheduleForm.shift_template_id) {
+      return toast.error("Select a shift template");
+    }
     setBusy(true);
     try {
-      await attendanceApi.createSchedule({
-        staff_id: scheduleForm.staff_id === "default" ? null : Number(scheduleForm.staff_id),
-        shift_template_id: Number(scheduleForm.shift_template_id),
+      const payload = {
+        staff_id:
+          scheduleForm.staff_id === "default"
+            ? null
+            : Number(scheduleForm.staff_id),
+        shift_template_id: scheduleForm.is_day_off
+          ? null
+          : Number(scheduleForm.shift_template_id),
         weekday: Number(scheduleForm.weekday),
         effective_from: scheduleForm.effective_from,
-        is_day_off: false,
-      });
+        is_day_off: scheduleForm.is_day_off,
+      };
+      if (editingScheduleId) {
+        await attendanceApi.updateSchedule(editingScheduleId, payload);
+      } else {
+        await attendanceApi.createSchedule(payload);
+      }
+      resetScheduleForm();
       await loadAll();
-      toast.success("Schedule saved");
+      toast.success(editingScheduleId ? "Schedule updated" : "Schedule saved");
     } catch (error) {
       toast.error(errorMessage(error, "Failed to save schedule"));
     } finally {
@@ -634,6 +1189,7 @@ export function AttendanceAdminClient() {
   }
 
   async function createLeave() {
+    if (!canManageAttendance) return;
     const staffId = Number(leaveForm.staff_id);
     if (!staffId || leaveForm.reason.trim().length < 3) {
       return toast.error("Select staff and enter a leave reason");
@@ -658,7 +1214,11 @@ export function AttendanceAdminClient() {
     }
   }
 
-  async function decideLeave(id: number, action: "approve" | "reject" | "cancel") {
+  async function decideLeave(
+    id: number,
+    action: "approve" | "reject" | "cancel",
+  ) {
+    if (!canManageAttendance) return;
     setBusy(true);
     try {
       await attendanceApi.decideLeave(id, action);
@@ -672,9 +1232,16 @@ export function AttendanceAdminClient() {
   }
 
   async function createHoliday() {
+    if (!canManageAttendance) return;
     const multiplier = Number(holidayForm.worked_rate_multiplier);
-    if (!holidayForm.name.trim() || !Number.isFinite(multiplier) || multiplier < 1) {
-      return toast.error("Enter a holiday name and a worked rate of at least 1x");
+    if (
+      !holidayForm.name.trim() ||
+      !Number.isFinite(multiplier) ||
+      multiplier < 1
+    ) {
+      return toast.error(
+        "Enter a holiday name and a worked rate of at least 1x",
+      );
     }
     setBusy(true);
     try {
@@ -696,6 +1263,7 @@ export function AttendanceAdminClient() {
   }
 
   async function deleteHoliday(id: number) {
+    if (!canManageAttendance) return;
     setBusy(true);
     try {
       await attendanceApi.deleteHoliday(id);
@@ -709,21 +1277,33 @@ export function AttendanceAdminClient() {
   }
 
   async function createDevice() {
-    if (!deviceForm.name.trim() || !deviceForm.serial_number.trim()) return toast.error("Device name and serial are required");
+    if (!canManageDevices) return;
+    if (!deviceForm.name.trim() || !deviceForm.serial_number.trim())
+      return toast.error("Device name and serial are required");
     setBusy(true);
     try {
       await attendanceApi.createDevice({
         name: deviceForm.name.trim(),
-        device_type: "zkteco_lan",
+        device_type: deviceForm.device_type,
         serial_number: deviceForm.serial_number.trim(),
-        ip_address: deviceForm.ip_address.trim() || null,
-        port: Number.parseInt(deviceForm.port, 10) || 4370,
+        ip_address:
+          deviceForm.device_type === "zkteco_lan"
+            ? deviceForm.ip_address.trim() || null
+            : null,
+        port:
+          deviceForm.device_type === "zkteco_lan"
+            ? Number.parseInt(deviceForm.port, 10) || 4370
+            : null,
         timezone: deviceForm.timezone.trim() || "UTC",
         is_active: true,
       });
       setDeviceForm((current) => ({ ...current, name: "", serial_number: "" }));
       await loadAll();
-      toast.success("Device registered");
+      toast.success(
+        deviceForm.device_type === "zkteco_cloud"
+          ? "Cloud device registered. Map a staff code, then test a punch below."
+          : "Device registered",
+      );
     } catch (error) {
       toast.error(errorMessage(error, "Failed to register device"));
     } finally {
@@ -731,57 +1311,145 @@ export function AttendanceAdminClient() {
     }
   }
 
+  async function sendAdmsTestPunch(clockIn: boolean) {
+    const device = devices.find(
+      (item) => item.id === Number(admsTestForm.device_id),
+    );
+    if (!device || !admsTestForm.device_user_id.trim())
+      return toast.error(
+        "Select a cloud device and enter a mapped device user code",
+      );
+    setBusy(true);
+    try {
+      await attendanceApi.sendAdmsTestPunch({
+        serial_number: device.serial_number,
+        device_user_id: admsTestForm.device_user_id.trim(),
+        clock_in: clockIn,
+      });
+      await loadAll();
+      toast.success(clockIn ? "ADMS clock-in sent" : "ADMS clock-out sent");
+    } catch (error) {
+      toast.error(
+        errorMessage(
+          error,
+          "ADMS test punch failed. Check that ADMS is enabled on the test API.",
+        ),
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function toggleWeeklyStaff(staffId: number, checked: boolean) {
+    setWeeklyScheduleForm((current) => ({
+      ...current,
+      staff_ids: checked
+        ? [...current.staff_ids, staffId]
+        : current.staff_ids.filter((id) => id !== staffId),
+    }));
+  }
+
+  async function saveWeeklySchedule() {
+    if (weeklyScheduleForm.staff_ids.length === 0) {
+      return toast.error("Select at least one staff member");
+    }
+    setBusy(true);
+    try {
+      await attendanceApi.createWeeklySchedules({
+        staff_ids: weeklyScheduleForm.staff_ids,
+        effective_from: weeklyScheduleForm.effective_from,
+        assignments: weeklyScheduleForm.assignments.map(
+          (templateId, weekday) => ({
+            weekday,
+            shift_template_id: templateId ? Number(templateId) : null,
+            is_day_off: !templateId,
+          }),
+        ),
+      });
+      await loadAll();
+      toast.success("Weekly schedules saved");
+    } catch (error) {
+      toast.error(errorMessage(error, "Failed to save weekly schedules"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function deleteSchedule(schedule: AttendanceSchedule) {
+    if (!window.confirm("Delete this schedule rule?")) return;
+    setBusy(true);
+    try {
+      await attendanceApi.deleteSchedule(schedule.id);
+      if (editingScheduleId === schedule.id) resetScheduleForm();
+      await loadAll();
+      toast.success("Schedule rule deleted");
+    } catch (error) {
+      toast.error(errorMessage(error, "Failed to delete schedule rule"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function deleteTemplate(template: AttendanceShiftTemplate) {
+    if (!window.confirm(`Delete the ${template.name} shift template?`)) return;
+    setBusy(true);
+    try {
+      await attendanceApi.deleteShiftTemplate(template.id);
+      if (editingTemplateId === template.id) resetTemplateForm();
+      await loadAll();
+      toast.success("Shift template deleted");
+    } catch (error) {
+      toast.error(errorMessage(error, "Failed to delete shift template"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function toggleDevice(device: AttendanceDevice, checked: boolean) {
-    setDevices((current) => current.map((item) => (item.id === device.id ? { ...item, is_active: checked } : item)));
+    if (!canManageDevices) return;
+    setDevices((current) =>
+      current.map((item) =>
+        item.id === device.id ? { ...item, is_active: checked } : item,
+      ),
+    );
     try {
       await attendanceApi.updateDevice(device.id, { is_active: checked });
       toast.success("Device updated");
     } catch (error) {
-      setDevices((current) => current.map((item) => (item.id === device.id ? { ...item, is_active: device.is_active } : item)));
+      setDevices((current) =>
+        current.map((item) =>
+          item.id === device.id
+            ? { ...item, is_active: device.is_active }
+            : item,
+        ),
+      );
       toast.error(errorMessage(error, "Failed to update device"));
     }
   }
 
   async function saveMapping() {
+    if (!canManageDevices || !canManageStaff) return;
     const deviceId = Number(mappingForm.device_id);
     const staffId = Number(mappingForm.staff_id);
-    if (!deviceId || !staffId || !mappingForm.device_user_id.trim()) return toast.error("Device, staff, and device user ID are required");
+    if (!deviceId || !staffId || !mappingForm.device_user_id.trim())
+      return toast.error("Device, staff, and device user ID are required");
     setBusy(true);
     try {
-      await attendanceApi.upsertDeviceMapping({ device_id: deviceId, staff_id: staffId, device_user_id: mappingForm.device_user_id.trim(), is_active: true });
-      setMappingForm((current) => ({ ...current, staff_id: "", device_user_id: "" }));
+      await attendanceApi.upsertDeviceMapping({
+        device_id: deviceId,
+        staff_id: staffId,
+        device_user_id: mappingForm.device_user_id.trim(),
+        is_active: true,
+      });
+      setMappingForm((current) => ({
+        ...current,
+        staff_id: "",
+        device_user_id: "",
+      }));
       await loadAll();
       toast.success("Mapping saved");
     } catch (error) {
       toast.error(errorMessage(error, "Failed to save mapping"));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function createPairingCode(deviceId: number) {
-    setBusy(true);
-    try {
-      const result = await attendanceApi.createConnectorPairingCode({ device_id: deviceId, ttl_seconds: 600 });
-      setPairingCode({ code: result.code, expires_at: result.expires_at });
-      toast.success("Connector pairing code created");
-    } catch (error) {
-      toast.error(errorMessage(error, "Failed to create pairing code"));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function decideMobile(device: AttendanceMobileDevice, action: "approve" | "reject" | "revoke") {
-    const reason = action === "approve" ? undefined : window.prompt("Reason") || undefined;
-    if (action !== "approve" && !reason) return;
-    setBusy(true);
-    try {
-      await attendanceApi.decideMobileDevice(device.id, action, reason);
-      await loadAll();
-      toast.success("Mobile device updated");
-    } catch (error) {
-      toast.error(errorMessage(error, "Failed to update mobile device"));
     } finally {
       setBusy(false);
     }
@@ -798,97 +1466,175 @@ export function AttendanceAdminClient() {
   ];
   const radiusMeters = Math.min(
     5000,
-    Math.max(10, Number.parseInt(settingsForm.geofence_radius_meters, 10) || 150),
+    Math.max(
+      10,
+      Number.parseInt(settingsForm.geofence_radius_meters, 10) || 150,
+    ),
   );
-  const showDateFilters = activeTab === "overview" || activeTab === "timesheets";
+  const showDateFilters =
+    activeTab === "timesheets";
 
   return (
-    <div className="mx-auto w-full max-w-[1560px] space-y-5 overflow-x-hidden p-4 pb-24 md:p-6 lg:p-8">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div className="min-w-0">
-          <h1 className="text-2xl font-semibold text-foreground">Attendance</h1>
-          <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-            Staff presence, payable time, schedules, kiosk, and attendance devices.
-          </p>
-        </div>
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          {showDateFilters ? <>
-            <Input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} className="h-10 sm:w-[160px]" />
-            <Input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} className="h-10 sm:w-[160px]" />
-          </> : null}
-          <Button variant="outline" onClick={loadAll} disabled={loading || busy}>
-            {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
-            Refresh
-          </Button>
-        </div>
-      </div>
+    <AppPage width="wide" className="pb-24">
+      <PageHeader
+        className="hidden 2xl:flex"
+        title="Attendance"
+        description="Staff presence, payable time, schedules, kiosk, and attendance devices."
+        actions={
+          showDateFilters ? (
+            <>
+              <Input
+                type="date" aria-label="From date"
+                value={dateFrom}
+                onChange={(event) => setDateFrom(event.target.value)}
+                className="h-10 w-[160px]"
+              />
+              <Input
+                type="date" aria-label="To date"
+                value={dateTo}
+                onChange={(event) => setDateTo(event.target.value)}
+                className="h-10 w-[160px]"
+              />
+            </>
+          ) : null
+        }
+      />
 
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-5">
-        <TabsList className="flex h-auto w-full justify-start gap-1 overflow-x-auto p-1">
-          <TabsTrigger value="overview" className="min-w-max gap-2"><CalendarDays className="h-4 w-4" />Overview</TabsTrigger>
-          <TabsTrigger value="timesheets" className="min-w-max gap-2"><Check className="h-4 w-4" />Timesheets</TabsTrigger>
-          <TabsTrigger value="schedules" className="min-w-max gap-2"><CalendarDays className="h-4 w-4" />Schedule</TabsTrigger>
-          <TabsTrigger value="leave" className="min-w-max gap-2"><CalendarDays className="h-4 w-4" />Leave & holidays</TabsTrigger>
-          <TabsTrigger value="qr" className="min-w-max gap-2"><QrCode className="h-4 w-4" />QR Kiosk</TabsTrigger>
-          <TabsTrigger value="devices" className="min-w-max gap-2"><Fingerprint className="h-4 w-4" />Devices</TabsTrigger>
-          <TabsTrigger value="settings" className="min-w-max gap-2"><MapPin className="h-4 w-4" />Settings</TabsTrigger>
+
+      <Tabs value={activeTab} onValueChange={changeTab} className="space-y-5">
+        <AttendanceMobileNavigation
+          activeTab={activeTab}
+          onChange={changeTab}
+          canViewAttendance={canViewAttendance}
+          canPayrollExport={canPayrollExport}
+          canManageAttendance={canManageAttendance}
+          canManageDevices={canManageDevices}
+        />
+        <TabsList className="hidden h-auto w-full justify-start gap-1 overflow-x-auto rounded-none border-b bg-transparent p-0 2xl:flex">
+          {canViewAttendance ? (
+            <TabsTrigger value="overview" className="min-w-max gap-2">
+              <CalendarDays className="h-4 w-4" />
+              Daily attendance
+            </TabsTrigger>
+          ) : null}
+          {canViewAttendance ? <TabsTrigger value="reports" className="min-w-max gap-2"><CalendarDays className="h-4 w-4" />Reports</TabsTrigger> : null}
+          {canViewAttendance ? (
+            <TabsTrigger value="timesheets" className="min-w-max gap-2">
+              <Check className="h-4 w-4" />
+              Timesheets
+            </TabsTrigger>
+          ) : null}
+          {canPayrollExport ? (
+            <TabsTrigger value="payroll-export" className="min-w-max gap-2">
+              <Download className="h-4 w-4" />
+              Payroll review
+            </TabsTrigger>
+          ) : null}
+          {canManageAttendance ? (
+            <TabsTrigger value="schedules" className="min-w-max gap-2">
+              <CalendarDays className="h-4 w-4" />
+              Schedule
+            </TabsTrigger>
+          ) : null}
+          {canManageAttendance && canViewAttendance ? (
+            <TabsTrigger value="leave" className="min-w-max gap-2">
+              <CalendarDays className="h-4 w-4" />
+              Leave & holidays
+            </TabsTrigger>
+          ) : null}
+          {canManageAttendance ? (
+            <TabsTrigger value="qr" className="min-w-max gap-2">
+              <QrCode className="h-4 w-4" />
+              QR Kiosk
+            </TabsTrigger>
+          ) : null}
+          {canManageDevices ? (
+            <TabsTrigger value="devices" className="min-w-max gap-2">
+              <Fingerprint className="h-4 w-4" />
+              Devices
+            </TabsTrigger>
+          ) : null}
+          {canManageAttendance ? (
+            <TabsTrigger value="settings" className="min-w-max gap-2">
+              <MapPin className="h-4 w-4" />
+              Settings
+            </TabsTrigger>
+          ) : null}
         </TabsList>
 
-        <TabsContent value="overview" className="space-y-5">
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-7">
-            {metricCards.map(([label, value]) => (
-              <Card key={String(label)}>
-                <CardContent className="p-4">
-                  <p className="text-xs font-bold uppercase text-muted-foreground">{label}</p>
-                  <p className="mt-2 text-2xl font-black">{value}</p>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2"><Clock className="h-5 w-5" />Active Now</CardTitle>
-              <CardDescription>Staff currently clocked in, including entries that started before this date range.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <TimesheetTable entries={activeEntries} staffProfiles={staffProfiles} usersById={usersById} onSubmit={submitEntry} onApprove={approveEntry} onReject={rejectEntry} onCorrect={openCorrection} />
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader>
-              <CardTitle>Exceptions</CardTitle>
-              <CardDescription>Entries that need manager attention before payroll.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <TimesheetTable entries={entries.filter((entry) => entry.exception_code || entry.approval_status === "pending" || entry.approval_status === "needs_correction")} staffProfiles={staffProfiles} usersById={usersById} onSubmit={submitEntry} onApprove={approveEntry} onReject={rejectEntry} onCorrect={openCorrection} />
-            </CardContent>
-          </Card>
-        </TabsContent>
+        {canViewAttendance ? (
+          <TabsContent value="overview"><AttendanceRegister daily canExport={canExportAttendance} /></TabsContent>
+        ) : null}
 
-        <TabsContent value="timesheets">
-          <Card>
-            <CardHeader className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-              <div>
-                <CardTitle>Timesheets</CardTitle>
-                <CardDescription>Approve payable hours before payroll snapshot. Open entries stay visible even when they started earlier.</CardDescription>
+        {canViewAttendance ? <TabsContent value="reports"><AttendanceRegister canExport={canExportAttendance} /></TabsContent> : null}
+        {canViewAttendance ? (
+          <TabsContent value="timesheets">
+            <WorkforceSection
+              title="Timesheets"
+              description="Check recorded hours, resolve exceptions and approve time for payroll."
+              actions={
+                <div className="flex flex-wrap gap-2">
+                  {canExportAttendance && !timesheetStaffId ? (
+                    <Button
+                      variant="outline"
+                      disabled={busy}
+                      onClick={() => void exportTimesheets()}
+                    >
+                      <Download className="mr-2 h-4 w-4" />
+                      Export CSV
+                    </Button>
+                  ) : null}
+                  {canFinalizePayroll && !timesheetStaffId ? (
+                    <Button
+                      disabled={busy}
+                      onClick={() => void finalizePayrollPeriod()}
+                    >
+                      Lock approved attendance
+                    </Button>
+                  ) : null}
+                </div>
+              }
+              contentClassName="overflow-hidden rounded-xl border"
+            >
+              <div className="p-0">
+                <div className="space-y-3 border-b p-3 2xl:hidden">
+                  <div className="md:hidden">
+                    <p className="mb-1.5 text-xs font-medium text-muted-foreground">Attendance period</p>
+                    <MobileReportControls from={dateFrom} to={dateTo} loading={loading} onChange={(from, to) => { setDateFrom(from); setDateTo(to); }} onRefresh={() => void loadAll()} />
+                  </div>
+                  <div className="hidden gap-3 md:flex 2xl:hidden">
+                    <label className="min-w-0 flex-1 space-y-1 text-sm">From<Input type="date" value={dateFrom} onChange={event => setDateFrom(event.target.value)} /></label>
+                    <label className="min-w-0 flex-1 space-y-1 text-sm">To<Input type="date" value={dateTo} onChange={event => setDateTo(event.target.value)} /></label>
+                  </div>
+                </div>
+                {timesheetStaffId && <div className="flex items-center justify-between gap-3 border-b bg-muted/30 px-3 py-2 text-sm"><div className="min-w-0"><p className="text-xs text-muted-foreground">Staff member</p><p className="break-words font-medium">{staffLabel(staffProfiles.find(profile => profile.id === timesheetStaffId), usersById)}</p></div><Button asChild variant="ghost" className="min-h-11 shrink-0 text-primary"><Link href={`/attendance?tab=timesheets&from=${dateFrom}&to=${dateTo}`}>All staff</Link></Button></div>}
+                <TimesheetTable
+                  entries={entries.filter(entry => !searchParams.get("staff_id") || entry.staff_id === Number(searchParams.get("staff_id")))}
+                  staffProfiles={staffProfiles}
+                  usersById={usersById}
+                  onApprove={approveEntry}
+                  onReject={rejectEntry}
+                  onReopen={reopenEntry}
+                  onCorrect={openCorrection}
+                  canManage={canManageAttendance}
+                />
               </div>
-              <Button variant="outline" disabled={busy} onClick={() => void exportTimesheets()}>
-                <Download className="mr-2 h-4 w-4" />
-                Export CSV
-              </Button>
-            </CardHeader>
-            <CardContent>
-              <TimesheetTable entries={entries} staffProfiles={staffProfiles} usersById={usersById} onSubmit={submitEntry} onApprove={approveEntry} onReject={rejectEntry} onCorrect={openCorrection} />
-            </CardContent>
-          </Card>
-        </TabsContent>
+            </WorkforceSection>
+          </TabsContent>
+        ) : null}
 
-        <TabsContent value="settings" className="grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(340px,0.65fr)]">
+        {canPayrollExport ? <TabsContent value="payroll-export"><PayrollPeriodReview canExport canViewAttendance={canViewAttendance} canOpenStaff={canManageStaff} /></TabsContent> : null}
+
+        <TabsContent
+          value="settings"
+          className="grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(340px,0.65fr)]"
+        >
           <Card className="min-w-0">
             <CardHeader>
               <CardTitle>Restaurant Geofence</CardTitle>
               <CardDescription>
-                Search an address or drag the pin — both stay in sync for mobile attendance.
+                Search an address or drag the pin — both stay in sync for mobile
+                attendance.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -896,8 +1642,8 @@ export function AttendanceAdminClient() {
                 <div className="flex items-center gap-1.5">
                   <Label htmlFor="attendance-address">Physical Address</Label>
                   <FieldInfo>
-                    Type an address or move the map pin — both stay in sync. Format: street, area,
-                    city, state, country.
+                    Type an address or move the map pin — both stay in sync.
+                    Format: street, area, city, state, country.
                   </FieldInfo>
                 </div>
                 <Input
@@ -920,152 +1666,537 @@ export function AttendanceAdminClient() {
                 onChange={handleLocationChange}
               />
               <p className="text-xs text-muted-foreground">
-                Radius shown in policy is {radiusMeters} m around this pin ({attendanceRadiusLabel(radiusMeters)}).
+                Radius shown in policy is {radiusMeters} m around this pin (
+                {attendanceRadiusLabel(radiusMeters)}).
               </p>
             </CardContent>
           </Card>
           <Card>
             <CardHeader>
               <CardTitle>Attendance Policy</CardTitle>
-              <CardDescription>Validation rules for mobile and physical attendance.</CardDescription>
+              <CardDescription>
+                Validation rules for mobile and physical attendance.
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-5">
               <div>
                 <div className="flex items-center justify-between gap-3">
                   <Label>Attendance radius</Label>
-                  <span className="text-sm font-semibold">{radiusMeters} m</span>
+                  <span className="text-sm font-semibold">
+                    {radiusMeters} m
+                  </span>
                 </div>
-                <p className="mt-1 text-xs text-muted-foreground">{attendanceRadiusLabel(radiusMeters)}</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {attendanceRadiusLabel(radiusMeters)}
+                </p>
                 <Slider
                   className="mt-4"
                   min={10}
                   max={5000}
                   step={10}
                   value={[radiusMeters]}
-                  onValueChange={([value]) => setSettingsForm((current) => ({ ...current, geofence_radius_meters: String(value) }))}
+                  onValueChange={([value]) =>
+                    setSettingsForm((current) => ({
+                      ...current,
+                      geofence_radius_meters: String(value),
+                    }))
+                  }
                 />
               </div>
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
                 <Field label="Radius meters">
-                  <Input type="number" min={10} max={5000} value={settingsForm.geofence_radius_meters} onChange={(event) => setSettingsForm((current) => ({ ...current, geofence_radius_meters: event.target.value }))} />
+                  <Input
+                    type="number"
+                    min={10}
+                    max={5000}
+                    value={settingsForm.geofence_radius_meters}
+                    onChange={(event) =>
+                      setSettingsForm((current) => ({
+                        ...current,
+                        geofence_radius_meters: event.target.value,
+                      }))
+                    }
+                  />
                 </Field>
                 <Field label="Required GPS accuracy">
-                  <Input type="number" min={1} max={1000} value={settingsForm.required_location_accuracy_meters} onChange={(event) => setSettingsForm((current) => ({ ...current, required_location_accuracy_meters: event.target.value }))} />
+                  <Input
+                    type="number"
+                    min={1}
+                    max={1000}
+                    value={settingsForm.required_location_accuracy_meters}
+                    onChange={(event) =>
+                      setSettingsForm((current) => ({
+                        ...current,
+                        required_location_accuracy_meters: event.target.value,
+                      }))
+                    }
+                  />
                 </Field>
               </div>
               <div className="divide-y rounded-lg border">
                 <div className="flex items-center justify-between gap-3">
                   <div className="p-3">
                     <Label>Mobile clocking</Label>
-                    <p className="text-xs text-muted-foreground">Approved phones inside the attendance radius.</p>
+                    <p className="text-xs text-muted-foreground">
+                      Approved phones inside the attendance radius.
+                    </p>
                   </div>
-                  <Switch className="mr-3" checked={settingsForm.mobile_clocking_enabled} onCheckedChange={(checked) => setSettingsForm((current) => ({ ...current, mobile_clocking_enabled: checked }))} />
+                  <Switch
+                    className="mr-3"
+                    checked={settingsForm.mobile_clocking_enabled}
+                    onCheckedChange={(checked) =>
+                      setSettingsForm((current) => ({
+                        ...current,
+                        mobile_clocking_enabled: checked,
+                      }))
+                    }
+                  />
                 </div>
                 <div className="flex items-center justify-between gap-3">
                   <div className="p-3">
                     <Label>Biometric devices</Label>
-                    <p className="text-xs text-muted-foreground">Registered physical attendance devices.</p>
+                    <p className="text-xs text-muted-foreground">
+                      Registered physical attendance devices.
+                    </p>
                   </div>
-                  <Switch className="mr-3" checked={settingsForm.device_clocking_enabled} onCheckedChange={(checked) => setSettingsForm((current) => ({ ...current, device_clocking_enabled: checked }))} />
+                  <Switch
+                    className="mr-3"
+                    checked={settingsForm.device_clocking_enabled}
+                    onCheckedChange={(checked) =>
+                      setSettingsForm((current) => ({
+                        ...current,
+                        device_clocking_enabled: checked,
+                      }))
+                    }
+                  />
                 </div>
               </div>
               <Field label="Timezone">
                 <TimezoneSelect
                   value={settingsForm.timezone}
-                  onChange={(timezone) => setSettingsForm((current) => ({ ...current, timezone }))}
+                  onChange={(timezone) =>
+                    setSettingsForm((current) => ({ ...current, timezone }))
+                  }
                 />
               </Field>
               <div className="border-t pt-4">
                 <p className="text-sm font-semibold">Time and payroll rules</p>
-                <p className="text-xs text-muted-foreground">These rules determine exceptions, breaks, and overtime sent to payroll.</p>
+                <p className="text-xs text-muted-foreground">
+                  These rules determine exceptions, breaks, and overtime sent to
+                  payroll.
+                </p>
               </div>
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
-                <Field label="Early clock-in tolerance (minutes)"><Input type="number" min={0} max={240} value={settingsForm.early_clock_in_tolerance_minutes} onChange={(event) => setSettingsForm((current) => ({ ...current, early_clock_in_tolerance_minutes: event.target.value }))} /></Field>
-                <Field label="Late clock-out tolerance (minutes)"><Input type="number" min={0} max={240} value={settingsForm.late_clock_out_tolerance_minutes} onChange={(event) => setSettingsForm((current) => ({ ...current, late_clock_out_tolerance_minutes: event.target.value }))} /></Field>
-                <Field label="Duplicate punch window (seconds)"><Input type="number" min={1} max={600} value={settingsForm.rapid_repeat_window_seconds} onChange={(event) => setSettingsForm((current) => ({ ...current, rapid_repeat_window_seconds: event.target.value }))} /></Field>
-                <Field label="Automatic break after (minutes)"><Input type="number" min={0} max={1440} value={settingsForm.automatic_break_after_minutes} onChange={(event) => setSettingsForm((current) => ({ ...current, automatic_break_after_minutes: event.target.value }))} /></Field>
-                <Field label="Automatic break duration (minutes)"><Input type="number" min={0} max={240} value={settingsForm.automatic_break_duration_minutes} onChange={(event) => setSettingsForm((current) => ({ ...current, automatic_break_duration_minutes: event.target.value }))} /></Field>
-                <Field label="Missing checkout review after (minutes)"><Input type="number" min={0} max={2880} value={settingsForm.missing_checkout_review_after_minutes} onChange={(event) => setSettingsForm((current) => ({ ...current, missing_checkout_review_after_minutes: event.target.value }))} /></Field>
-                <Field label="Overtime pay multiplier"><Input type="number" min={1} max={10} step={0.01} value={settingsForm.overtime_rate_multiplier} onChange={(event) => setSettingsForm((current) => ({ ...current, overtime_rate_multiplier: event.target.value }))} /></Field>
-                <Field label="Full-day threshold (%)"><Input type="number" min={1} max={100} step={0.01} value={settingsForm.full_day_minimum_percent} onChange={(event) => setSettingsForm((current) => ({ ...current, full_day_minimum_percent: event.target.value }))} /></Field>
-                <Field label="Half-day threshold (%)"><Input type="number" min={1} max={100} step={0.01} value={settingsForm.half_day_minimum_percent} onChange={(event) => setSettingsForm((current) => ({ ...current, half_day_minimum_percent: event.target.value }))} /></Field>
+                <Field label="Early clock-in tolerance (minutes)">
+                  <Input
+                    type="number"
+                    min={0}
+                    max={240}
+                    value={settingsForm.early_clock_in_tolerance_minutes}
+                    onChange={(event) =>
+                      setSettingsForm((current) => ({
+                        ...current,
+                        early_clock_in_tolerance_minutes: event.target.value,
+                      }))
+                    }
+                  />
+                </Field>
+                <Field label="Late clock-out tolerance (minutes)">
+                  <Input
+                    type="number"
+                    min={0}
+                    max={240}
+                    value={settingsForm.late_clock_out_tolerance_minutes}
+                    onChange={(event) =>
+                      setSettingsForm((current) => ({
+                        ...current,
+                        late_clock_out_tolerance_minutes: event.target.value,
+                      }))
+                    }
+                  />
+                </Field>
+                <Field label="Duplicate punch window (seconds)">
+                  <Input
+                    type="number"
+                    min={1}
+                    max={600}
+                    value={settingsForm.rapid_repeat_window_seconds}
+                    onChange={(event) =>
+                      setSettingsForm((current) => ({
+                        ...current,
+                        rapid_repeat_window_seconds: event.target.value,
+                      }))
+                    }
+                  />
+                </Field>
+                <Field label="Automatic break after (minutes)">
+                  <Input
+                    type="number"
+                    min={0}
+                    max={1440}
+                    value={settingsForm.automatic_break_after_minutes}
+                    onChange={(event) =>
+                      setSettingsForm((current) => ({
+                        ...current,
+                        automatic_break_after_minutes: event.target.value,
+                      }))
+                    }
+                  />
+                </Field>
+                <Field label="Automatic break duration (minutes)">
+                  <Input
+                    type="number"
+                    min={0}
+                    max={240}
+                    value={settingsForm.automatic_break_duration_minutes}
+                    onChange={(event) =>
+                      setSettingsForm((current) => ({
+                        ...current,
+                        automatic_break_duration_minutes: event.target.value,
+                      }))
+                    }
+                  />
+                </Field>
+                <Field label="Missing checkout review after (minutes)">
+                  <Input
+                    type="number"
+                    min={0}
+                    max={2880}
+                    value={settingsForm.missing_checkout_review_after_minutes}
+                    onChange={(event) =>
+                      setSettingsForm((current) => ({
+                        ...current,
+                        missing_checkout_review_after_minutes:
+                          event.target.value,
+                      }))
+                    }
+                  />
+                </Field>
+                <Field label="Overtime pay multiplier">
+                  <Input
+                    type="number"
+                    min={1}
+                    max={10}
+                    step={0.01}
+                    value={settingsForm.overtime_rate_multiplier}
+                    onChange={(event) =>
+                      setSettingsForm((current) => ({
+                        ...current,
+                        overtime_rate_multiplier: event.target.value,
+                      }))
+                    }
+                  />
+                </Field>
+                <Field label="Full-day threshold (%)">
+                  <Input
+                    type="number"
+                    min={1}
+                    max={100}
+                    step={0.01}
+                    value={settingsForm.full_day_minimum_percent}
+                    onChange={(event) =>
+                      setSettingsForm((current) => ({
+                        ...current,
+                        full_day_minimum_percent: event.target.value,
+                      }))
+                    }
+                  />
+                </Field>
+                <Field label="Half-day threshold (%)">
+                  <Input
+                    type="number"
+                    min={1}
+                    max={100}
+                    step={0.01}
+                    value={settingsForm.half_day_minimum_percent}
+                    onChange={(event) =>
+                      setSettingsForm((current) => ({
+                        ...current,
+                        half_day_minimum_percent: event.target.value,
+                      }))
+                    }
+                  />
+                </Field>
               </div>
               <Button onClick={saveSettings} disabled={busy} className="w-full">
-                {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Check className="mr-2 h-4 w-4" />}
+                {busy ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Check className="mr-2 h-4 w-4" />
+                )}
                 Save attendance policy
               </Button>
             </CardContent>
           </Card>
         </TabsContent>
 
-        <TabsContent value="schedules" className="grid gap-5 xl:grid-cols-[420px_minmax(0,1fr)]">
+        <TabsContent value="schedules" className="space-y-5">
+          <TeamSchedule />
+        </TabsContent>
+        <TabsContent
+          value="legacy-schedules"
+          className="grid gap-5 xl:grid-cols-[420px_minmax(0,1fr)]"
+        >
           <div className="space-y-5">
             <Card>
               <CardHeader>
                 <CardTitle>Shift Template</CardTitle>
-                <CardDescription>Reusable shift hours for staff schedules.</CardDescription>
+                <CardDescription>
+                  Reusable shift hours for staff schedules.
+                </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <Field label="Name"><Input value={templateForm.name} onChange={(event) => setTemplateForm((current) => ({ ...current, name: event.target.value }))} placeholder="Morning shift" /></Field>
+                <Field label="Name">
+                  <Input
+                    value={templateForm.name}
+                    onChange={(event) =>
+                      setTemplateForm((current) => ({
+                        ...current,
+                        name: event.target.value,
+                      }))
+                    }
+                    placeholder="Morning shift"
+                  />
+                </Field>
                 <div className="grid grid-cols-2 gap-3">
-                  <Field label="Start"><Input type="time" value={templateForm.start_local_time} onChange={(event) => setTemplateForm((current) => ({ ...current, start_local_time: event.target.value }))} /></Field>
-                  <Field label="End"><Input type="time" value={templateForm.end_local_time} onChange={(event) => setTemplateForm((current) => ({ ...current, end_local_time: event.target.value }))} /></Field>
+                  <Field label="Start">
+                    <Input
+                      type="time"
+                      value={templateForm.start_local_time}
+                      onChange={(event) =>
+                        setTemplateForm((current) => ({
+                          ...current,
+                          start_local_time: event.target.value,
+                        }))
+                      }
+                    />
+                  </Field>
+                  <Field label="End">
+                    <Input
+                      type="time"
+                      value={templateForm.end_local_time}
+                      onChange={(event) =>
+                        setTemplateForm((current) => ({
+                          ...current,
+                          end_local_time: event.target.value,
+                        }))
+                      }
+                    />
+                  </Field>
                 </div>
-                <Field label="Unpaid break minutes"><Input type="number" value={templateForm.unpaid_break_minutes} onChange={(event) => setTemplateForm((current) => ({ ...current, unpaid_break_minutes: event.target.value }))} /></Field>
-                <Button onClick={createTemplate} disabled={busy} className="w-full"><Plus className="mr-2 h-4 w-4" />Create template</Button>
+                <Field label="Unpaid break minutes">
+                  <Input
+                    type="number"
+                    value={templateForm.unpaid_break_minutes}
+                    onChange={(event) =>
+                      setTemplateForm((current) => ({
+                        ...current,
+                        unpaid_break_minutes: event.target.value,
+                      }))
+                    }
+                  />
+                </Field>
+                <Button
+                  onClick={saveTemplate}
+                  disabled={busy}
+                  className="w-full"
+                >
+                  {editingTemplateId ? (
+                    <Pencil className="mr-2 h-4 w-4" />
+                  ) : (
+                    <Plus className="mr-2 h-4 w-4" />
+                  )}
+                  {editingTemplateId ? "Save template" : "Create template"}
+                </Button>
+                {editingTemplateId ? (
+                  <Button
+                    variant="outline"
+                    onClick={resetTemplateForm}
+                    disabled={busy}
+                    className="w-full"
+                  >
+                    Cancel edit
+                  </Button>
+                ) : null}
+                <div className="border-t pt-4">
+                  <p className="mb-2 text-sm font-medium">Saved templates</p>
+                  {templates.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">
+                      No shift templates yet.
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {templates.map((template) => (
+                        <div
+                          key={template.id}
+                          className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2"
+                        >
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-medium">
+                              {template.name}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {String(template.start_local_time).slice(0, 5)} to{" "}
+                              {String(template.end_local_time).slice(0, 5)} ·{" "}
+                              {template.unpaid_break_minutes} min break
+                            </p>
+                          </div>
+                          <div className="flex shrink-0 gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => editTemplate(template)}
+                              disabled={busy}
+                            >
+                              <Pencil className="mr-1 h-3.5 w-3.5" />
+                              Edit
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => void deleteTemplate(template)}
+                              disabled={busy}
+                            >
+                              Delete
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </CardContent>
             </Card>
             <Card>
               <CardHeader>
-                <CardTitle>Schedule Rule</CardTitle>
-                <CardDescription>Assign default weekly shifts or staff overrides.</CardDescription>
+                <CardTitle>Weekly schedule</CardTitle>
+                <CardDescription>
+                  Set one recurring Mondayâ€“Sunday roster for selected staff. A
+                  newer week automatically replaces the prior version.
+                </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <Field label="Staff">
-                  <Select value={scheduleForm.staff_id} onValueChange={(value) => setScheduleForm((current) => ({ ...current, staff_id: value }))}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="default">Restaurant default</SelectItem>
-                      {staffProfiles.map((profile) => <SelectItem key={profile.id} value={String(profile.id)}>{staffLabel(profile, usersById)}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
+                  <div className="max-h-48 space-y-2 overflow-y-auto rounded-md border p-3">
+                    {staffProfiles.map((profile) => (
+                      <label
+                        key={profile.id}
+                        className="flex cursor-pointer items-center gap-2 text-sm"
+                      >
+                        <Checkbox
+                          checked={weeklyScheduleForm.staff_ids.includes(
+                            profile.id,
+                          )}
+                          onCheckedChange={(checked) =>
+                            toggleWeeklyStaff(profile.id, checked === true)
+                          }
+                        />
+                        {staffLabel(profile, usersById)}
+                      </label>
+                    ))}
+                    {staffProfiles.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">
+                        No staff profiles available.
+                      </p>
+                    ) : null}
+                  </div>
                 </Field>
-                <Field label="Template">
-                  <Select value={scheduleForm.shift_template_id} onValueChange={(value) => setScheduleForm((current) => ({ ...current, shift_template_id: value }))}>
-                    <SelectTrigger><SelectValue placeholder="Select shift" /></SelectTrigger>
-                    <SelectContent>{templates.map((item) => <SelectItem key={item.id} value={String(item.id)}>{item.name}</SelectItem>)}</SelectContent>
-                  </Select>
+                <Field label="Week starting Monday">
+                  <Input
+                    type="date"
+                    value={weeklyScheduleForm.effective_from}
+                    onChange={(event) =>
+                      setWeeklyScheduleForm((current) => ({
+                        ...current,
+                        effective_from: weekMondayIso(event.target.value),
+                      }))
+                    }
+                  />
                 </Field>
-                <div className="grid grid-cols-2 gap-3">
-                  <Field label="Weekday"><Input type="number" min={0} max={6} value={scheduleForm.weekday} onChange={(event) => setScheduleForm((current) => ({ ...current, weekday: event.target.value }))} /></Field>
-                  <Field label="Effective from"><Input type="date" value={scheduleForm.effective_from} onChange={(event) => setScheduleForm((current) => ({ ...current, effective_from: event.target.value }))} /></Field>
+                <div className="space-y-3">
+                  {WEEKDAY_NAMES.map((day, weekday) => (
+                    <div
+                      key={day}
+                      className="grid grid-cols-[110px_minmax(0,1fr)] items-center gap-3"
+                    >
+                      <div>
+                        <Label>{day}</Label>
+                        <p className="text-xs text-muted-foreground">
+                          {weeklyScheduleDates[weekday]}
+                        </p>
+                      </div>
+                      <Select
+                        value={weeklyScheduleForm.assignments[weekday] || "off"}
+                        onValueChange={(value) =>
+                          setWeeklyScheduleForm((current) => ({
+                            ...current,
+                            assignments: current.assignments.map(
+                              (item, index) =>
+                                index === weekday
+                                  ? value === "off"
+                                    ? ""
+                                    : value
+                                  : item,
+                            ),
+                          }))
+                        }
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="off">Day off</SelectItem>
+                          {templates.map((template) => (
+                            <SelectItem
+                              key={template.id}
+                              value={String(template.id)}
+                            >
+                              {template.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  ))}
                 </div>
-                <Button onClick={createSchedule} disabled={busy || templates.length === 0} className="w-full"><Plus className="mr-2 h-4 w-4" />Save schedule</Button>
+                <Button
+                  onClick={saveWeeklySchedule}
+                  disabled={
+                    busy || templates.length === 0 || staffProfiles.length === 0
+                  }
+                  className="w-full"
+                >
+                  <Check className="mr-2 h-4 w-4" />
+                  Apply weekly schedule
+                </Button>
               </CardContent>
             </Card>
-          </div>
-          <ScheduleTable schedules={schedules} templates={templates} staffProfiles={staffProfiles} usersById={usersById} />
-        </TabsContent>
-
-        <TabsContent value="leave" className="space-y-5">
-          <div>
-            <h2 className="text-xl font-semibold tracking-tight">Leave and holiday policy</h2>
-            <p className="text-sm text-muted-foreground">Approved paid time contributes to payroll. Pending or conflicting records block payroll readiness.</p>
-          </div>
-          <div className="grid gap-5 xl:grid-cols-2">
             <Card>
-              <CardHeader><CardTitle>New Leave Request</CardTitle><CardDescription>Record full-day or half-day paid or unpaid leave.</CardDescription></CardHeader>
+              <CardHeader>
+                <CardTitle>Weekly exception</CardTitle>
+                <CardDescription>
+                  Override one recurring weekday. Use the weekly roster above
+                  for normal staff schedules.
+                </CardDescription>
+              </CardHeader>
               <CardContent className="space-y-4">
                 <Field label="Staff">
                   <Select
-                    value={leaveForm.staff_id}
-                    onValueChange={(value) => setLeaveForm((current) => ({ ...current, staff_id: value }))}
-                    disabled={!staffProfiles.length}
+                    value={scheduleForm.staff_id}
+                    onValueChange={(value) =>
+                      setScheduleForm((current) => ({
+                        ...current,
+                        staff_id: value,
+                      }))
+                    }
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder={staffProfiles.length ? "Select staff" : "No staff profiles yet"} />
+                      <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value="default">
+                        Restaurant default
+                      </SelectItem>
                       {staffProfiles.map((profile) => (
                         <SelectItem key={profile.id} value={String(profile.id)}>
                           {staffLabel(profile, usersById)}
@@ -1074,67 +2205,475 @@ export function AttendanceAdminClient() {
                     </SelectContent>
                   </Select>
                 </Field>
-                {!staffProfiles.length ? (
-                  <p className="rounded-lg border border-dashed border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-                    Leave needs an employment profile. Open{" "}
-                    <Link href="/staff" className="font-semibold text-primary underline-offset-2 hover:underline">
-                      Workforce → Staff
-                    </Link>
-                    , open a user, then create their <span className="font-medium text-foreground">Employment and pay profile</span>.
-                  </p>
+                <div className="flex items-center justify-between rounded-lg border p-3">
+                  <div>
+                    <Label>Day off</Label>
+                    <p className="text-xs text-muted-foreground">
+                      No shift is expected on this weekday.
+                    </p>
+                  </div>
+                  <Switch
+                    checked={scheduleForm.is_day_off}
+                    onCheckedChange={(checked) =>
+                      setScheduleForm((current) => ({
+                        ...current,
+                        is_day_off: checked,
+                      }))
+                    }
+                  />
+                </div>
+                <Field label="Shift template">
+                  <Select
+                    value={scheduleForm.shift_template_id}
+                    onValueChange={(value) =>
+                      setScheduleForm((current) => ({
+                        ...current,
+                        shift_template_id: value,
+                      }))
+                    }
+                  >
+                    <SelectTrigger disabled={scheduleForm.is_day_off}>
+                      <SelectValue placeholder="Select shift" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {templates.map((item) => (
+                        <SelectItem key={item.id} value={String(item.id)}>
+                          {item.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="Weekday">
+                    <Select
+                      value={scheduleForm.weekday}
+                      onValueChange={(value) =>
+                        setScheduleForm((current) => ({
+                          ...current,
+                          weekday: value,
+                        }))
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select weekday" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="0">Monday</SelectItem>
+                        <SelectItem value="1">Tuesday</SelectItem>
+                        <SelectItem value="2">Wednesday</SelectItem>
+                        <SelectItem value="3">Thursday</SelectItem>
+                        <SelectItem value="4">Friday</SelectItem>
+                        <SelectItem value="5">Saturday</SelectItem>
+                        <SelectItem value="6">Sunday</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </Field>
+                  <Field label="Starts on">
+                    <Input
+                      type="date"
+                      value={scheduleForm.effective_from}
+                      onChange={(event) =>
+                        setScheduleForm((current) => ({
+                          ...current,
+                          effective_from: event.target.value,
+                        }))
+                      }
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Applies every selected weekday from the first matching
+                      date on or after this date.
+                    </p>
+                  </Field>
+                </div>
+                <Button
+                  onClick={saveSchedule}
+                  disabled={busy || templates.length === 0}
+                  className="w-full"
+                >
+                  {editingScheduleId ? (
+                    <Pencil className="mr-2 h-4 w-4" />
+                  ) : (
+                    <Plus className="mr-2 h-4 w-4" />
+                  )}
+                  {editingScheduleId ? "Save changes" : "Save schedule"}
+                </Button>
+                {editingScheduleId ? (
+                  <Button
+                    variant="outline"
+                    onClick={resetScheduleForm}
+                    disabled={busy}
+                    className="w-full"
+                  >
+                    Cancel edit
+                  </Button>
                 ) : null}
-                <div className="grid gap-3 sm:grid-cols-2"><Field label="From"><Input type="date" value={leaveForm.date_from} onChange={(event) => setLeaveForm((current) => ({ ...current, date_from: event.target.value }))} /></Field><Field label="To"><Input type="date" value={leaveForm.date_to} onChange={(event) => setLeaveForm((current) => ({ ...current, date_to: event.target.value }))} /></Field></div>
-                <div className="grid gap-3 sm:grid-cols-2"><Field label="Leave type"><Select value={leaveForm.leave_type} onValueChange={(value: "paid" | "unpaid") => setLeaveForm((current) => ({ ...current, leave_type: value }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="paid">Paid</SelectItem><SelectItem value="unpaid">Unpaid</SelectItem></SelectContent></Select></Field><Field label="Day value"><Select value={leaveForm.day_fraction} onValueChange={(value) => setLeaveForm((current) => ({ ...current, day_fraction: value }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="1">Full day</SelectItem><SelectItem value="0.5">Half day</SelectItem></SelectContent></Select></Field></div>
-                <Field label="Reason"><Input value={leaveForm.reason} onChange={(event) => setLeaveForm((current) => ({ ...current, reason: event.target.value }))} /></Field>
-                <Button onClick={createLeave} disabled={busy || !staffProfiles.length} className="w-full"><Plus className="mr-2 h-4 w-4" />Create leave request</Button>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader><CardTitle>New Holiday</CardTitle><CardDescription>Configure paid status and premium rate when staff work.</CardDescription></CardHeader>
-              <CardContent className="space-y-4">
-                <Field label="Holiday name"><Input value={holidayForm.name} onChange={(event) => setHolidayForm((current) => ({ ...current, name: event.target.value }))} /></Field>
-                <Field label="Date"><Input type="date" value={holidayForm.holiday_date} onChange={(event) => setHolidayForm((current) => ({ ...current, holiday_date: event.target.value }))} /></Field>
-                <div className="flex items-center justify-between rounded-lg border p-3"><div><p className="text-sm font-medium">Paid holiday</p><p className="text-xs text-muted-foreground">Scheduled time is payable when attendance is absent.</p></div><Switch checked={holidayForm.is_paid} onCheckedChange={(checked) => setHolidayForm((current) => ({ ...current, is_paid: checked }))} /></div>
-                <Field label="Worked holiday rate"><Input type="number" min={1} max={10} step={0.01} value={holidayForm.worked_rate_multiplier} onChange={(event) => setHolidayForm((current) => ({ ...current, worked_rate_multiplier: event.target.value }))} /></Field>
-                <Field label="Notes"><Input value={holidayForm.notes} onChange={(event) => setHolidayForm((current) => ({ ...current, notes: event.target.value }))} /></Field>
-                <Button onClick={createHoliday} disabled={busy} className="w-full"><Plus className="mr-2 h-4 w-4" />Create holiday</Button>
               </CardContent>
             </Card>
           </div>
-          <LeaveHolidayTables leaves={leaves} holidays={holidays} staffProfiles={staffProfiles} usersById={usersById} busy={busy} onDecideLeave={decideLeave} onDeleteHoliday={deleteHoliday} />
+          <ScheduleTable
+            schedules={schedules}
+            templates={templates}
+            staffProfiles={staffProfiles}
+            usersById={usersById}
+            onEdit={editSchedule}
+            onDelete={deleteSchedule}
+          />
         </TabsContent>
 
-        <TabsContent value="qr" className="grid min-w-0 gap-5 xl:grid-cols-[360px_minmax(0,1fr)]">
+        {canManageAttendance && canViewAttendance ? (
+          <TabsContent value="leave" className="space-y-5">
+            <div>
+              <h2 className="text-xl font-semibold tracking-tight">
+                Leave and holiday policy
+              </h2>
+              <p className="text-sm text-muted-foreground">
+                Approved paid time contributes to payroll. Pending or
+                conflicting records block payroll readiness.
+              </p>
+            </div>
+            <div className="grid gap-5 xl:grid-cols-2">
+              <Card>
+                <CardHeader>
+                  <CardTitle>New Leave Request</CardTitle>
+                  <CardDescription>
+                    Record full-day or half-day paid or unpaid leave.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <Field label="Staff">
+                    <Select
+                      value={leaveForm.staff_id}
+                      onValueChange={(value) =>
+                        setLeaveForm((current) => ({
+                          ...current,
+                          staff_id: value,
+                        }))
+                      }
+                      disabled={!staffProfiles.length}
+                    >
+                      <SelectTrigger>
+                        <SelectValue
+                          placeholder={
+                            staffProfiles.length
+                              ? "Select staff"
+                              : "No staff profiles yet"
+                          }
+                        />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {staffProfiles.map((profile) => (
+                          <SelectItem
+                            key={profile.id}
+                            value={String(profile.id)}
+                          >
+                            {staffLabel(profile, usersById)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </Field>
+                  {!staffProfiles.length ? (
+                    <p className="rounded-lg border border-dashed border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+                      Leave needs an employment profile. Open{" "}
+                      <Link
+                        href="/staff"
+                        className="font-semibold text-primary underline-offset-2 hover:underline"
+                      >
+                        Workforce → Staff
+                      </Link>
+                      , open a user, then create their{" "}
+                      <span className="font-medium text-foreground">
+                        Employment and pay profile
+                      </span>
+                      .
+                    </p>
+                  ) : null}
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <Field label="From">
+                      <Input
+                        type="date"
+                        value={leaveForm.date_from}
+                        onChange={(event) =>
+                          setLeaveForm((current) => ({
+                            ...current,
+                            date_from: event.target.value,
+                          }))
+                        }
+                      />
+                    </Field>
+                    <Field label="To">
+                      <Input
+                        type="date"
+                        value={leaveForm.date_to}
+                        onChange={(event) =>
+                          setLeaveForm((current) => ({
+                            ...current,
+                            date_to: event.target.value,
+                          }))
+                        }
+                      />
+                    </Field>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <Field label="Leave type">
+                      <Select
+                        value={leaveForm.leave_type}
+                        onValueChange={(value: "paid" | "unpaid") =>
+                          setLeaveForm((current) => ({
+                            ...current,
+                            leave_type: value,
+                          }))
+                        }
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="paid">Paid</SelectItem>
+                          <SelectItem value="unpaid">Unpaid</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </Field>
+                    <Field label="Day value">
+                      <Select
+                        value={leaveForm.day_fraction}
+                        onValueChange={(value) =>
+                          setLeaveForm((current) => ({
+                            ...current,
+                            day_fraction: value,
+                          }))
+                        }
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="1">Full day</SelectItem>
+                          <SelectItem value="0.5">Half day</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </Field>
+                  </div>
+                  <Field label="Reason">
+                    <Input
+                      value={leaveForm.reason}
+                      onChange={(event) =>
+                        setLeaveForm((current) => ({
+                          ...current,
+                          reason: event.target.value,
+                        }))
+                      }
+                    />
+                  </Field>
+                  <Button
+                    onClick={createLeave}
+                    disabled={busy || !staffProfiles.length}
+                    className="w-full"
+                  >
+                    <Plus className="mr-2 h-4 w-4" />
+                    Create leave request
+                  </Button>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader>
+                  <CardTitle>New Holiday</CardTitle>
+                  <CardDescription>
+                    Configure paid status and premium rate when staff work.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <Field label="Holiday name">
+                    <Input
+                      value={holidayForm.name}
+                      onChange={(event) =>
+                        setHolidayForm((current) => ({
+                          ...current,
+                          name: event.target.value,
+                        }))
+                      }
+                    />
+                  </Field>
+                  <Field label="Date">
+                    <Input
+                      type="date"
+                      value={holidayForm.holiday_date}
+                      onChange={(event) =>
+                        setHolidayForm((current) => ({
+                          ...current,
+                          holiday_date: event.target.value,
+                        }))
+                      }
+                    />
+                  </Field>
+                  <div className="flex items-center justify-between rounded-lg border p-3">
+                    <div>
+                      <p className="text-sm font-medium">Paid holiday</p>
+                      <p className="text-xs text-muted-foreground">
+                        Scheduled time is payable when attendance is absent.
+                      </p>
+                    </div>
+                    <Switch
+                      checked={holidayForm.is_paid}
+                      onCheckedChange={(checked) =>
+                        setHolidayForm((current) => ({
+                          ...current,
+                          is_paid: checked,
+                        }))
+                      }
+                    />
+                  </div>
+                  <Field label="Worked holiday rate">
+                    <Input
+                      type="number"
+                      min={1}
+                      max={10}
+                      step={0.01}
+                      value={holidayForm.worked_rate_multiplier}
+                      onChange={(event) =>
+                        setHolidayForm((current) => ({
+                          ...current,
+                          worked_rate_multiplier: event.target.value,
+                        }))
+                      }
+                    />
+                  </Field>
+                  <Field label="Notes">
+                    <Input
+                      value={holidayForm.notes}
+                      onChange={(event) =>
+                        setHolidayForm((current) => ({
+                          ...current,
+                          notes: event.target.value,
+                        }))
+                      }
+                    />
+                  </Field>
+                  <Button
+                    onClick={createHoliday}
+                    disabled={busy}
+                    className="w-full"
+                  >
+                    <Plus className="mr-2 h-4 w-4" />
+                    Create holiday
+                  </Button>
+                </CardContent>
+              </Card>
+            </div>
+            <LeaveHolidayTables
+              leaves={leaves}
+              holidays={holidays}
+              staffProfiles={staffProfiles}
+              usersById={usersById}
+              busy={busy}
+              onDecideLeave={decideLeave}
+              onDeleteHoliday={deleteHoliday}
+            />
+          </TabsContent>
+        ) : null}
+
+        <TabsContent
+          value="qr"
+          className="grid min-w-0 gap-5 xl:grid-cols-[360px_minmax(0,1fr)]"
+        >
           <Card>
             <CardHeader>
               <CardTitle>Generate QR Session</CardTitle>
-              <CardDescription>Staff scan this QR from the mobile app.</CardDescription>
+              <CardDescription>
+                Staff scan this QR from the mobile app.
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <Field label="Station label"><Input value={stationLabel} onChange={(event) => setStationLabel(event.target.value)} /></Field>
-              <Field label="Expiry seconds"><Input type="number" min={15} max={300} value={ttlSeconds} onChange={(event) => setTtlSeconds(event.target.value)} /></Field>
-              <Button onClick={createQrSession} disabled={busy} className="w-full"><RefreshCw className="mr-2 h-4 w-4" />{qrSession ? "Refresh QR" : "Generate QR"}</Button>
+              <Field label="Station label">
+                <Input
+                  value={stationLabel}
+                  onChange={(event) => setStationLabel(event.target.value)}
+                />
+              </Field>
+              {canManageQrExpiry ? (
+                <Field label="Expiry seconds">
+                  <Input
+                    type="number"
+                    min="1"
+                    max="3600"
+                    value={qrExpirySeconds}
+                    onChange={(event) => setQrExpirySeconds(event.target.value)}
+                  />
+                </Field>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  Each QR expires in 15 seconds.
+                </p>
+              )}
+              <Button
+                onClick={createQrSession}
+                disabled={busy}
+                className="w-full"
+              >
+                <RefreshCw className="mr-2 h-4 w-4" />
+                {qrSession ? "Refresh QR" : "Generate QR"}
+              </Button>
             </CardContent>
           </Card>
           <Card className="min-w-0">
             <CardHeader>
               <CardTitle>Restaurant Attendance QR</CardTitle>
-              <CardDescription>Web only displays the QR. Clock-in stays on approved mobile devices.</CardDescription>
+              <CardDescription>
+                Web only displays the QR. Clock-in stays on approved mobile
+                devices.
+              </CardDescription>
             </CardHeader>
             <CardContent className="min-w-0 space-y-5">
               <div className="flex min-h-[320px] items-center justify-center rounded-md border border-dashed bg-muted/20 p-3 sm:min-h-[430px]">
-                {qrDataUrl ? <Image src={qrDataUrl} width={420} height={420} alt="Attendance QR code" unoptimized className="h-[min(420px,78vw)] w-[min(420px,78vw)] rounded bg-white p-2" /> : <div className="text-center text-muted-foreground"><QrCode className="mx-auto mb-3 h-12 w-12" /><p className="text-sm font-medium">Generate a QR session to display it here.</p></div>}
+                {qrDataUrl ? (
+                  <Image
+                    src={qrDataUrl}
+                    width={420}
+                    height={420}
+                    alt="Attendance QR code"
+                    unoptimized
+                    className="h-[min(420px,78vw)] w-[min(420px,78vw)] rounded bg-white p-2"
+                  />
+                ) : (
+                  <div className="text-center text-muted-foreground">
+                    <QrCode className="mx-auto mb-3 h-12 w-12" />
+                    <p className="text-sm font-medium">
+                      Generate a QR session to display it here.
+                    </p>
+                  </div>
+                )}
               </div>
               <div className="grid gap-3 lg:grid-cols-2">
-                <InfoLine label="Station" value={qrSession?.station_label || stationLabel} />
-                <InfoLine label="Expires" value={formatDateTime(qrSession?.expires_at)} />
+                <InfoLine
+                  label="Station"
+                  value={qrSession?.station_label || stationLabel}
+                />
+                <InfoLine
+                  label="Expires"
+                  value={formatDateTime(qrSession?.expires_at)}
+                />
                 <div className="min-w-0 rounded-md border bg-muted/40 p-3 lg:col-span-2">
                   <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div className="min-w-0">
-                      <p className="text-xs font-bold uppercase text-muted-foreground">QR payload</p>
-                      <p className="max-h-20 overflow-auto break-all font-mono text-xs text-muted-foreground">{qrPayload || "Not generated"}</p>
+                      <p className="text-xs font-bold uppercase text-muted-foreground">
+                        QR payload
+                      </p>
+                      <p className="max-h-20 overflow-auto break-all font-mono text-xs text-muted-foreground">
+                        {qrPayload || "Not generated"}
+                      </p>
                     </div>
-                    <Button type="button" variant="outline" size="sm" onClick={() => copy(qrPayload, "QR payload copied")} disabled={!qrPayload} className="shrink-0"><Copy className="mr-2 h-4 w-4" />Copy</Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => copy(qrPayload, "QR payload copied")}
+                      disabled={!qrPayload}
+                      className="shrink-0"
+                    >
+                      <Copy className="mr-2 h-4 w-4" />
+                      Copy
+                    </Button>
                   </div>
                 </div>
               </div>
@@ -1143,160 +2682,787 @@ export function AttendanceAdminClient() {
         </TabsContent>
 
         <TabsContent value="devices" className="space-y-5">
-          <MobileDeviceTable devices={mobileDevices} staffProfiles={staffProfiles} usersById={usersById} onDecide={decideMobile} />
-          <div className="grid gap-5 xl:grid-cols-[420px_minmax(0,1fr)]">
-            <div className="space-y-5">
-            <Card>
-              <CardHeader><CardTitle>Register ZKTeco Device</CardTitle><CardDescription>Add the physical device identity.</CardDescription></CardHeader>
-              <CardContent className="space-y-4">
-                <Field label="Device name"><Input value={deviceForm.name} onChange={(event) => setDeviceForm((current) => ({ ...current, name: event.target.value }))} placeholder="Main entrance scanner" /></Field>
-                <Field label="Serial number"><Input value={deviceForm.serial_number} onChange={(event) => setDeviceForm((current) => ({ ...current, serial_number: event.target.value }))} /></Field>
-                <div className="grid grid-cols-[minmax(0,1fr)_110px] gap-3">
-                  <Field label="IP address"><Input value={deviceForm.ip_address} onChange={(event) => setDeviceForm((current) => ({ ...current, ip_address: event.target.value }))} placeholder="192.168.1.50" /></Field>
-                  <Field label="Port"><Input type="number" value={deviceForm.port} onChange={(event) => setDeviceForm((current) => ({ ...current, port: event.target.value }))} /></Field>
+          {canManageDevices ? (
+            <EntitlementGate
+              entitlement="attendance.biometric.enabled"
+              title="Unlock biometric attendance"
+              description="Connect biometric devices and keep staff-device mappings in the same attendance workspace."
+            >
+              <div className="grid gap-5 xl:grid-cols-[420px_minmax(0,1fr)]">
+                <div className="space-y-5">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Register ZKTeco Device</CardTitle>
+                      <CardDescription>
+                        Add the physical device identity.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <Field label="Device name">
+                        <Input
+                          value={deviceForm.name}
+                          onChange={(event) =>
+                            setDeviceForm((current) => ({
+                              ...current,
+                              name: event.target.value,
+                            }))
+                          }
+                          placeholder="Main entrance scanner"
+                        />
+                      </Field>
+                      <Field label="Serial number">
+                        <Input
+                          value={deviceForm.serial_number}
+                          onChange={(event) =>
+                            setDeviceForm((current) => ({
+                              ...current,
+                              serial_number: event.target.value,
+                            }))
+                          }
+                        />
+                      </Field>
+                      <p className="text-xs text-muted-foreground">
+                        This device pushes attendance directly to Yummy through
+                        ADMS. No LAN IP or connector pairing is needed.
+                      </p>
+                      <Field label="Timezone">
+                        <TimezoneSelect
+                          value={deviceForm.timezone}
+                          onChange={(timezone) =>
+                            setDeviceForm((current) => ({
+                              ...current,
+                              timezone,
+                            }))
+                          }
+                        />
+                      </Field>
+                      <Button
+                        onClick={createDevice}
+                        disabled={busy}
+                        className="w-full"
+                      >
+                        <Plus className="mr-2 h-4 w-4" />
+                        Register device
+                      </Button>
+                    </CardContent>
+                  </Card>
+                  {devices.some(
+                    (device) => device.device_type === "zkteco_cloud",
+                  ) ? (
+                    <Card>
+                      <CardHeader>
+                        <CardTitle>Test ADMS Punch</CardTitle>
+                        <CardDescription>
+                          Simulate the push sent after a fingerprint scan.
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        <Field label="Cloud device">
+                          <Select
+                            value={admsTestForm.device_id}
+                            onValueChange={(device_id) =>
+                              setAdmsTestForm((current) => ({
+                                ...current,
+                                device_id,
+                              }))
+                            }
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select cloud device" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {devices
+                                .filter(
+                                  (device) =>
+                                    device.device_type === "zkteco_cloud",
+                                )
+                                .map((device) => (
+                                  <SelectItem
+                                    key={device.id}
+                                    value={String(device.id)}
+                                  >
+                                    {device.name} · {device.serial_number}
+                                  </SelectItem>
+                                ))}
+                            </SelectContent>
+                          </Select>
+                        </Field>
+                        <Field label="Mapped device user code">
+                          <Input
+                            value={admsTestForm.device_user_id}
+                            onChange={(event) =>
+                              setAdmsTestForm((current) => ({
+                                ...current,
+                                device_user_id: event.target.value,
+                              }))
+                            }
+                            placeholder="1001"
+                            inputMode="numeric"
+                          />
+                        </Field>
+                        <div className="grid grid-cols-2 gap-3">
+                          <Button
+                            onClick={() => void sendAdmsTestPunch(true)}
+                            disabled={busy || !admsTestForm.device_id}
+                          >
+                            <LogIn className="mr-2 h-4 w-4" />
+                            Clock in
+                          </Button>
+                          <Button
+                            variant="outline"
+                            onClick={() => void sendAdmsTestPunch(false)}
+                            disabled={busy || !admsTestForm.device_id}
+                          >
+                            <LogOut className="mr-2 h-4 w-4" />
+                            Clock out
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ) : null}
+                  {canManageStaff ? (
+                    <Card>
+                      <CardHeader>
+                        <CardTitle>Map Staff User</CardTitle>
+                        <CardDescription>
+                          Link biometric device users to staff profiles.
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        <Field label="Device">
+                          <Select
+                            value={mappingForm.device_id}
+                            onValueChange={(value) =>
+                              setMappingForm((current) => ({
+                                ...current,
+                                device_id: value,
+                              }))
+                            }
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select device" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {devices.map((device) => (
+                                <SelectItem
+                                  key={device.id}
+                                  value={String(device.id)}
+                                >
+                                  {device.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </Field>
+                        <Field label="Staff">
+                          <Select
+                            value={mappingForm.staff_id}
+                            onValueChange={(value) =>
+                              setMappingForm((current) => ({
+                                ...current,
+                                staff_id: value,
+                              }))
+                            }
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select staff" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {staffProfiles.map((profile) => (
+                                <SelectItem
+                                  key={profile.id}
+                                  value={String(profile.id)}
+                                >
+                                  {staffLabel(profile, usersById)}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </Field>
+                        <Field label="Device user ID">
+                          <Input
+                            value={mappingForm.device_user_id}
+                            onChange={(event) =>
+                              setMappingForm((current) => ({
+                                ...current,
+                                device_user_id: event.target.value,
+                              }))
+                            }
+                          />
+                        </Field>
+                        <Button
+                          variant="outline"
+                          onClick={saveMapping}
+                          disabled={
+                            busy || !devices.length || !staffProfiles.length
+                          }
+                          className="w-full"
+                        >
+                          <Fingerprint className="mr-2 h-4 w-4" />
+                          Save mapping
+                        </Button>
+                      </CardContent>
+                    </Card>
+                  ) : null}
                 </div>
-                <Field label="Timezone">
-                  <TimezoneSelect
-                    value={deviceForm.timezone}
-                    onChange={(timezone) => setDeviceForm((current) => ({ ...current, timezone }))}
+                <div className="space-y-5">
+                  {biometricUnavailable ? (
+                    <Card className="border-amber-500/30 bg-amber-500/10">
+                      <CardHeader>
+                        <CardTitle>Biometric Devices Not Enabled</CardTitle>
+                        <CardDescription>
+                          QR/mobile attendance is available. Enable the
+                          biometric attendance add-on before registering ZKTeco
+                          devices.
+                        </CardDescription>
+                      </CardHeader>
+                    </Card>
+                  ) : null}
+                  <DeviceTable
+                    devices={devices}
+                    mappings={mappings}
+                    devicesById={devicesById}
+                    staffProfiles={staffProfiles}
+                    usersById={usersById}
+                    onToggle={toggleDevice}
                   />
-                </Field>
-                <Button onClick={createDevice} disabled={busy} className="w-full"><Plus className="mr-2 h-4 w-4" />Register device</Button>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader><CardTitle>Map Staff User</CardTitle><CardDescription>Link biometric device users to staff profiles.</CardDescription></CardHeader>
-              <CardContent className="space-y-4">
-                <Field label="Device">
-                  <Select value={mappingForm.device_id} onValueChange={(value) => setMappingForm((current) => ({ ...current, device_id: value }))}>
-                    <SelectTrigger><SelectValue placeholder="Select device" /></SelectTrigger>
-                    <SelectContent>{devices.map((device) => <SelectItem key={device.id} value={String(device.id)}>{device.name}</SelectItem>)}</SelectContent>
-                  </Select>
-                </Field>
-                <Field label="Staff">
-                  <Select value={mappingForm.staff_id} onValueChange={(value) => setMappingForm((current) => ({ ...current, staff_id: value }))}>
-                    <SelectTrigger><SelectValue placeholder="Select staff" /></SelectTrigger>
-                    <SelectContent>{staffProfiles.map((profile) => <SelectItem key={profile.id} value={String(profile.id)}>{staffLabel(profile, usersById)}</SelectItem>)}</SelectContent>
-                  </Select>
-                </Field>
-                <Field label="Device user ID"><Input value={mappingForm.device_user_id} onChange={(event) => setMappingForm((current) => ({ ...current, device_user_id: event.target.value }))} /></Field>
-                <Button variant="outline" onClick={saveMapping} disabled={busy || !devices.length || !staffProfiles.length} className="w-full"><Fingerprint className="mr-2 h-4 w-4" />Save mapping</Button>
-              </CardContent>
-            </Card>
-            {pairingCode ? (
-              <Card>
-                <CardHeader><CardTitle>Connector Pairing Code</CardTitle><CardDescription>Shown once. Use it on the restaurant LAN connector.</CardDescription></CardHeader>
-                <CardContent className="space-y-3">
-                  <p className="break-all rounded-md border bg-muted p-3 font-mono text-sm">{pairingCode.code}</p>
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="text-xs text-muted-foreground">Expires {formatDateTime(pairingCode.expires_at)}</span>
-                    <Button size="sm" variant="outline" onClick={() => copy(pairingCode.code, "Pairing code copied")}><Copy className="mr-2 h-4 w-4" />Copy</Button>
-                  </div>
-                </CardContent>
-              </Card>
-            ) : null}
-            </div>
-            <div className="space-y-5">
-              {biometricUnavailable ? (
-                <Card className="border-amber-500/30 bg-amber-500/10">
-                  <CardHeader>
-                    <CardTitle>Biometric Devices Not Enabled</CardTitle>
-                    <CardDescription>
-                      QR/mobile attendance is available. Enable the biometric attendance add-on before registering ZKTeco devices.
-                    </CardDescription>
-                  </CardHeader>
-                </Card>
-              ) : null}
-              <DeviceTable devices={devices} mappings={mappings} devicesById={devicesById} staffProfiles={staffProfiles} usersById={usersById} onToggle={toggleDevice} onPair={createPairingCode} />
-            </div>
-          </div>
+                </div>
+              </div>
+            </EntitlementGate>
+          ) : null}
         </TabsContent>
       </Tabs>
-      <Dialog open={Boolean(correctionEntry)} onOpenChange={(open) => { if (!open && !busy) setCorrectionEntry(null); }}>
+      <Dialog
+        open={Boolean(correctionEntry)}
+        onOpenChange={(open) => {
+          if (!open && !busy) setCorrectionEntry(null);
+        }}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Correct attendance time</DialogTitle>
-            <DialogDescription>The record will return to draft and must be reviewed before payroll.</DialogDescription>
+            <DialogDescription>
+              Your reason is recorded in the audit trail. Clean corrected
+              records are approved automatically; exceptions return to review.
+            </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-2 sm:grid-cols-2">
             <div className="space-y-2">
               <Label>Clock in</Label>
-              <Input type="datetime-local" value={correctionForm.clockIn} onChange={(event) => setCorrectionForm((current) => ({ ...current, clockIn: event.target.value }))} />
+              <Input
+                type="datetime-local"
+                value={correctionForm.clockIn}
+                onChange={(event) =>
+                  setCorrectionForm((current) => ({
+                    ...current,
+                    clockIn: event.target.value,
+                  }))
+                }
+              />
             </div>
             <div className="space-y-2">
               <Label>Clock out</Label>
-              <Input type="datetime-local" value={correctionForm.clockOut} onChange={(event) => setCorrectionForm((current) => ({ ...current, clockOut: event.target.value }))} />
+              <Input
+                type="datetime-local"
+                value={correctionForm.clockOut}
+                onChange={(event) =>
+                  setCorrectionForm((current) => ({
+                    ...current,
+                    clockOut: event.target.value,
+                  }))
+                }
+              />
             </div>
             <div className="space-y-2 sm:col-span-2">
               <Label>Correction reason</Label>
-              <Textarea value={correctionForm.reason} onChange={(event) => setCorrectionForm((current) => ({ ...current, reason: event.target.value }))} placeholder="For example: employee forgot to clock out" />
+              <Textarea
+                value={correctionForm.reason}
+                onChange={(event) =>
+                  setCorrectionForm((current) => ({
+                    ...current,
+                    reason: event.target.value,
+                  }))
+                }
+                placeholder="For example: employee forgot to clock out"
+              />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" disabled={busy} onClick={() => setCorrectionEntry(null)}>Cancel</Button>
-            <Button disabled={busy} onClick={saveCorrection}>{busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Save correction</Button>
+            <Button
+              variant="outline"
+              disabled={busy}
+              onClick={() => setCorrectionEntry(null)}
+            >
+              Cancel
+            </Button>
+            <Button disabled={busy} onClick={saveCorrection}>
+              {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Save correction
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </AppPage>
+  );
+}
+
+function Field({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="space-y-2">
+      <Label>{label}</Label>
+      {children}
     </div>
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return <div className="space-y-2"><Label>{label}</Label>{children}</div>;
-}
-
 function InfoLine({ label, value }: { label: string; value: string }) {
-  return <div className="rounded-md border bg-muted/30 p-3"><p className="text-xs font-bold uppercase text-muted-foreground">{label}</p><p className="mt-1 text-sm font-semibold">{value}</p></div>;
+  return (
+    <div className="rounded-md border bg-muted/30 p-3">
+      <p className="text-xs font-bold uppercase text-muted-foreground">
+        {label}
+      </p>
+      <p className="mt-1 text-sm font-semibold">{value}</p>
+    </div>
+  );
 }
 
-function LeaveHolidayTables({ leaves, holidays, staffProfiles, usersById, busy, onDecideLeave, onDeleteHoliday }: { leaves: AttendanceLeave[]; holidays: AttendanceHoliday[]; staffProfiles: StaffProfile[]; usersById: Map<number, StaffUser>; busy: boolean; onDecideLeave: (id: number, action: "approve" | "reject" | "cancel") => void; onDeleteHoliday: (id: number) => void }) {
-  return <div className="grid gap-5 xl:grid-cols-2">
-    <Card><CardHeader><CardTitle>Leave Requests</CardTitle><CardDescription>Payroll uses approved records only.</CardDescription></CardHeader><CardContent><div className="overflow-x-auto rounded-md border"><Table><TableHeader><TableRow><TableHead>Staff</TableHead><TableHead>Period</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader><TableBody>{leaves.length === 0 ? <TableRow><TableCell colSpan={4} className="h-20 text-center text-muted-foreground">No leave requests.</TableCell></TableRow> : leaves.map((leave) => { const profile = staffProfiles.find((item) => item.id === leave.staff_id); return <TableRow key={leave.id}><TableCell><p className="font-medium">{staffLabel(profile, usersById)}</p><p className="text-xs text-muted-foreground">{leave.leave_type} · {leave.day_fraction === 0.5 ? "half day" : "full day"}</p></TableCell><TableCell><p>{leave.date_from} to {leave.date_to}</p><p className="max-w-52 truncate text-xs text-muted-foreground">{leave.reason}</p></TableCell><TableCell><Badge variant={leave.status === "approved" ? "default" : "secondary"}>{leave.status}</Badge></TableCell><TableCell className="text-right"><div className="flex justify-end gap-1">{leave.status === "pending" ? <><Button size="sm" disabled={busy} onClick={() => onDecideLeave(leave.id, "approve")}>Approve</Button><Button size="sm" variant="outline" disabled={busy} onClick={() => onDecideLeave(leave.id, "reject")}>Reject</Button></> : null}{leave.status === "pending" || leave.status === "approved" ? <Button size="sm" variant="ghost" disabled={busy} onClick={() => onDecideLeave(leave.id, "cancel")}>Cancel</Button> : null}</div></TableCell></TableRow>; })}</TableBody></Table></div></CardContent></Card>
-    <Card><CardHeader><CardTitle>Restaurant Holidays</CardTitle><CardDescription>Paid days and worked-day multipliers.</CardDescription></CardHeader><CardContent><div className="overflow-x-auto rounded-md border"><Table><TableHeader><TableRow><TableHead>Holiday</TableHead><TableHead>Pay rule</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader><TableBody>{holidays.length === 0 ? <TableRow><TableCell colSpan={3} className="h-20 text-center text-muted-foreground">No holidays configured.</TableCell></TableRow> : holidays.map((holiday) => <TableRow key={holiday.id}><TableCell><p className="font-medium">{holiday.name}</p><p className="text-xs text-muted-foreground">{holiday.holiday_date}</p></TableCell><TableCell>{holiday.is_paid ? "Paid" : "Unpaid"} · {holiday.worked_rate_multiplier}x worked rate</TableCell><TableCell className="text-right"><Button size="sm" variant="outline" disabled={busy} onClick={() => onDeleteHoliday(holiday.id)}>Delete</Button></TableCell></TableRow>)}</TableBody></Table></div></CardContent></Card>
-  </div>;
+function LeaveHolidayTables({
+  leaves,
+  holidays,
+  staffProfiles,
+  usersById,
+  busy,
+  onDecideLeave,
+  onDeleteHoliday,
+}: {
+  leaves: AttendanceLeave[];
+  holidays: AttendanceHoliday[];
+  staffProfiles: StaffProfile[];
+  usersById: Map<number, StaffUser>;
+  busy: boolean;
+  onDecideLeave: (id: number, action: "approve" | "reject" | "cancel") => void;
+  onDeleteHoliday: (id: number) => void;
+}) {
+  return (
+    <div className="grid gap-5 xl:grid-cols-2">
+      <Card>
+        <CardHeader>
+          <CardTitle>Leave Requests</CardTitle>
+          <CardDescription>Payroll uses approved records only.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="overflow-x-auto rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Staff</TableHead>
+                  <TableHead>Period</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {leaves.length === 0 ? (
+                  <TableRow>
+                    <TableCell
+                      colSpan={4}
+                      className="h-20 text-center text-muted-foreground"
+                    >
+                      No leave requests.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  leaves.map((leave) => {
+                    const profile = staffProfiles.find(
+                      (item) => item.id === leave.staff_id,
+                    );
+                    return (
+                      <TableRow key={leave.id}>
+                        <TableCell>
+                          <p className="font-medium">
+                            {staffLabel(profile, usersById)}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {leave.leave_type} ·{" "}
+                            {leave.day_fraction === 0.5
+                              ? "half day"
+                              : "full day"}
+                          </p>
+                        </TableCell>
+                        <TableCell>
+                          <p>
+                            {leave.date_from} to {leave.date_to}
+                          </p>
+                          <p className="max-w-52 truncate text-xs text-muted-foreground">
+                            {leave.reason}
+                          </p>
+                        </TableCell>
+                        <TableCell>
+                          <Badge
+                            variant={
+                              leave.status === "approved"
+                                ? "default"
+                                : "secondary"
+                            }
+                          >
+                            {leave.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-1">
+                            {leave.status === "pending" ? (
+                              <>
+                                <Button
+                                  size="sm"
+                                  disabled={busy}
+                                  onClick={() =>
+                                    onDecideLeave(leave.id, "approve")
+                                  }
+                                >
+                                  Approve
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  disabled={busy}
+                                  onClick={() =>
+                                    onDecideLeave(leave.id, "reject")
+                                  }
+                                >
+                                  Reject
+                                </Button>
+                              </>
+                            ) : null}
+                            {leave.status === "pending" ||
+                            leave.status === "approved" ? (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                disabled={busy}
+                                onClick={() =>
+                                  onDecideLeave(leave.id, "cancel")
+                                }
+                              >
+                                Cancel
+                              </Button>
+                            ) : null}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle>Restaurant Holidays</CardTitle>
+          <CardDescription>
+            Paid days and worked-day multipliers.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="overflow-x-auto rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Holiday</TableHead>
+                  <TableHead>Pay rule</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {holidays.length === 0 ? (
+                  <TableRow>
+                    <TableCell
+                      colSpan={3}
+                      className="h-20 text-center text-muted-foreground"
+                    >
+                      No holidays configured.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  holidays.map((holiday) => (
+                    <TableRow key={holiday.id}>
+                      <TableCell>
+                        <p className="font-medium">{holiday.name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {holiday.holiday_date}
+                        </p>
+                      </TableCell>
+                      <TableCell>
+                        {holiday.is_paid ? "Paid" : "Unpaid"} ·{" "}
+                        {holiday.worked_rate_multiplier}x worked rate
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={busy}
+                          onClick={() => onDeleteHoliday(holiday.id)}
+                        >
+                          Delete
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
 }
 
-function TimesheetTable({ entries, staffProfiles, usersById, onSubmit, onApprove, onReject, onCorrect }: { entries: AttendanceEntry[]; staffProfiles: StaffProfile[]; usersById: Map<number, StaffUser>; onSubmit: (entry: AttendanceEntry) => void; onApprove: (entry: AttendanceEntry) => void; onReject: (entry: AttendanceEntry) => void; onCorrect: (entry: AttendanceEntry) => void }) {
+function TimesheetTable({
+  entries,
+  staffProfiles,
+  usersById,
+  onApprove,
+  onReject,
+  onReopen,
+  onCorrect,
+  canManage,
+}: {
+  entries: AttendanceEntry[];
+  staffProfiles: StaffProfile[];
+  usersById: Map<number, StaffUser>;
+  onApprove: (entry: AttendanceEntry) => void;
+  onReject: (entry: AttendanceEntry) => void;
+  onReopen: (entry: AttendanceEntry) => void;
+  onCorrect: (entry: AttendanceEntry) => void;
+  canManage: boolean;
+}) {
   return (
     <>
-      <div className="space-y-2 md:hidden">
-        {entries.length === 0 ? <div className="rounded-lg border p-6 text-center text-sm text-muted-foreground">No attendance entries in this range.</div> : entries.map((entry) => {
-          const profile = staffProfiles.find((item) => item.id === entry.staff_id);
-          return <div key={entry.id} className="rounded-lg border p-3">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0"><p className="truncate font-medium">{staffLabel(profile, usersById)}</p><p className="mt-1 text-xs text-muted-foreground">{formatDateTime(entry.clock_in_at)} to {formatDateTime(entry.clock_out_at)}</p></div>
-              <Badge variant={entry.approval_status === "approved" || entry.approval_status === "payroll_exported" ? "default" : "secondary"}>{entry.approval_status}</Badge>
-            </div>
-            <p className="mt-3 text-sm">Regular {minutesLabel(entry.regular_minutes)} / break {minutesLabel(entry.break_minutes)} / OT {minutesLabel(entry.overtime_minutes)}</p>
-            <p className="mt-1 text-xs text-muted-foreground">Late {minutesLabel(entry.late_arrival_minutes)} / early departure {minutesLabel(entry.early_departure_minutes)} / rejected OT {minutesLabel(entry.rejected_excess_minutes)}</p>
-            {entry.scheduled_start_at ? <p className="mt-1 text-xs text-muted-foreground">Scheduled {formatDateTime(entry.scheduled_start_at)} to {formatDateTime(entry.scheduled_end_at)}</p> : null}
-            {entry.exception_code ? <p className="mt-1 text-xs text-destructive">{entry.exception_code}</p> : null}
-            <div className="mt-3 flex flex-wrap gap-2">
-              {entry.approval_status !== "payroll_exported" ? <Button size="sm" variant="outline" onClick={() => onCorrect(entry)}><Pencil className="mr-1 h-3 w-3" />Correct</Button> : null}
-              {entry.approval_status === "draft" ? <Button size="sm" variant="outline" onClick={() => onSubmit(entry)}>Submit</Button> : null}
-              {entry.approval_status === "pending" ? <Button size="sm" onClick={() => onApprove(entry)}><Check className="mr-1 h-3 w-3" />Approve</Button> : null}
-              {entry.approval_status === "pending" ? <Button size="sm" variant="outline" onClick={() => onReject(entry)}><X className="mr-1 h-3 w-3" />Reject</Button> : null}
-            </div>
-          </div>;
-        })}
+      <div className="space-y-2 lg:hidden">
+        {entries.length === 0 ? (
+          <div className="rounded-lg border p-6 text-center text-sm text-muted-foreground">
+            No attendance entries in this range.
+          </div>
+        ) : (
+          entries.map((entry) => {
+            const profile = staffProfiles.find(
+              (item) => item.id === entry.staff_id,
+            );
+            return (
+              <div key={entry.id} className="rounded-lg border p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate font-medium">
+                      {staffLabel(profile, usersById)}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {formatDateTime(entry.clock_in_at)} to{" "}
+                      {formatDateTime(entry.clock_out_at)}
+                    </p>
+                  </div>
+                  <Badge
+                    variant={
+                      entry.approval_status === "approved" ||
+                      entry.approval_status === "payroll_exported"
+                        ? "default"
+                        : "secondary"
+                    }
+                  >
+                    {entry.clock_out_at
+                      ? attendanceApprovalLabel(entry.approval_status)
+                      : "Awaiting clock-out"}
+                  </Badge>
+                </div>
+                <p className="mt-3 text-sm">
+                  Regular {minutesLabel(entry.regular_minutes)} / break{" "}
+                  {minutesLabel(entry.break_minutes)} / OT{" "}
+                  {minutesLabel(entry.overtime_minutes)}
+                </p>
+                <details className="mt-1 text-xs text-muted-foreground"><summary className="min-h-11 cursor-pointer py-3">Time details</summary><p>
+                  Late {minutesLabel(entry.late_arrival_minutes)} / early
+                  departure {minutesLabel(entry.early_departure_minutes)} /
+                  rejected OT {minutesLabel(entry.rejected_excess_minutes)}
+                </p></details>
+                {entry.scheduled_start_at ? (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Scheduled {formatDateTime(entry.scheduled_start_at)} to{" "}
+                    {formatDateTime(entry.scheduled_end_at)}
+                  </p>
+                ) : null}
+                {entry.exception_code ? (
+                  <p className="mt-1 text-xs text-destructive">
+                    {attendanceExceptionLabel(entry.exception_code)}
+                  </p>
+                ) : null}
+                {canManage ? (
+                  <details className="mt-3"><summary className="min-h-11 cursor-pointer py-3 text-sm font-medium">Manage entry</summary><div className="mt-3 flex flex-wrap gap-2 [&_button]:min-h-11">
+                    {entry.approval_status === "approved" ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => onReopen(entry)}
+                      >
+                        <Pencil className="mr-1 h-3 w-3" />
+                        Review
+                      </Button>
+                    ) : null}
+                    {entry.approval_status !== "payroll_exported" ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => onCorrect(entry)}
+                      >
+                        <Pencil className="mr-1 h-3 w-3" />
+                        Correct
+                      </Button>
+                    ) : null}
+                    {entry.approval_status === "pending" ? (
+                      <Button size="sm" onClick={() => onApprove(entry)}>
+                        <Check className="mr-1 h-3 w-3" />
+                        Approve
+                      </Button>
+                    ) : null}
+                    {["pending", "needs_correction", "approved"].includes(
+                      entry.approval_status,
+                    ) ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => onReject(entry)}
+                      >
+                        <X className="mr-1 h-3 w-3" />
+                        Reject
+                      </Button>
+                    ) : null}
+                  </div></details>
+                ) : null}
+              </div>
+            );
+          })
+        )}
       </div>
-      <div className="hidden overflow-x-auto rounded-md border md:block">
+      <div className="hidden overflow-x-auto rounded-md border lg:block">
         <Table>
-          <TableHeader><TableRow><TableHead>Staff</TableHead><TableHead>Clock</TableHead><TableHead>Minutes</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Staff</TableHead>
+              <TableHead>Clock</TableHead>
+              <TableHead>Minutes</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead className="text-right">Actions</TableHead>
+            </TableRow>
+          </TableHeader>
           <TableBody>
-            {entries.length === 0 ? <TableRow><TableCell colSpan={5} className="h-24 text-center text-muted-foreground">No attendance entries in this range.</TableCell></TableRow> : entries.map((entry) => {
-              const profile = staffProfiles.find((item) => item.id === entry.staff_id);
-              return (
-                <TableRow key={entry.id}>
-                  <TableCell className="min-w-[180px] font-medium">{staffLabel(profile, usersById)}</TableCell>
-                  <TableCell className="min-w-[220px] text-sm">{formatDateTime(entry.clock_in_at)} to {formatDateTime(entry.clock_out_at)}</TableCell>
-                  <TableCell className="min-w-[220px] text-sm"><div>Regular {minutesLabel(entry.regular_minutes)} / break {minutesLabel(entry.break_minutes)} / OT {minutesLabel(entry.overtime_minutes)}</div><div className="mt-1 text-xs text-muted-foreground">Late {minutesLabel(entry.late_arrival_minutes)} / early {minutesLabel(entry.early_departure_minutes)} / rejected OT {minutesLabel(entry.rejected_excess_minutes)}</div></TableCell>
-                  <TableCell className="min-w-[180px]"><Badge variant={entry.approval_status === "approved" || entry.approval_status === "payroll_exported" ? "default" : "secondary"}>{entry.approval_status}</Badge>{entry.exception_code ? <div className="mt-1 text-xs text-destructive">{entry.exception_code}</div> : null}</TableCell>
-                  <TableCell className="min-w-[260px] text-right"><div className="flex justify-end gap-2">{entry.approval_status !== "payroll_exported" ? <Button size="sm" variant="outline" onClick={() => onCorrect(entry)}><Pencil className="mr-1 h-3 w-3" />Correct</Button> : null}{entry.approval_status === "draft" ? <Button size="sm" variant="outline" onClick={() => onSubmit(entry)}>Submit</Button> : null}{entry.approval_status === "pending" ? <Button size="sm" onClick={() => onApprove(entry)}><Check className="mr-1 h-3 w-3" />Approve</Button> : null}{entry.approval_status === "pending" ? <Button size="sm" variant="outline" onClick={() => onReject(entry)}><X className="mr-1 h-3 w-3" />Reject</Button> : null}</div></TableCell>
-                </TableRow>
-              );
-            })}
+            {entries.length === 0 ? (
+              <TableRow>
+                <TableCell
+                  colSpan={5}
+                  className="h-24 text-center text-muted-foreground"
+                >
+                  No attendance entries in this range.
+                </TableCell>
+              </TableRow>
+            ) : (
+              entries.map((entry) => {
+                const profile = staffProfiles.find(
+                  (item) => item.id === entry.staff_id,
+                );
+                return (
+                  <TableRow key={entry.id}>
+                    <TableCell className="min-w-[180px] font-medium">
+                      {staffLabel(profile, usersById)}
+                    </TableCell>
+                    <TableCell className="min-w-[220px] text-sm">
+                      {formatDateTime(entry.clock_in_at)} to{" "}
+                      {formatDateTime(entry.clock_out_at)}
+                    </TableCell>
+                    <TableCell className="min-w-[220px] text-sm">
+                      <div>
+                        Regular {minutesLabel(entry.regular_minutes)} / break{" "}
+                        {minutesLabel(entry.break_minutes)} / OT{" "}
+                        {minutesLabel(entry.overtime_minutes)}
+                      </div>
+                      <div className="mt-1 text-xs text-muted-foreground">
+                        Late {minutesLabel(entry.late_arrival_minutes)} / early{" "}
+                        {minutesLabel(entry.early_departure_minutes)} / rejected
+                        OT {minutesLabel(entry.rejected_excess_minutes)}
+                      </div>
+                    </TableCell>
+                    <TableCell className="min-w-[180px]">
+                      <Badge
+                        variant={
+                          entry.approval_status === "approved" ||
+                          entry.approval_status === "payroll_exported"
+                            ? "default"
+                            : "secondary"
+                        }
+                      >
+                        {entry.clock_out_at
+                          ? attendanceApprovalLabel(entry.approval_status)
+                          : "Awaiting clock-out"}
+                      </Badge>
+                      {entry.exception_code ? (
+                        <div className="mt-1 text-xs text-destructive">
+                          {attendanceExceptionLabel(entry.exception_code)}
+                        </div>
+                      ) : null}
+                    </TableCell>
+                    <TableCell className="min-w-[260px] text-right">
+                      {canManage ? (
+                        <div className="flex justify-end gap-2">
+                          {entry.approval_status === "approved" ? (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => onReopen(entry)}
+                            >
+                              <Pencil className="mr-1 h-3 w-3" />
+                              Review
+                            </Button>
+                          ) : null}
+                          {entry.approval_status !== "payroll_exported" ? (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => onCorrect(entry)}
+                            >
+                              <Pencil className="mr-1 h-3 w-3" />
+                              Correct
+                            </Button>
+                          ) : null}
+                          {entry.approval_status === "pending" ? (
+                            <Button size="sm" onClick={() => onApprove(entry)}>
+                              <Check className="mr-1 h-3 w-3" />
+                              Approve
+                            </Button>
+                          ) : null}
+                          {["pending", "needs_correction", "approved"].includes(
+                            entry.approval_status,
+                          ) ? (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => onReject(entry)}
+                            >
+                              <X className="mr-1 h-3 w-3" />
+                              Reject
+                            </Button>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </TableCell>
+                  </TableRow>
+                );
+              })
+            )}
           </TableBody>
         </Table>
       </div>
@@ -1304,15 +3470,371 @@ function TimesheetTable({ entries, staffProfiles, usersById, onSubmit, onApprove
   );
 }
 
-function ScheduleTable({ schedules, templates, staffProfiles, usersById }: { schedules: AttendanceSchedule[]; templates: AttendanceShiftTemplate[]; staffProfiles: StaffProfile[]; usersById: Map<number, StaffUser> }) {
-  const weekdayNames = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
-  return <Card><CardHeader><CardTitle>Schedule Rules</CardTitle><CardDescription>Restaurant default rules and staff overrides.</CardDescription></CardHeader><CardContent><div className="overflow-x-auto rounded-md border"><Table><TableHeader><TableRow><TableHead>Staff</TableHead><TableHead>Weekday</TableHead><TableHead>Shift</TableHead><TableHead>Effective</TableHead></TableRow></TableHeader><TableBody>{schedules.length === 0 ? <TableRow><TableCell colSpan={4} className="h-24 text-center text-muted-foreground">No schedule rules yet.</TableCell></TableRow> : schedules.map((item) => { const template = templates.find((t) => t.id === item.shift_template_id); const profile = staffProfiles.find((staff) => staff.id === item.staff_id); return <TableRow key={item.id}><TableCell>{item.staff_id ? staffLabel(profile, usersById) : "Restaurant default"}</TableCell><TableCell>{weekdayNames[item.weekday] || "Weekday " + item.weekday}</TableCell><TableCell>{item.is_day_off ? "Day off" : template?.name || "Shift #" + item.shift_template_id}</TableCell><TableCell>{item.effective_from} to {item.effective_to || "open"}</TableCell></TableRow>; })}</TableBody></Table></div></CardContent></Card>;
+function ScheduleTable({
+  schedules,
+  templates,
+  staffProfiles,
+  usersById,
+  onEdit,
+  onDelete,
+}: {
+  schedules: AttendanceSchedule[];
+  templates: AttendanceShiftTemplate[];
+  staffProfiles: StaffProfile[];
+  usersById: Map<number, StaffUser>;
+  onEdit: (schedule: AttendanceSchedule) => void;
+  onDelete: (schedule: AttendanceSchedule) => void;
+}) {
+  const [showRules, setShowRules] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+  const today = todayIso();
+  const currentSchedules = Array.from(
+    schedules
+      .filter(
+        (item) =>
+          item.effective_from <= today &&
+          (!item.effective_to || item.effective_to >= today),
+      )
+      .reduce((items, item) => {
+        const key = `${item.staff_id ?? "default"}-${item.weekday}`;
+        const existing = items.get(key);
+        if (
+          !existing ||
+          `${item.effective_from}-${item.id}` >
+            `${existing.effective_from}-${existing.id}`
+        )
+          items.set(key, item);
+        return items;
+      }, new Map<string, AttendanceSchedule>())
+      .values(),
+  );
+  const displayedSchedules = showHistory ? schedules : currentSchedules;
+  const weekdayNames = [
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+    "Sunday",
+  ];
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <CardTitle>
+              {showHistory ? "Schedule history" : "Current recurring rules"}
+            </CardTitle>
+            <CardDescription>
+              {showHistory
+                ? "Previous and future rule versions. Use this only when auditing or correcting a schedule."
+                : "Only rules active today. Use Team schedule to plan the operational week."}
+            </CardDescription>
+          </div>
+          <div className="flex gap-2">
+            <Button size="sm" variant="outline" asChild>
+              <Link href="/attendance/schedule">Team schedule</Link>
+            </Button>
+            {showRules ? (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setShowHistory((value) => !value)}
+              >
+                {showHistory
+                  ? "Hide history"
+                  : `History (${Math.max(0, schedules.length - currentSchedules.length)})`}
+              </Button>
+            ) : null}
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setShowRules((value) => !value)}
+            >
+              {showRules ? "Hide rules" : "View rules"}
+            </Button>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {!showRules ? (
+          <div className="rounded-xl border border-dashed p-5 text-sm text-muted-foreground">
+            Use{" "}
+            <Link
+              className="font-medium text-primary underline"
+              href="/attendance/schedule"
+            >
+              Team schedule
+            </Link>{" "}
+            to plan the week. Rule details and historical versions stay hidden
+            until you need to audit or edit them.
+          </div>
+        ) : displayedSchedules.length === 0 ? (
+          <div className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">
+            {showHistory
+              ? "No schedule history."
+              : "No recurring rules are active today."}
+          </div>
+        ) : (
+          <>
+            <div className="space-y-2 lg:hidden">
+              {displayedSchedules.map((item) => {
+                const template = templates.find(
+                  (t) => t.id === item.shift_template_id,
+                );
+                const profile = staffProfiles.find(
+                  (staff) => staff.id === item.staff_id,
+                );
+                return (
+                  <div key={item.id} className="rounded-xl border p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="font-medium">
+                          {item.staff_id
+                            ? staffLabel(profile, usersById)
+                            : "Restaurant default"}
+                        </p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {weekdayNames[item.weekday] ||
+                            "Weekday " + item.weekday}{" "}
+                          ·{" "}
+                          {item.is_day_off
+                            ? "Day off"
+                            : template?.name || "Unassigned shift"}
+                        </p>
+                      </div>
+                      <Badge variant="outline" className="shrink-0">
+                        Starts{" "}
+                        {firstApplicableDate(item.effective_from, item.weekday)}
+                      </Badge>
+                    </div>
+                    {item.effective_to ? (
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        Ends {item.effective_to}
+                      </p>
+                    ) : null}
+                    <div className="mt-3 flex gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => onEdit(item)}
+                      >
+                        <Pencil className="mr-1 h-3.5 w-3.5" />
+                        Edit
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => onDelete(item)}
+                      >
+                        Delete
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="hidden overflow-x-auto rounded-md border lg:block">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Staff</TableHead>
+                    <TableHead>Weekday</TableHead>
+                    <TableHead>Shift</TableHead>
+                    <TableHead>Applies</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {displayedSchedules.map((item) => {
+                    const template = templates.find(
+                      (t) => t.id === item.shift_template_id,
+                    );
+                    const profile = staffProfiles.find(
+                      (staff) => staff.id === item.staff_id,
+                    );
+                    return (
+                      <TableRow key={item.id}>
+                        <TableCell>
+                          {item.staff_id
+                            ? staffLabel(profile, usersById)
+                            : "Restaurant default"}
+                        </TableCell>
+                        <TableCell>
+                          {weekdayNames[item.weekday] ||
+                            "Weekday " + item.weekday}
+                        </TableCell>
+                        <TableCell>
+                          {item.is_day_off
+                            ? "Day off"
+                            : template?.name ||
+                              "Shift #" + item.shift_template_id}
+                        </TableCell>
+                        <TableCell>
+                          <p>Every {weekdayNames[item.weekday]}</p>
+                          <p className="text-xs text-muted-foreground">
+                            First{" "}
+                            {firstApplicableDate(
+                              item.effective_from,
+                              item.weekday,
+                            )}
+                            {item.effective_to
+                              ? ` â€¢ through ${item.effective_to}`
+                              : " â€¢ ongoing"}
+                          </p>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => onEdit(item)}
+                            >
+                              <Pencil className="mr-1 h-3.5 w-3.5" />
+                              Edit
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => onDelete(item)}
+                            >
+                              Delete
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
 }
-
-function DeviceTable({ devices, mappings, devicesById, staffProfiles, usersById, onToggle, onPair }: { devices: AttendanceDevice[]; mappings: StaffDeviceMapping[]; devicesById: Map<number, AttendanceDevice>; staffProfiles: StaffProfile[]; usersById: Map<number, StaffUser>; onToggle: (device: AttendanceDevice, checked: boolean) => void; onPair: (deviceId: number) => void }) {
-  return <Card><CardHeader><CardTitle>Physical Devices</CardTitle><CardDescription>Registered biometric devices and staff mappings.</CardDescription></CardHeader><CardContent className="space-y-5"><div className="overflow-x-auto rounded-md border"><Table><TableHeader><TableRow><TableHead>Device</TableHead><TableHead>Connection</TableHead><TableHead>Last sync</TableHead><TableHead>Active</TableHead><TableHead className="text-right">Connector</TableHead></TableRow></TableHeader><TableBody>{devices.length === 0 ? <TableRow><TableCell colSpan={5} className="h-24 text-center text-muted-foreground">No attendance devices registered.</TableCell></TableRow> : devices.map((device) => <TableRow key={device.id}><TableCell className="min-w-[180px]"><div className="font-medium">{device.name}</div><div className="text-xs text-muted-foreground">{deviceTypeLabels[device.device_type]} / {device.serial_number}</div></TableCell><TableCell className="min-w-[150px]">{device.ip_address || "No IP"}:{device.port || 4370}</TableCell><TableCell>{formatDateTime(device.last_sync_at)}</TableCell><TableCell><Switch checked={device.is_active} onCheckedChange={(checked) => onToggle(device, checked)} /></TableCell><TableCell className="text-right"><Button size="sm" variant="outline" onClick={() => onPair(device.id)}>Pair</Button></TableCell></TableRow>)}</TableBody></Table></div><div className="overflow-x-auto rounded-md border"><Table><TableHeader><TableRow><TableHead>Device</TableHead><TableHead>Staff</TableHead><TableHead>Device user</TableHead><TableHead>Status</TableHead></TableRow></TableHeader><TableBody>{mappings.length === 0 ? <TableRow><TableCell colSpan={4} className="h-20 text-center text-muted-foreground">No staff mappings saved.</TableCell></TableRow> : mappings.map((mapping) => { const profile = staffProfiles.find((item) => item.id === mapping.staff_id); return <TableRow key={mapping.id}><TableCell>{devicesById.get(mapping.device_id)?.name || "Device #" + mapping.device_id}</TableCell><TableCell>{staffLabel(profile, usersById)}</TableCell><TableCell>{mapping.device_user_id}</TableCell><TableCell><Badge variant={mapping.is_active ? "default" : "secondary"}>{mapping.is_active ? "Active" : "Inactive"}</Badge></TableCell></TableRow>; })}</TableBody></Table></div></CardContent></Card>;
-}
-
-function MobileDeviceTable({ devices, staffProfiles, usersById, onDecide }: { devices: AttendanceMobileDevice[]; staffProfiles: StaffProfile[]; usersById: Map<number, StaffUser>; onDecide: (device: AttendanceMobileDevice, action: "approve" | "reject" | "revoke") => void }) {
-  return <Card><CardHeader><CardTitle>Mobile Approvals</CardTitle><CardDescription>Approve staff phones for QR attendance scanning.</CardDescription></CardHeader><CardContent><div className="overflow-x-auto rounded-md border"><Table><TableHeader><TableRow><TableHead>Staff</TableHead><TableHead>Device</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader><TableBody>{devices.length === 0 ? <TableRow><TableCell colSpan={4} className="h-20 text-center text-muted-foreground">No mobile attendance devices.</TableCell></TableRow> : devices.map((device) => { const profile = staffProfiles.find((item) => item.id === device.staff_id); return <TableRow key={device.id}><TableCell>{staffLabel(profile, usersById)}</TableCell><TableCell>{device.device_label || device.platform || "Mobile device"}<div className="text-xs text-muted-foreground">Last seen {formatDateTime(device.last_seen_at)}</div></TableCell><TableCell><Badge variant={device.status === "approved" ? "default" : "secondary"}>{device.status}</Badge></TableCell><TableCell className="text-right"><div className="flex justify-end gap-2">{device.status !== "approved" ? <Button size="sm" onClick={() => onDecide(device, "approve")}><Check className="mr-1 h-3 w-3" />Approve</Button> : null}<Button size="sm" variant="outline" onClick={() => onDecide(device, device.status === "approved" ? "revoke" : "reject")}>{device.status === "approved" ? "Revoke" : "Reject"}</Button></div></TableCell></TableRow>; })}</TableBody></Table></div></CardContent></Card>;
+function DeviceTable({
+  devices,
+  mappings,
+  devicesById,
+  staffProfiles,
+  usersById,
+  onToggle,
+}: {
+  devices: AttendanceDevice[];
+  mappings: StaffDeviceMapping[];
+  devicesById: Map<number, AttendanceDevice>;
+  staffProfiles: StaffProfile[];
+  usersById: Map<number, StaffUser>;
+  onToggle: (device: AttendanceDevice, checked: boolean) => void;
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Physical Devices</CardTitle>
+        <CardDescription>
+          Registered biometric devices and staff mappings.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-5">
+        <div className="overflow-x-auto rounded-md border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Device</TableHead>
+                <TableHead>Connection</TableHead>
+                <TableHead>Last sync</TableHead>
+                <TableHead>Active</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {devices.length === 0 ? (
+                <TableRow>
+                  <TableCell
+                    colSpan={4}
+                    className="h-24 text-center text-muted-foreground"
+                  >
+                    No attendance devices registered.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                devices.map((device) => (
+                  <TableRow key={device.id}>
+                    <TableCell className="min-w-[180px]">
+                      <div className="font-medium">{device.name}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {deviceTypeLabels[device.device_type]} /{" "}
+                        {device.serial_number}
+                      </div>
+                    </TableCell>
+                    <TableCell className="min-w-[150px]">
+                      {device.device_type === "zkteco_cloud"
+                        ? "Cloud push"
+                        : `${device.ip_address || "No IP"}:${device.port || 4370}`}
+                    </TableCell>
+                    <TableCell>{formatDateTime(device.last_sync_at)}</TableCell>
+                    <TableCell>
+                      <Switch
+                        checked={device.is_active}
+                        onCheckedChange={(checked) => onToggle(device, checked)}
+                      />
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </div>
+        <div className="overflow-x-auto rounded-md border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Device</TableHead>
+                <TableHead>Staff</TableHead>
+                <TableHead>Device user</TableHead>
+                <TableHead>Status</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {mappings.length === 0 ? (
+                <TableRow>
+                  <TableCell
+                    colSpan={4}
+                    className="h-20 text-center text-muted-foreground"
+                  >
+                    No staff mappings saved.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                mappings.map((mapping) => {
+                  const profile = staffProfiles.find(
+                    (item) => item.id === mapping.staff_id,
+                  );
+                  return (
+                    <TableRow key={mapping.id}>
+                      <TableCell>
+                        {devicesById.get(mapping.device_id)?.name ||
+                          "Device #" + mapping.device_id}
+                      </TableCell>
+                      <TableCell>{staffLabel(profile, usersById)}</TableCell>
+                      <TableCell>{mapping.device_user_id}</TableCell>
+                      <TableCell>
+                        <Badge
+                          variant={mapping.is_active ? "default" : "secondary"}
+                        >
+                          {mapping.is_active ? "Active" : "Inactive"}
+                        </Badge>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      </CardContent>
+    </Card>
+  );
 }

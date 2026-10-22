@@ -19,19 +19,16 @@ export type LocationMapCanvasProps = {
   apiRef?: MutableRefObject<LocationMapHandle | null>;
 };
 
-function attachBasemap(map: L.Map, isDark: boolean): L.TileLayer {
-  const primaryUrl = isDark
-    ? "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-    : "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png";
+function attachBasemap(map: L.Map): L.TileLayer {
+  const primaryUrl = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
 
-  const fallbackUrl = isDark
-    ? "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}"
-    : "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}";
+  const fallbackUrl =
+    "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}";
 
   let active = L.tileLayer(primaryUrl, {
-    attribution: "",
+    attribution: "&copy; OpenStreetMap contributors",
     maxZoom: 20,
-    subdomains: "abcd",
+    subdomains: "abc",
   }).addTo(map);
 
   let usedFallback = false;
@@ -70,8 +67,7 @@ export default function LocationMapCanvas({
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    delete (L.Icon.Default.prototype as any)._getIconUrl;
+    delete (L.Icon.Default.prototype as { _getIconUrl?: unknown })._getIconUrl;
     L.Icon.Default.mergeOptions({
       iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
       iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
@@ -86,7 +82,7 @@ export default function LocationMapCanvas({
       zoomControl: false,
     }).setView([lat, lng], 14);
 
-    tilesRef.current = attachBasemap(map, isDark);
+    tilesRef.current = attachBasemap(map);
 
     const marker = L.marker([lat, lng], { draggable: true }).addTo(map);
 
@@ -110,18 +106,14 @@ export default function LocationMapCanvas({
       };
     }
 
-    const refresh = () => map.invalidateSize({ animate: false });
-    refresh();
-    const t1 = window.setTimeout(refresh, 100);
-    const t2 = window.setTimeout(refresh, 350);
-    const t3 = window.setTimeout(refresh, 800);
-    window.addEventListener("resize", refresh);
+    const resizeObserver = new ResizeObserver(() => {
+      map.invalidateSize({ animate: false });
+    });
+    resizeObserver.observe(containerRef.current);
+    map.invalidateSize({ animate: false });
 
     return () => {
-      window.clearTimeout(t1);
-      window.clearTimeout(t2);
-      window.clearTimeout(t3);
-      window.removeEventListener("resize", refresh);
+      resizeObserver.disconnect();
       if (apiRef) apiRef.current = null;
       map.remove();
       mapRef.current = null;

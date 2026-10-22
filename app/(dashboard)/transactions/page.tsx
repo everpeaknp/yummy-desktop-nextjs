@@ -41,14 +41,16 @@ import {
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
 import {
-  ArrowLeft,
   Calendar,
   ChevronLeft,
   ChevronRight,
   FileText,
   Loader2,
-  RefreshCw,
 } from "lucide-react";
+import { AppPage } from "@/components/patterns/page/app-page";
+import { PageHeader } from "@/components/patterns/page/page-header";
+import { DataList, ListRow } from "@/components/patterns/data/data-list";
+import { EmptyState, LoadingState } from "@/components/patterns/feedback/feedback-state";
 
 type TransactionType = "order" | "expense" | "inventory" | "manualIncome";
 
@@ -387,37 +389,26 @@ export default function TransactionsPage() {
   if (!canViewAnalytics) return <AnalyticsAccessDenied />;
 
   return (
-    <div className="flex flex-col gap-6 max-w-[1600px] mx-auto p-6">
-      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-        <div className="flex items-center gap-4">
-          <Link href="/finance/income">
-            <Button variant="ghost" size="icon" className="rounded-full">
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-          </Link>
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">Transactions</h1>
-            <p className="text-muted-foreground">Orders, expenses, and inventory events in one timeline.</p>
-          </div>
-        </div>
-        <Button variant="outline" onClick={() => fetchTransactions()} disabled={loading}>
-          {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <RefreshCw className="w-4 h-4 mr-2" />}
-          Refresh
-        </Button>
-      </div>
+    <AppPage width="wide" className="pb-20">
+      <PageHeader
+        className="hidden md:flex"
+        title="Transactions"
+        description="Orders, expenses, and inventory events in one timeline."
+        backHref="/finance/income"
+      />
 
       <Card className="border-border">
-        <CardHeader>
+        <CardHeader className="hidden md:block">
           <CardTitle className="text-base">Filters</CardTitle>
         </CardHeader>
-        <CardContent className="grid grid-cols-1 md:grid-cols-6 gap-4">
-          <div className="space-y-2 md:col-span-2">
+        <CardContent className="grid grid-cols-2 gap-3 p-3 md:grid-cols-6 md:gap-4 md:p-6">
+          <div className="col-span-2 space-y-1.5 md:col-span-2 md:space-y-2">
             <Label>Date Range</Label>
             <Popover>
               <PopoverTrigger asChild>
                 <Button
                   variant="outline"
-                  className="h-10 rounded-xl gap-2 font-bold text-xs uppercase tracking-widest w-full justify-start"
+                  className="h-11 w-full justify-start gap-2 rounded-xl text-sm font-medium"
                 >
                   <Calendar className="h-4 w-4" />
                   {dateRange?.from ? (
@@ -473,7 +464,7 @@ export default function TransactionsPage() {
             </Popover>
           </div>
 
-          <div className="space-y-2 md:col-span-2">
+          <div className="col-span-2 space-y-1.5 md:col-span-2 md:space-y-2">
             <Label>Types</Label>
             <div className="flex flex-wrap gap-2">
               {(Object.keys(TYPE_META) as TransactionType[]).map((t) => {
@@ -485,7 +476,7 @@ export default function TransactionsPage() {
                     onClick={() => toggleType(t)}
                     disabled={locked}
                     className={[
-                      "px-3 py-2 rounded-xl text-xs font-black uppercase tracking-wide border transition-colors",
+                      "rounded-xl border px-3 py-2 text-xs font-medium transition-colors",
                       types.has(t)
                         ? "bg-orange-600 text-white border-orange-600 shadow-sm"
                         : "bg-card text-muted-foreground border-border hover:text-foreground hover:border-foreground/20",
@@ -497,14 +488,14 @@ export default function TransactionsPage() {
                 );
               })}
               {paymentFilterActive ? (
-                <span className="text-[10px] text-muted-foreground self-center">
+                <span className="self-center text-[10px] text-muted-foreground">
                   Locked to Order while Payment Added By is set
                 </span>
               ) : null}
             </div>
           </div>
 
-          <div className="space-y-2 md:col-span-1">
+          <div className="col-span-1 space-y-1.5 md:col-span-1 md:space-y-2">
             <Label>Staff Member</Label>
             <Select
               value={userId || "all"}
@@ -525,7 +516,7 @@ export default function TransactionsPage() {
             </Select>
           </div>
 
-          <div className="space-y-2 md:col-span-1">
+          <div className="col-span-1 space-y-1.5 md:col-span-1 md:space-y-2">
             <Label>Payment Added By</Label>
             <Select
               value={paymentUserId || "all"}
@@ -550,7 +541,7 @@ export default function TransactionsPage() {
             </Select>
           </div>
 
-          <div className="space-y-2 md:col-span-1">
+          <div className="col-span-2 hidden space-y-2 md:col-span-1 md:block">
             <Label>Page Size</Label>
             <Input
               value={String(limit)}
@@ -569,8 +560,54 @@ export default function TransactionsPage() {
           </div>
         </CardHeader>
         <CardContent className="p-0">
-          <div className="p-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="p-3 md:hidden">
+            {loading ? (
+              <LoadingState label="Loading transactions..." />
+            ) : (data?.items || []).length === 0 ? (
+              <EmptyState
+                icon={<FileText className="h-5 w-5" />}
+                title="No transactions found"
+                description="Change the date range or filters to view more activity."
+              />
+            ) : (
+              <DataList>
+                {(data?.items || []).map((it) => {
+                  const amount = getTransactionAmount(it);
+                  const inventoryDelta = getInventoryDelta(it);
+                  const isExpense = it.type === "expense";
+                  return (
+                    <ListRow
+                      key={it.id}
+                      interactive
+                      onClick={() => {
+                        if (it.type === "order") {
+                          const orderId = it.details?.order_id || it.id.replace("order-", "");
+                          router.push(`/orders/${orderId}`);
+                          return;
+                        }
+                        setActive(it);
+                        setDetailOpen(true);
+                        router.replace(`/transactions?tx=${encodeURIComponent(it.id)}`);
+                      }}
+                      leading={<FileText className="h-4 w-4" />}
+                      title={it.title || "—"}
+                      description={`${TYPE_META[it.type]?.label || it.type} · ${it.created_at ? format(new Date(it.created_at), "MMM dd, HH:mm") : "—"}`}
+                      meta={
+                        it.type === "inventory"
+                          ? inventoryDelta || "—"
+                          : amount === null
+                            ? "—"
+                            : `Rs. ${amount.toLocaleString()}`
+                      }
+                      className={isExpense ? "[&>div:nth-child(2)>div>div:last-child]:text-destructive" : undefined}
+                    />
+                  );
+                })}
+              </DataList>
+            )}
+          </div>
+          <div className="hidden p-6 md:block">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
               {loading ? (
                 <div className="col-span-full py-20 text-center text-muted-foreground flex flex-col items-center justify-center gap-2">
                   <Loader2 className="w-6 h-6 animate-spin text-orange-500" />
@@ -594,7 +631,7 @@ export default function TransactionsPage() {
                         router.replace(`/transactions?tx=${encodeURIComponent(it.id)}`);
                       }
                     }}
-                    className="bg-card hover:bg-muted/10 border border-border/60 hover:border-orange-500/20 p-5 rounded-2xl shadow-sm transition-all duration-300 cursor-pointer flex flex-col justify-between gap-4 group relative overflow-hidden"
+                    className="group relative flex cursor-pointer flex-col justify-between gap-4 overflow-hidden rounded-2xl border border-border/60 bg-card p-5 shadow-sm transition-colors hover:border-primary/20 hover:bg-muted/10"
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="space-y-1 min-w-0">
@@ -748,6 +785,6 @@ export default function TransactionsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </AppPage>
   );
 }

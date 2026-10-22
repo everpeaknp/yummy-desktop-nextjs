@@ -14,7 +14,9 @@ const ENTITLEMENT_LABELS: Record<string, string> = {
   "menu_items.max": "menu items",
   "printers.max": "printers",
   "static_qrs.max": "static QR codes",
-  "attendance.devices.max": "biometric devices",
+  // A device count is a biometric-attendance capacity, not a separately
+  // marketable product. `planFeatures` folds it into Biometric attendance.
+  "attendance.devices.max": "biometric device limit",
   "orders.dine_in.enabled": "Dine-in ordering",
   "orders.takeaway.enabled": "Takeaway ordering",
   "orders.delivery.enabled": "Delivery ordering",
@@ -26,13 +28,16 @@ const ENTITLEMENT_LABELS: Record<string, string> = {
   "customers.crm.enabled": "Customer CRM",
   "customers.loyalty.enabled": "Customer loyalty",
   "customers.feedback.enabled": "Customer feedback",
+  "grow.enabled": "Yummy Grow",
+  // Historical plan versions can still return this retired key.
+  "grow.whatsapp.enabled": "Retired Grow channel",
+  "grow.messages.monthly": "Yummy Grow monthly messages",
   "inventory.enabled": "Inventory management",
   "inventory.suppliers.enabled": "Supplier management",
   "inventory.recipe_costing.enabled": "Recipe costing",
   "finance.income_expense.enabled": "Income and expense tracking",
   "finance.daybook.enabled": "Daybook",
   "finance.cash_drawer.enabled": "Cash drawer sessions",
-  "finance.period_close.enabled": "Period close",
   "finance.full_history.enabled": "Full finance history",
   "finance.live_insights.enabled": "Live finance insights",
   "finance.accounting.enabled": "Full accounting",
@@ -52,6 +57,86 @@ const ENTITLEMENT_LABELS: Record<string, string> = {
   "integrations.webhooks.enabled": "Webhooks",
 };
 
+type FeaturePresentation = {
+  title: string;
+  description: string;
+};
+
+// Keep the commercial copy in one place. Entitlement keys stay granular so
+// the API can enforce each capability independently, while people see the
+// product they are actually unlocking.
+const FEATURE_PRESENTATION: Record<string, FeaturePresentation> = {
+  "attendance.enabled": {
+    title: "Attendance",
+    description: "Track shifts, timesheets, schedules, leave, and QR attendance in one workspace.",
+  },
+  "attendance.mobile.enabled": {
+    title: "Mobile attendance",
+    description: "Let approved staff clock in from their phone with your attendance policy applied.",
+  },
+  "attendance.biometric.enabled": {
+    title: "Biometric attendance",
+    description: "Connect biometric scanners and link device users to staff profiles.",
+  },
+  "inventory.enabled": {
+    title: "Inventory",
+    description: "Control stock, adjustments, purchases, and valuation from the same restaurant workspace.",
+  },
+  "inventory.suppliers.enabled": {
+    title: "Suppliers",
+    description: "Keep supplier records and purchasing workflows connected to your inventory.",
+  },
+  "customers.crm.enabled": {
+    title: "Customer CRM",
+    description: "Build a useful customer record from visits, orders, and service history.",
+  },
+  "customers.feedback.enabled": {
+    title: "Customer feedback",
+    description: "Collect and review customer feedback from your restaurant workspace.",
+  },
+  "staff.performance.enabled": {
+    title: "Staff performance",
+    description: "See role-aware performance built from approved attendance and verified order activity.",
+  },
+  "finance.live_insights.enabled": {
+    title: "Finance reports",
+    description: "Understand sales, cash, and operational finance with reporting built for restaurant decisions.",
+  },
+  "finance.period_close.enabled": {
+    title: "Period close",
+    description: "Review and close reporting periods with a complete finance trail.",
+  },
+  "designers.receipt.enabled": {
+    title: "Receipt designer",
+    description: "Create a receipt layout that matches your restaurant and printer workflow.",
+  },
+  "designers.kot.enabled": {
+    title: "KOT designer",
+    description: "Design kitchen tickets for the stations and details your team needs.",
+  },
+  "kitchen.kot.enabled": {
+    title: "Kitchen order tickets",
+    description: "Run a live kitchen queue and keep order preparation visible to the whole team.",
+  },
+  "reservations.enabled": {
+    title: "Reservations",
+    description: "Manage reservations alongside tables and live restaurant operations.",
+  },
+  "business.hotel.enabled": {
+    title: "Hotel module",
+    description: "Manage hotel operations and room-service orders from your Yummy workspace.",
+  },
+};
+
+export function featurePresentation(key: string): FeaturePresentation {
+  return (
+    FEATURE_PRESENTATION[key] ?? {
+      title: entitlementLabel(key),
+      description: `Upgrade your plan to unlock ${entitlementLabel(key).toLowerCase()} for this restaurant.`,
+    }
+  );
+}
+
 // Canonical V2 values always win. These aliases only keep restaurants that
 // have not yet been assigned a V2 subscription on their existing plan rules.
 const LEGACY_ENTITLEMENT_ALIASES: Record<string, string> = {
@@ -70,7 +155,6 @@ const LEGACY_ENTITLEMENT_ALIASES: Record<string, string> = {
   "payments.credit.enabled": "can_use_credit_payment",
   "reservations.enabled": "can_use_reservations",
   "finance.daybook.enabled": "can_use_day_close",
-  "finance.period_close.enabled": "can_use_period_close",
   "finance.full_history.enabled": "can_view_full_finance_history",
   "payroll.enabled": "can_manage_payroll",
 };
@@ -217,6 +301,37 @@ export function priceTypeLabel(price: SubscriptionPrice): string {
   return "Price";
 }
 
+export function planBillingIntervals(
+  plan: Pick<SubscriptionPlan, "current_version">,
+): number[] {
+  const intervals = new Set<number>();
+  for (const price of plan.current_version?.prices ?? []) {
+    if (price.billing_interval_months) intervals.add(price.billing_interval_months);
+  }
+  return Array.from(intervals).sort((a, b) => a - b);
+}
+
+export function planMarketingBadge(plan: SubscriptionPlan): string | null {
+  const marketing = plan.current_version?.marketing_content;
+  if (!marketing || typeof marketing !== "object" || Array.isArray(marketing)) return null;
+  const values = marketing as Record<string, unknown>;
+  const badge = typeof values.badge === "string" ? values.badge.trim() : "";
+  if (badge) return badge;
+  return values.recommended === true || values.is_recommended === true ? "Recommended" : null;
+}
+
+export function planBillingSavings(
+  plan: SubscriptionPlan,
+  longerIntervalMonths = 12,
+  shorterIntervalMonths = 6,
+): { amount: number; currency: string } | null {
+  const longer = pricesForInterval(plan, longerIntervalMonths).initial ?? pricesForInterval(plan, longerIntervalMonths).renewal;
+  const shorter = pricesForInterval(plan, shorterIntervalMonths).initial ?? pricesForInterval(plan, shorterIntervalMonths).renewal;
+  if (longer?.amount == null || shorter?.amount == null || longerIntervalMonths % shorterIntervalMonths !== 0) return null;
+  const amount = Number(shorter.amount) * (longerIntervalMonths / shorterIntervalMonths) - Number(longer.amount);
+  return amount > 0 ? { amount, currency: longer.currency } : null;
+}
+
 export function formatPrice(amount: number | null, currency: string): string {
   if (amount == null) return "Custom quote";
   try {
@@ -231,6 +346,28 @@ export function formatPrice(amount: number | null, currency: string): string {
 }
 
 export type MarketingFeature = { label: string; included: boolean };
+
+/** Only claim inheritance when the published capability flags and limits allow it. */
+export function planFeatureComparison(plan: SubscriptionPlan, plans: SubscriptionPlan[]) {
+  const previousCode = ({ basic: "free", pro: "basic", premium: "pro" } as Record<string, string>)[plan.code.toLowerCase()];
+  const previous = plans.find((candidate) => candidate.code.toLowerCase() === previousCode);
+  const features = planFeatures(plan);
+  const before = previous?.current_version?.entitlements;
+  const after = plan.current_version?.entitlements;
+  const inherits = before && after && Object.keys(before).length > 0 && Object.entries(before).every(([key, value]) => {
+    if (key.endsWith(".enabled")) return value !== true || after[key] === true;
+    if (!key.endsWith(".max") && key !== "finance.history_days") return true;
+    if (!(key in after)) return false;
+    if (value === null) return after[key] === null;
+    return after[key] === null || (Number.isFinite(Number(after[key])) && Number(after[key]) >= Number(value));
+  });
+  if (!inherits || !previous) return { previousName: null, features };
+  const inherited = new Set(planFeatures(previous).filter((feature) => feature.included).map((feature) => feature.label.trim().toLowerCase()));
+  return {
+    previousName: previous.name,
+    features: features.filter((feature) => !feature.included || !inherited.has(feature.label.trim().toLowerCase())),
+  };
+}
 
 function parseMarketingFeatures(content: unknown): MarketingFeature[] {
   const source = Array.isArray(content)
@@ -254,8 +391,30 @@ export function planFeatures(plan: SubscriptionPlan): MarketingFeature[] {
   const marketing = parseMarketingFeatures(plan.current_version?.marketing_content);
   if (marketing.length) return marketing;
 
-  const entries = Object.entries(plan.current_version?.entitlements ?? {});
-  return entries
+  const entitlements = plan.current_version?.entitlements ?? {};
+  const entries = Object.entries(entitlements);
+  const attendanceFeatures: MarketingFeature[] = [];
+  if (isEntitlementEnabled(entitlements, "attendance.enabled")) {
+    attendanceFeatures.push({ label: "Attendance workspace", included: true });
+  }
+  if (isEntitlementEnabled(entitlements, "attendance.mobile.enabled")) {
+    attendanceFeatures.push({ label: "Mobile attendance", included: true });
+  }
+  if (isEntitlementEnabled(entitlements, "attendance.biometric.enabled")) {
+    const deviceLimit = entitlementLimit(entitlements, "attendance.devices.max");
+    const deviceLabel =
+      deviceLimit === null
+        ? "Biometric attendance with unlimited devices"
+        : deviceLimit && deviceLimit > 0
+          ? `Biometric attendance with up to ${deviceLimit.toLocaleString()} devices`
+          : "Biometric attendance";
+    attendanceFeatures.push({ label: deviceLabel, included: true });
+  }
+  const standardFeatures = entries
+    .filter(
+      ([key]) =>
+        !key.startsWith("attendance.") && key !== "grow.whatsapp.enabled",
+    )
     .map(([key, value]): MarketingFeature | null => {
       const label = entitlementLabel(key);
       if (key.endsWith(".max")) {
@@ -282,6 +441,7 @@ export function planFeatures(plan: SubscriptionPlan): MarketingFeature[] {
       return null;
     })
     .filter((item): item is MarketingFeature => Boolean(item));
+  return [...attendanceFeatures, ...standardFeatures];
 }
 
 export function requiredPlanName(

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { endOfDay, endOfMonth, format, startOfDay, startOfMonth, subDays, subMonths } from "date-fns";
-import { ArrowLeft, Banknote, ClipboardList, FileText, Loader2, ReceiptText, Truck, Users } from "lucide-react";
+import { Banknote, ClipboardList, FileText, Loader2, ReceiptText, Truck, Users } from "lucide-react";
 import type { DateRange } from "react-day-picker";
 import { toast } from "sonner";
 
@@ -27,6 +27,9 @@ import { AccountingNav } from "./accounting-nav";
 import { AccountingDrilldownDrawer } from "./accounting-drilldown-drawer";
 import { BalanceSheetStatement } from "./balance-sheet-statement";
 import { FinancialReportFilters } from "./financial-report-filters";
+import { AppPage } from "@/components/patterns/page/app-page";
+import { PageHeader } from "@/components/patterns/page/page-header";
+import { DataList, ListRow } from "@/components/patterns/data/data-list";
 import type { DatePreset } from "./financial-report-filters";
 import { ProfitLossStatement } from "./profit-loss-statement";
 import type {
@@ -135,6 +138,32 @@ function formatMoney(value: number) {
   })}`;
 }
 
+function MobileLedgerRows({
+  rows,
+}: {
+  rows: Array<{
+    id: string | number;
+    title: string;
+    description?: string;
+    meta?: React.ReactNode;
+    amount: string;
+  }>;
+}) {
+  return (
+    <DataList className="rounded-none border-x-0 border-y-0 md:hidden">
+      {rows.map((row) => (
+        <ListRow
+          key={row.id}
+          title={row.title}
+          description={row.description}
+          meta={row.meta}
+          trailing={<span className="shrink-0 text-right font-semibold tabular-nums text-foreground">{row.amount}</span>}
+        />
+      ))}
+    </DataList>
+  );
+}
+
 function lineLabel(row: FinancialStatementLine) {
   return row.account_code ? `${row.account_code} - ${row.account_name}` : row.account_name;
 }
@@ -171,7 +200,17 @@ function GeneralLedgerTable({
   }
 
   return (
-    <div className="overflow-x-auto">
+    <>
+      <MobileLedgerRows
+        rows={rows.map((row) => ({
+          id: row.journal_line_id,
+          title: row.account_name,
+          description: `${row.entry_date} · ${row.source_type.replaceAll("_", " ")}`,
+          meta: <span className="text-xs text-muted-foreground">Dr {formatMoney(row.debit)} · Cr {formatMoney(row.credit)}</span>,
+          amount: row.source_key || "Journal",
+        }))}
+      />
+      <div className="hidden overflow-x-auto md:block">
       <Table>
         <TableHeader>
           <TableRow>
@@ -227,7 +266,8 @@ function GeneralLedgerTable({
           </TableRow>
         </TableBody>
       </Table>
-    </div>
+      </div>
+    </>
   );
 }
 
@@ -253,7 +293,17 @@ function CustomerLedgerTable({
   }
 
   return (
-    <div className="overflow-x-auto">
+    <>
+      <MobileLedgerRows
+        rows={rows.map((row) => ({
+          id: row.finance_event_id,
+          title: row.customer_name ?? `Customer #${row.customer_id}`,
+          description: `${row.business_date} · ${eventLabel(row.event_type)}`,
+          meta: <span className="text-xs text-muted-foreground">Dr {formatMoney(row.debit)} · Cr {formatMoney(row.credit)}</span>,
+          amount: formatMoney(row.balance),
+        }))}
+      />
+      <div className="hidden overflow-x-auto md:block">
       <Table>
         <TableHeader>
           <TableRow>
@@ -294,7 +344,8 @@ function CustomerLedgerTable({
           </TableRow>
         </TableBody>
       </Table>
-    </div>
+      </div>
+    </>
   );
 }
 
@@ -320,7 +371,17 @@ function SupplierLedgerTable({
   }
 
   return (
-    <div className="overflow-x-auto">
+    <>
+      <MobileLedgerRows
+        rows={rows.map((row) => ({
+          id: row.finance_event_id,
+          title: row.supplier_name ?? `Supplier #${row.supplier_id}`,
+          description: `${row.business_date} · ${eventLabel(row.event_type)}`,
+          meta: <span className="text-xs text-muted-foreground">Dr {formatMoney(row.debit)} · Cr {formatMoney(row.credit)}</span>,
+          amount: formatMoney(row.balance),
+        }))}
+      />
+      <div className="hidden overflow-x-auto md:block">
       <Table>
         <TableHeader>
           <TableRow>
@@ -359,7 +420,8 @@ function SupplierLedgerTable({
           </TableRow>
         </TableBody>
       </Table>
-    </div>
+      </div>
+    </>
   );
 }
 
@@ -386,12 +448,12 @@ function CashFlowPanel({
   }
 
   return (
-    <div className="space-y-4 p-4">
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+    <div className="space-y-3 p-3 sm:p-4">
+      <div className="grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-4">
         {summary.map((item) => (
-          <div key={item.label} className="border border-border p-3">
-            <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{item.label}</div>
-            <div className="mt-2 font-mono text-lg font-semibold">{formatMoney(item.value)}</div>
+          <div key={item.label} className="rounded-xl border border-border p-3">
+            <div className="truncate text-xs font-medium text-muted-foreground">{item.label}</div>
+            <div className="mt-1 truncate text-base font-semibold tabular-nums sm:text-lg">{formatMoney(item.value)}</div>
           </div>
         ))}
       </div>
@@ -401,7 +463,17 @@ function CashFlowPanel({
           No posted cash movement found for this date range.
         </div>
       ) : (
-        <div className="overflow-x-auto">
+        <>
+        <MobileLedgerRows
+          rows={rows.map((row) => ({
+            id: row.finance_event_id,
+            title: eventLabel(row.category),
+            description: `${row.business_date} · ${eventLabel(row.event_type)}`,
+            meta: row.payment_method ? <span className="text-xs text-muted-foreground">{row.payment_method}</span> : undefined,
+            amount: formatMoney(row.signed_amount),
+          }))}
+        />
+        <div className="hidden overflow-x-auto md:block">
           <Table>
             <TableHeader>
               <TableRow>
@@ -430,6 +502,7 @@ function CashFlowPanel({
             </TableBody>
           </Table>
         </div>
+        </>
       )}
     </div>
   );
@@ -456,12 +529,12 @@ function VatSummaryPanel({
   }
 
   return (
-    <div className="space-y-4 p-4">
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+    <div className="space-y-3 p-3 sm:p-4">
+      <div className="grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-4">
         {summary.map((item) => (
-          <div key={item.label} className="border border-border p-3">
-            <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{item.label}</div>
-            <div className="mt-2 font-mono text-lg font-semibold">{formatMoney(item.value)}</div>
+          <div key={item.label} className="rounded-xl border border-border p-3">
+            <div className="truncate text-xs font-medium text-muted-foreground">{item.label}</div>
+            <div className="mt-1 truncate text-base font-semibold tabular-nums sm:text-lg">{formatMoney(item.value)}</div>
           </div>
         ))}
       </div>
@@ -793,31 +866,23 @@ export function AccountingReportClient({ mode }: AccountingReportClientProps) {
 
   if (!canView) {
     return (
-      <div className="mx-auto flex max-w-3xl flex-col gap-3 p-6">
-        <h1 className="text-2xl font-bold">{meta.title}</h1>
+      <AppPage width="reading">
+        <PageHeader title={meta.title} description={meta.description} />
         <div className="border border-border p-6 text-sm text-muted-foreground">
           Your user does not have finance access.
         </div>
-      </div>
+      </AppPage>
     );
   }
 
   return (
-    <div className="mx-auto flex max-w-[1600px] flex-col gap-6 p-6">
+    <AppPage width="wide">
       <div className="flex flex-col gap-4">
-        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <div className="flex items-center gap-4">
-            <Link href="/finance/accounting">
-              <Button variant="ghost" size="icon" className="rounded-full">
-                <ArrowLeft className="h-5 w-5" />
-              </Button>
-            </Link>
-            <div>
-              <h1 className="text-2xl font-bold tracking-tight">{meta.title}</h1>
-              <p className="text-sm text-muted-foreground">{meta.description}</p>
-            </div>
-          </div>
-          {mode === "general-ledger" ? (
+        <PageHeader
+          title={meta.title}
+          description={meta.description}
+          backHref="/finance/accounting"
+          actions={mode === "general-ledger" ? (
             <ClipboardList className="hidden h-6 w-6 text-muted-foreground md:block" />
           ) : mode === "customer-ledger" ? (
             <Users className="hidden h-6 w-6 text-muted-foreground md:block" />
@@ -830,7 +895,7 @@ export function AccountingReportClient({ mode }: AccountingReportClientProps) {
           ) : (
             <FileText className="hidden h-6 w-6 text-muted-foreground md:block" />
           )}
-        </div>
+        />
         <FinanceSectionTabs />
         <AccountingNav />
       </div>
@@ -897,6 +962,6 @@ export function AccountingReportClient({ mode }: AccountingReportClientProps) {
         data={drilldownData}
         loading={drilldownLoading}
       />
-    </div>
+    </AppPage>
   );
 }

@@ -5,6 +5,7 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
+  ArrowRight,
   Camera,
   Check,
   ChefHat,
@@ -92,9 +93,14 @@ const STEP_LABELS = [
 ] as const;
 
 const BUSINESS_ICONS = {
-  dine_in: UtensilsCrossed,
-  cafe: Coffee,
+  fast_food: Store,
+  resort: ConciergeBell,
+  hotel: ConciergeBell,
+  bakery: Coffee,
   cloud_kitchen: ChefHat,
+  bar: Wallet,
+  cafe: Coffee,
+  restaurant: UtensilsCrossed,
 } as const;
 
 const WORKSPACE_ICONS = {
@@ -131,19 +137,17 @@ function extractError(err: unknown): string {
 
 export function OnboardingWizard({
   initialEmail = "",
-  replay = false,
-  restaurantId = null,
-  initialRestaurant = null,
   onBackToOptions,
   embedded = false,
 }: {
   initialEmail?: string;
-  replay?: boolean;
-  restaurantId?: number | null;
-  initialRestaurant?: Record<string, unknown> | null;
   onBackToOptions?: () => void;
   embedded?: boolean;
 }) {
+  // The legacy multi-step replay path has been retired. This component now
+  // exclusively renders the one-time restaurant creation form.
+  const replay = false;
+  const initialRestaurant: Record<string, unknown> | null = null;
   const router = useRouter();
   const { theme, setTheme } = useTheme();
   const user = useAuth((s) => s.user);
@@ -152,7 +156,6 @@ export function OnboardingWizard({
   const setAuth = useAuth((s) => s.setAuth);
   const logout = useAuth((s) => s.logout);
   const setRestaurant = useRestaurant((s) => s.setRestaurant);
-  const setSelectedModule = useRestaurant((s) => s.setSelectedModule);
   const fetchRestaurant = useRestaurant((s) => s.fetchRestaurant);
   const onboardingHydrated = useOnboardingHydrated();
   const step = useOnboarding((s) => s.step);
@@ -169,7 +172,7 @@ export function OnboardingWizard({
   const prevStep = useOnboarding((s) => s.prevStep);
 
   const resolvedRestaurantId =
-    restaurantId ?? user?.restaurant_id ?? (initialRestaurant?.id as number | undefined) ?? null;
+    user?.restaurant_id ?? null;
   const {
     profile: fiscalProfile,
     isActiveVat,
@@ -183,8 +186,19 @@ export function OnboardingWizard({
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [uploadingCover, setUploadingCover] = useState(false);
   const [syncingProfile, setSyncingProfile] = useState(Boolean(replay));
-  const reverseGeocodeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const forwardGeocodeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [phoneVerificationOpen, setPhoneVerificationOpen] = useState(false);
+  const [phoneVerificationCode, setPhoneVerificationCode] = useState("");
+  const [phoneVerificationError, setPhoneVerificationError] = useState("");
+  const [phoneVerificationPhone, setPhoneVerificationPhone] = useState("");
+  const [phoneVerificationToken, setPhoneVerificationToken] = useState("");
+  const [requestingPhoneCode, setRequestingPhoneCode] = useState(false);
+  const [verifyingPhoneCode, setVerifyingPhoneCode] = useState(false);
+  const reverseGeocodeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const forwardGeocodeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
   const geocodeRequestIdRef = useRef(0);
   const logoInputRef = useRef<HTMLInputElement>(null);
   const coverInputRef = useRef<HTMLInputElement>(null);
@@ -261,7 +275,11 @@ export function OnboardingWizard({
     // Immediate sync from store so fields aren't empty while API loads
     if (initialRestaurant) {
       setDraft((prev) =>
-        draftFromRestaurant(initialRestaurant, initialEmail || user?.email || "", prev)
+        draftFromRestaurant(
+          initialRestaurant,
+          initialEmail || user?.email || "",
+          prev,
+        ),
       );
       if (!id) {
         prefilledRef.current = "store";
@@ -277,7 +295,7 @@ export function OnboardingWizard({
         const r = res.data?.data;
         if (!r || cancelled) return;
         setDraft((prev) =>
-          draftFromRestaurant(r, initialEmail || user?.email || "", prev)
+          draftFromRestaurant(r, initialEmail || user?.email || "", prev),
         );
         prefilledRef.current = id;
       } catch (err) {
@@ -303,88 +321,100 @@ export function OnboardingWizard({
   const progress = ((step + 1) / STEP_LABELS.length) * 100;
 
   const fieldErrorClass = (key: string) =>
-    fieldErrors[key] ? "border-destructive focus-visible:border-destructive" : undefined;
+    fieldErrors[key]
+      ? "border-destructive focus-visible:border-destructive"
+      : undefined;
 
   const FieldError = ({ name }: { name: string }) =>
     fieldErrors[name] ? (
-      <p className="text-[11px] font-medium text-destructive">{fieldErrors[name]}</p>
+      <p className="text-[11px] font-medium text-destructive">
+        {fieldErrors[name]}
+      </p>
     ) : null;
 
   /** Map pin moved → update coordinates + fill address */
-  const handleLocationChange = useCallback((lat: string, lng: string) => {
-    setDraft((prev) => ({ ...prev, latitude: lat, longitude: lng }));
-    clearFieldError("location");
-    clearFieldError("address");
+  const handleLocationChange = useCallback(
+    (lat: string, lng: string) => {
+      setDraft((prev) => ({ ...prev, latitude: lat, longitude: lng }));
+      clearFieldError("location");
+      clearFieldError("address");
 
-    if (forwardGeocodeTimerRef.current) {
-      clearTimeout(forwardGeocodeTimerRef.current);
-      forwardGeocodeTimerRef.current = null;
-    }
-    if (reverseGeocodeTimerRef.current) clearTimeout(reverseGeocodeTimerRef.current);
-
-    const requestId = ++geocodeRequestIdRef.current;
-    setResolvingAddress(true);
-    reverseGeocodeTimerRef.current = setTimeout(async () => {
-      try {
-        const address = await reverseGeocode(lat, lng);
-        if (requestId !== geocodeRequestIdRef.current) return;
-        if (address) {
-          setDraft((prev) => ({ ...prev, address }));
-        }
-      } catch {
-        // Keep coordinates even if address lookup fails
-      } finally {
-        if (requestId === geocodeRequestIdRef.current) {
-          setResolvingAddress(false);
-        }
+      if (forwardGeocodeTimerRef.current) {
+        clearTimeout(forwardGeocodeTimerRef.current);
+        forwardGeocodeTimerRef.current = null;
       }
-    }, 450);
-  }, [clearFieldError]);
+      if (reverseGeocodeTimerRef.current)
+        clearTimeout(reverseGeocodeTimerRef.current);
+
+      const requestId = ++geocodeRequestIdRef.current;
+      setResolvingAddress(true);
+      reverseGeocodeTimerRef.current = setTimeout(async () => {
+        try {
+          const address = await reverseGeocode(lat, lng);
+          if (requestId !== geocodeRequestIdRef.current) return;
+          if (address) {
+            setDraft((prev) => ({ ...prev, address }));
+          }
+        } catch {
+          // Keep coordinates even if address lookup fails
+        } finally {
+          if (requestId === geocodeRequestIdRef.current) {
+            setResolvingAddress(false);
+          }
+        }
+      }, 450);
+    },
+    [clearFieldError, setDraft],
+  );
 
   /** Address typed → update pin on map */
-  const handleAddressChange = useCallback((value: string) => {
-    setDraft((prev) => ({ ...prev, address: value }));
-    clearFieldError("address");
-    clearFieldError("location");
+  const handleAddressChange = useCallback(
+    (value: string) => {
+      setDraft((prev) => ({ ...prev, address: value }));
+      clearFieldError("address");
+      clearFieldError("location");
 
-    if (reverseGeocodeTimerRef.current) {
-      clearTimeout(reverseGeocodeTimerRef.current);
-      reverseGeocodeTimerRef.current = null;
-    }
-    if (forwardGeocodeTimerRef.current) clearTimeout(forwardGeocodeTimerRef.current);
-
-    const trimmed = value.trim();
-    if (trimmed.length < 8) {
-      setResolvingAddress(false);
-      return;
-    }
-
-    const requestId = ++geocodeRequestIdRef.current;
-    setResolvingAddress(true);
-    forwardGeocodeTimerRef.current = setTimeout(async () => {
-      try {
-        const result = await forwardGeocode(trimmed);
-        if (requestId !== geocodeRequestIdRef.current) return;
-        if (result) {
-          setDraft((prev) => ({
-            ...prev,
-            latitude: result.lat,
-            longitude: result.lng,
-          }));
-        }
-      } catch {
-        // Keep typed address even if lookup fails
-      } finally {
-        if (requestId === geocodeRequestIdRef.current) {
-          setResolvingAddress(false);
-        }
+      if (reverseGeocodeTimerRef.current) {
+        clearTimeout(reverseGeocodeTimerRef.current);
+        reverseGeocodeTimerRef.current = null;
       }
-    }, 700);
-  }, [clearFieldError]);
+      if (forwardGeocodeTimerRef.current)
+        clearTimeout(forwardGeocodeTimerRef.current);
+
+      const trimmed = value.trim();
+      if (trimmed.length < 8) {
+        setResolvingAddress(false);
+        return;
+      }
+
+      const requestId = ++geocodeRequestIdRef.current;
+      setResolvingAddress(true);
+      forwardGeocodeTimerRef.current = setTimeout(async () => {
+        try {
+          const result = await forwardGeocode(trimmed);
+          if (requestId !== geocodeRequestIdRef.current) return;
+          if (result) {
+            setDraft((prev) => ({
+              ...prev,
+              latitude: result.lat,
+              longitude: result.lng,
+            }));
+          }
+        } catch {
+          // Keep typed address even if lookup fails
+        } finally {
+          if (requestId === geocodeRequestIdRef.current) {
+            setResolvingAddress(false);
+          }
+        }
+      }, 700);
+    },
+    [clearFieldError, setDraft],
+  );
 
   const handleImageUpload = async (
     e: React.ChangeEvent<HTMLInputElement>,
-    type: "logo" | "cover"
+    type: "logo" | "cover",
   ) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -392,7 +422,11 @@ export function OnboardingWizard({
     type === "logo" ? setUploadingLogo(true) : setUploadingCover(true);
     try {
       const id = resolvedRestaurantId ?? undefined;
-      const publicUrl = await ImageService.uploadRestaurantImage(file, type, id);
+      const publicUrl = await ImageService.uploadRestaurantImage(
+        file,
+        type,
+        id,
+      );
       setDraft((prev) => ({
         ...prev,
         [type === "logo" ? "profilePicture" : "coverPhoto"]: publicUrl,
@@ -403,7 +437,10 @@ export function OnboardingWizard({
             [type === "logo" ? "profile_picture" : "cover_photo"]: publicUrl,
           });
         } catch (err) {
-          console.warn("[onboarding] image saved to storage; profile update deferred", err);
+          console.warn(
+            "[onboarding] image saved to storage; profile update deferred",
+            err,
+          );
         }
       }
       toast.success(`${type === "logo" ? "Logo" : "Cover image"} uploaded`);
@@ -450,7 +487,8 @@ export function OnboardingWizard({
       const lat = draft.latitude.trim();
       const lng = draft.longitude.trim();
       if ((lat && !lng) || (!lat && lng)) {
-        errors.location = "Set both latitude and longitude on the map, or clear both.";
+        errors.location =
+          "Set both latitude and longitude on the map, or clear both.";
       } else if (lat && lng) {
         const latN = Number(lat);
         const lngN = Number(lng);
@@ -503,10 +541,10 @@ export function OnboardingWizard({
       }
       if (
         draft.workspace !== "hotel" &&
-        draft.businessType === "dine_in" &&
+        draft.businessType !== "cloud_kitchen" &&
         draft.tables < 1
       ) {
-        errors.tables = "Add at least 1 table for dine-in.";
+        errors.tables = "Add at least 1 table for this business type.";
       }
       if (!draft.payments.length) {
         errors.payments = "Select at least one payment method.";
@@ -584,10 +622,11 @@ export function OnboardingWizard({
         });
 
         try {
-          const templateResponse = await apiClient.get(RestaurantApis.getTemplates(id));
-          const receiptTemplate = (templateResponse.data?.data?.receipt_template || []) as Array<
-            Record<string, unknown>
-          >;
+          const templateResponse = await apiClient.get(
+            RestaurantApis.getTemplates(id),
+          );
+          const receiptTemplate = (templateResponse.data?.data
+            ?.receipt_template || []) as Array<Record<string, unknown>>;
           const configured = receiptTemplate.map((block) => {
             if (block.type === "header") {
               return {
@@ -612,7 +651,7 @@ export function OnboardingWizard({
         await fetchRestaurant(true);
         resetOnboarding(initialEmail || user?.email || "");
         toast.success("Restaurant profile updated");
-        router.replace("/manage/profile");
+        router.replace("/settings/business-profile");
         return;
       }
 
@@ -620,19 +659,16 @@ export function OnboardingWizard({
       const profile = buildProfilePayload();
 
       const openWorkspace = async (
-        created: Pick<Restaurant, "id" | "restaurant_enabled" | "hotel_enabled"> &
-          Partial<Restaurant>
+        created: Pick<
+          Restaurant,
+          "id" | "restaurant_enabled" | "hotel_enabled"
+        > &
+          Partial<Restaurant>,
       ) => {
         const restaurantEnabled =
           Boolean(created.restaurant_enabled) || flags.restaurant_enabled;
-        const hotelEnabled = Boolean(created.hotel_enabled) || flags.hotel_enabled;
-
-        // Land on dashboard after finish. Dual-module defaults to restaurant POS.
-        if (!restaurantEnabled && hotelEnabled) {
-          setSelectedModule("hotel");
-        } else {
-          setSelectedModule("restaurant");
-        }
+        const hotelEnabled =
+          Boolean(created.hotel_enabled) || flags.hotel_enabled;
 
         setRestaurant({
           ...(created as any),
@@ -651,7 +687,7 @@ export function OnboardingWizard({
               primary_role: "admin",
             },
             token,
-            refreshToken
+            refreshToken,
           );
         }
         try {
@@ -685,10 +721,11 @@ export function OnboardingWizard({
         }
 
         try {
-          const templateResponse = await apiClient.get(RestaurantApis.getTemplates(created.id));
-          const receiptTemplate = (templateResponse.data?.data?.receipt_template || []) as Array<
-            Record<string, unknown>
-          >;
+          const templateResponse = await apiClient.get(
+            RestaurantApis.getTemplates(created.id),
+          );
+          const receiptTemplate = (templateResponse.data?.data
+            ?.receipt_template || []) as Array<Record<string, unknown>>;
           const configured = receiptTemplate.map((block) => {
             if (block.type === "header") {
               return {
@@ -715,10 +752,13 @@ export function OnboardingWizard({
           draft.tables > 0
         ) {
           try {
-            const typeRes = await apiClient.post(TableTypeApis.createTableType(created.id), {
-              name: "Main Floor",
-              layout_height: 200,
-            });
+            const typeRes = await apiClient.post(
+              TableTypeApis.createTableType(created.id),
+              {
+                name: "Main Floor",
+                layout_height: 200,
+              },
+            );
             const typeId = typeRes.data?.data?.id ?? typeRes.data?.id;
             if (typeId) {
               const count = Math.min(Number(draft.tables) || 0, 40);
@@ -740,7 +780,11 @@ export function OnboardingWizard({
 
         await fetchRestaurant(true);
         resetOnboarding(initialEmail || user?.email || "");
-        toast.success(skipped ? "Setup skipped — workspace ready" : "Restaurant setup complete");
+        toast.success(
+          skipped
+            ? "Setup skipped — workspace ready"
+            : "Restaurant setup complete",
+        );
 
         if (!restaurantEnabled && hotelEnabled) {
           router.replace("/rooms");
@@ -773,13 +817,13 @@ export function OnboardingWizard({
             hotel_enabled: flags.hotel_enabled,
             payment_cards: paymentCardsFromSelection(draft.payments),
           },
-          { timeout: 120_000 }
+          { timeout: 120_000 },
         );
       } catch (createErr) {
         const msg = extractError(createErr);
         if (
           /already have a restaurant|leave your current restaurant|creating another/i.test(
-            msg
+            msg,
           )
         ) {
           await fetchRestaurant(true);
@@ -808,7 +852,7 @@ export function OnboardingWizard({
 
       if (!created?.id) {
         throw new Error(
-          "Restaurant setup did not return a profile. Check API URL and try again."
+          "Restaurant setup did not return a profile. Check API URL and try again.",
         );
       }
 
@@ -868,13 +912,14 @@ export function OnboardingWizard({
       { label: "Kitchen tickets", value: draft.kotEnabled ? "On" : "Off" },
       {
         label: "Receipt",
-        value: [
-          draft.receiptShowLogo ? "Logo" : null,
-          isActiveVat || draft.receiptShowPan ? "PAN" : null,
-          draft.receiptFooter.trim() || null,
-        ]
-          .filter(Boolean)
-          .join(" · ") || "Defaults",
+        value:
+          [
+            draft.receiptShowLogo ? "Logo" : null,
+            isActiveVat || draft.receiptShowPan ? "PAN" : null,
+            draft.receiptFooter.trim() || null,
+          ]
+            .filter(Boolean)
+            .join(" · ") || "Defaults",
       },
       {
         label: "Payment methods",
@@ -885,7 +930,7 @@ export function OnboardingWizard({
             .join(", ") || "None selected",
       },
     ],
-    [draft, isActiveVat]
+    [draft, isActiveVat],
   );
 
   if (!onboardingHydrated) {
@@ -896,6 +941,450 @@ export function OnboardingWizard({
     );
   }
 
+  // Simplified single-step form for regular onboarding (not replay)
+  if (!replay) {
+    const isFormComplete = draft.restaurantName.trim() && 
+                           draft.phone.trim() && 
+                           draft.businessType && 
+                           draft.address.trim();
+
+    const handleBackToOptions = () => {
+      if (onBackToOptions) onBackToOptions();
+    };
+
+    const requestPhoneCode = async () => {
+      const phone = draft.phone.trim();
+      if (!isValidPhoneNumber(phone)) {
+        setFieldErrors({ phone: "Enter a valid phone number with country code." });
+        return;
+      }
+
+      setRequestingPhoneCode(true);
+      setPhoneVerificationError("");
+      try {
+        await apiClient.post(RestaurantApis.requestPhoneVerification, { phone });
+        setPhoneVerificationPhone(phone);
+        setPhoneVerificationCode("");
+        setPhoneVerificationOpen(true);
+      } catch (err) {
+        toast.error(extractError(err));
+      } finally {
+        setRequestingPhoneCode(false);
+      }
+    };
+
+    const verifyPhoneAndCreate = async () => {
+      const code = phoneVerificationCode.replace(/\D/g, "");
+      if (code.length !== 6) {
+        setPhoneVerificationError("Enter the six-digit code.");
+        return;
+      }
+
+      setVerifyingPhoneCode(true);
+      setPhoneVerificationError("");
+      try {
+        const response = await apiClient.post(
+          RestaurantApis.confirmPhoneVerification,
+          { phone: phoneVerificationPhone, code },
+        );
+        const verificationToken = response.data?.data?.verification_token;
+        if (typeof verificationToken !== "string" || !verificationToken) {
+          throw new Error("Phone verification could not be completed.");
+        }
+        setPhoneVerificationToken(verificationToken);
+        setPhoneVerificationOpen(false);
+        await handleSaveRestaurant(verificationToken);
+      } catch (err) {
+        setPhoneVerificationError(extractError(err));
+      } finally {
+        setVerifyingPhoneCode(false);
+      }
+    };
+
+    const handleSaveRestaurant = async (verifiedToken?: string) => {
+      if (!isFormComplete) return;
+      
+      // Validate required fields
+      const errors: Record<string, string> = {};
+      if (!draft.restaurantName.trim()) errors.restaurantName = "Business name is required";
+      if (!draft.phone.trim() || !isValidPhoneNumber(draft.phone)) errors.phone = "Valid phone is required";
+      if (!draft.businessType) errors.businessType = "Business type is required";
+      if (!draft.address.trim()) errors.address = "Address is required";
+      
+      if (Object.keys(errors).length > 0) {
+        setFieldErrors(errors);
+        return;
+      }
+
+      const currentPhone = draft.phone.trim();
+      const usableToken =
+        phoneVerificationPhone === currentPhone
+          ? verifiedToken || phoneVerificationToken
+          : "";
+      if (!usableToken) {
+        await requestPhoneCode();
+        return;
+      }
+
+      setSubmitting(true);
+      try {
+        const profile = buildProfilePayload();
+        
+        const createRes = await apiClient.post(
+          RestaurantApis.create,
+          {
+            ...profile,
+            phone_verification_token: usableToken,
+            business_type: draft.businessType,
+            restaurant_enabled: true,
+            hotel_enabled: false,
+            payment_cards: [],
+          },
+          { timeout: 120_000 }
+        );
+
+        const body = createRes?.data;
+        let created =
+          body?.data && typeof body.data === "object" && !Array.isArray(body.data)
+            ? body.data
+            : body && typeof body === "object" && !Array.isArray(body) && body.id
+              ? body
+              : null;
+
+        if (!created?.id) {
+          await fetchRestaurant(true);
+          created = useRestaurant.getState().restaurant;
+        }
+
+        if (!created?.id) {
+          throw new Error("Restaurant setup did not return a profile.");
+        }
+
+        // The simplified flow always creates a restaurant workspace.
+        setRestaurant({
+          ...(created as any),
+          restaurant_enabled: true,
+          hotel_enabled: false,
+        });
+
+        if (user && token) {
+          setAuth(
+            {
+              ...user,
+              restaurant_id: created.id,
+              role: "admin",
+              roles: ["admin"],
+              primary_role: "admin",
+            },
+            token,
+            refreshToken
+          );
+        }
+
+        try {
+          await useAuth.getState().refreshSession();
+          await useAuth.getState().syncUserProfile();
+        } catch (err) {
+          console.warn("[onboarding] post-create session refresh skipped", err);
+        }
+
+        await fetchRestaurant(true);
+        resetOnboarding(initialEmail || user?.email || "");
+        toast.success("Restaurant created successfully");
+        markPendingTour();
+        router.replace("/dashboard?tour=1");
+      } catch (err) {
+        toast.error(extractError(err));
+      } finally {
+        setSubmitting(false);
+      }
+    };
+
+    return (
+      <div className="relative w-full min-h-screen bg-gradient-to-br from-background via-background to-muted/20">
+        <div className="relative z-10 mx-auto w-full max-w-3xl px-4 py-12 sm:px-6 md:px-8">
+          <div className="w-full overflow-hidden rounded-3xl bg-card shadow-2xl shadow-primary/5 ring-1 ring-border/50">
+            {/* Orange accent bar */}
+            <div className="h-1 bg-gradient-to-r from-primary via-orange-500 to-primary" />
+            
+            <div className="px-6 py-8 sm:px-10 sm:py-10">
+              <div className="pb-6">
+                <section>
+                  <p className="mb-3 text-center text-xs font-semibold uppercase tracking-[0.14em] text-primary">
+                    Business details
+                  </p>
+                  <h2 className="text-center font-onboarding text-2xl font-medium tracking-[-0.03em] sm:text-3xl">
+                    Tell us about your business
+                  </h2>
+                  <p className="mt-3 mb-8 text-center text-sm leading-relaxed text-muted-foreground">
+                    Business name, contact, and address — these appear on receipts and your public profile.
+                  </p>
+
+                  <div className="space-y-7 overflow-visible rounded-2xl border border-border bg-card/40 p-6 shadow-sm">
+                    <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                      <Store className="h-4 w-4 text-primary" />
+                      General information
+                    </div>
+
+                    <div className="grid gap-5 sm:grid-cols-2">
+                      <div className="space-y-2.5">
+                        <Label htmlFor="restaurantName" className="text-sm font-medium">Business Name*</Label>
+                        <Input
+                          id="restaurantName"
+                          value={draft.restaurantName}
+                          onChange={(e) => patch("restaurantName", e.target.value)}
+                          placeholder="e.g. Himalayan Grill"
+                          className={cn(
+                            "h-11 transition-all focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1 hover:border-primary/50",
+                            fieldErrorClass("restaurantName")
+                          )}
+                          aria-invalid={Boolean(fieldErrors.restaurantName)}
+                        />
+                        <FieldError name="restaurantName" />
+                      </div>
+                      <div className="space-y-2.5">
+                        <Label htmlFor="phone" className="text-sm font-medium">Phone Number*</Label>
+                        <AppPhoneInput
+                          id="phone"
+                          value={draft.phone}
+                          onChange={(value) => {
+                            if (value !== draft.phone) {
+                              setPhoneVerificationToken("");
+                              setPhoneVerificationPhone("");
+                            }
+                            patch("phone", value);
+                          }}
+                          defaultCountry="NP"
+                          placeholder="Enter phone number"
+                          className={cn(
+                            "[&_.PhoneInputInput]:h-11 [&_.PhoneInput]:transition-all [&_.PhoneInput:hover]:border-primary/50 [&_.PhoneInput:focus-within]:ring-2 [&_.PhoneInput:focus-within]:ring-primary [&_.PhoneInput:focus-within]:ring-offset-1",
+                            fieldErrors.phone ? "[&_.PhoneInput]:border-destructive" : undefined
+                          )}
+                        />
+                        <FieldError name="phone" />
+                      </div>
+                      <div className="space-y-2.5">
+                        <div className="flex items-center gap-1.5">
+                          <Label htmlFor="email" className="text-sm font-medium">Email address</Label>
+                          {(draft.email || user?.email) ? (
+                            <span
+                              className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
+                              title="Verified"
+                              aria-label="Verified"
+                            >
+                              <Check className="h-3 w-3" strokeWidth={2.5} />
+                            </span>
+                          ) : null}
+                        </div>
+                        <Input
+                          id="email"
+                          type="email"
+                          value={draft.email || user?.email || ""}
+                          readOnly
+                          disabled
+                          className="h-11 cursor-not-allowed bg-muted/50 opacity-100"
+                          placeholder="Verified account email"
+                        />
+                      </div>
+                      <div className="space-y-2.5">
+                        <Label htmlFor="businessType" className="text-sm font-medium">Business Type*</Label>
+                        <Select
+                          value={draft.businessType}
+                          onValueChange={(value) => patch("businessType", value as typeof draft.businessType)}
+                        >
+                          <SelectTrigger
+                            id="businessType"
+                            className={cn(
+                              "h-11 transition-all focus:ring-2 focus:ring-primary focus:ring-offset-1 hover:border-primary/50",
+                              fieldErrorClass("businessType")
+                            )}
+                            aria-invalid={Boolean(fieldErrors.businessType)}
+                          >
+                            <SelectValue placeholder="Select business type" />
+                          </SelectTrigger>
+                          <SelectContent position="popper" side="bottom" align="start" sideOffset={4} className="w-[var(--radix-select-trigger-width)]">
+                            {BUSINESS_TYPE_OPTIONS.map((option) => (
+                              <SelectItem key={option.value} value={option.value}>
+                                {option.title}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FieldError name="businessType" />
+                      </div>
+                    </div>
+
+                    <div className="space-y-2.5">
+                      <div className="flex items-center gap-1.5">
+                        <Label htmlFor="address" className="text-sm font-medium">Physical Address*</Label>
+                        <FieldInfo>
+                          Type an address or open the map — both stay in sync. Format: street, area,
+                          city, state, country.
+                        </FieldInfo>
+                      </div>
+                      <div className="relative">
+                        <Input
+                          id="address"
+                          value={draft.address}
+                          onChange={(e) => handleAddressChange(e.target.value)}
+                          placeholder="Street, area, city, state, country"
+                          className={cn(
+                            "h-11 pr-11 transition-all focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1 hover:border-primary/50",
+                            fieldErrorClass("address")
+                          )}
+                          aria-invalid={Boolean(fieldErrors.address)}
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="absolute right-1 top-1/2 h-9 w-9 -translate-y-1/2 text-primary hover:bg-primary/10 hover:text-primary"
+                          onClick={() => setLocationMapOpen(true)}
+                          title="Set location on map"
+                          aria-label="Open map to set location"
+                        >
+                          <Map className="h-4 w-4" />
+                        </Button>
+                      </div>
+                      <FieldError name="address" />
+                      <FieldError name="location" />
+                      {resolvingAddress ? (
+                        <p className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          Syncing address and map…
+                        </p>
+                      ) : null}
+                    </div>
+                  </div>
+                </section>
+              </div>
+
+              {/* Navigation buttons */}
+              <div className="mt-6 space-y-5">
+                <div className="border-t border-border/60" />
+                
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={handleBackToOptions}
+                    disabled={submitting}
+                    size="lg"
+                    className="h-11 border-2 transition-all hover:border-primary/50 hover:bg-background sm:w-auto w-full"
+                  >
+                    <ArrowLeft className="mr-2 h-4 w-4" />
+                    Back
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={() => void handleSaveRestaurant()}
+                    disabled={!isFormComplete || submitting || requestingPhoneCode}
+                    size="lg"
+                    className="h-11 bg-primary shadow-lg shadow-primary/25 transition-all hover:shadow-xl hover:shadow-primary/30 sm:w-auto w-full"
+                  >
+                    {submitting || requestingPhoneCode ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        {requestingPhoneCode ? "Sending code…" : "Finishing…"}
+                      </>
+                    ) : (
+                      <>
+                        Finish Setup
+                        <ArrowRight className="ml-2 h-4 w-4" />
+                      </>
+                    )}
+                  </Button>
+                </div>
+
+                <p className="text-center text-xs text-muted-foreground">
+                  You can change these details later from Settings.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <Dialog
+          open={phoneVerificationOpen}
+          onOpenChange={(open) => {
+            if (!verifyingPhoneCode) setPhoneVerificationOpen(open);
+          }}
+        >
+          <DialogContent className="max-w-md overscroll-contain">
+            <DialogHeader>
+              <DialogTitle>Verify your phone number</DialogTitle>
+              <DialogDescription>
+                Enter the six-digit code sent to {phoneVerificationPhone}. The code expires in 10 minutes.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-2 py-2">
+              <Label htmlFor="restaurant-phone-code">Verification code</Label>
+              <Input
+                id="restaurant-phone-code"
+                name="restaurant-phone-code"
+                value={phoneVerificationCode}
+                onChange={(event) => {
+                  setPhoneVerificationCode(
+                    event.target.value.replace(/\D/g, "").slice(0, 6),
+                  );
+                  setPhoneVerificationError("");
+                }}
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                spellCheck={false}
+                placeholder="000000"
+                className="h-12 text-center font-mono text-xl tracking-[0.35em]"
+                aria-invalid={Boolean(phoneVerificationError)}
+                aria-describedby={
+                  phoneVerificationError ? "restaurant-phone-code-error" : undefined
+                }
+              />
+              {phoneVerificationError ? (
+                <p
+                  id="restaurant-phone-code-error"
+                  role="alert"
+                  className="text-sm text-destructive"
+                >
+                  {phoneVerificationError}
+                </p>
+              ) : null}
+            </div>
+            <DialogFooter className="gap-2 sm:justify-between sm:space-x-0">
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={requestingPhoneCode || verifyingPhoneCode}
+                onClick={() => void requestPhoneCode()}
+              >
+                {requestingPhoneCode ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Sending…
+                  </>
+                ) : (
+                  "Send a new code"
+                )}
+              </Button>
+              <Button
+                type="button"
+                disabled={verifyingPhoneCode || phoneVerificationCode.length !== 6}
+                onClick={() => void verifyPhoneAndCreate()}
+              >
+                {verifyingPhoneCode ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <ShieldCheck className="mr-2 h-4 w-4" />
+                )}
+                Verify and create
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
+    );
+  }
+
+  // Original multi-step wizard (for embedded and replay modes)
   return (
     <div className="relative w-full bg-transparent">
       <div className="relative z-10 mx-auto w-full max-w-[1100px] px-4 pb-16 pt-4 sm:px-6 md:px-8">
@@ -929,13 +1418,16 @@ export function OnboardingWizard({
                     unoptimized
                   />
                 </div>
-                <span className="font-onboarding text-xl font-medium tracking-[-0.03em] text-white">Yummy</span>
+                <span className="font-onboarding text-xl font-medium tracking-[-0.03em] text-white">
+                  Yummy
+                </span>
               </div>
               <h1 className="font-onboarding text-2xl font-medium leading-[1.15] tracking-[-0.03em] text-white lg:text-[2rem]">
                 Set up your business in minutes.
               </h1>
               <p className="mt-3 text-sm leading-relaxed text-white/80">
-                Complete the essentials now. You can change everything later from settings.
+                Complete the essentials now. You can change everything later
+                from settings.
               </p>
 
               <nav className="mt-8 space-y-2.5" aria-label="Onboarding steps">
@@ -947,20 +1439,26 @@ export function OnboardingWizard({
                       key={label}
                       className={cn(
                         "flex items-center gap-3 transition-opacity",
-                        active || done ? "opacity-100" : "opacity-55"
+                        active || done ? "opacity-100" : "opacity-55",
                       )}
                     >
                       <div
                         className={cn(
                           "grid h-8 w-8 shrink-0 place-items-center rounded-full border text-sm font-medium",
-                          active && "border-transparent bg-white text-[#FF4E12]",
-                          done && "border-transparent bg-white/95 text-emerald-700",
-                          !active && !done && "border-white/35 bg-white/10 text-white"
+                          active &&
+                            "border-transparent bg-white text-[#FF4E12]",
+                          done &&
+                            "border-transparent bg-white/95 text-emerald-700",
+                          !active &&
+                            !done &&
+                            "border-white/35 bg-white/10 text-white",
                         )}
                       >
                         {done ? <Check className="h-4 w-4" /> : index + 1}
                       </div>
-                      <span className="text-sm font-medium leading-snug text-white">{label}</span>
+                      <span className="text-sm font-medium leading-snug text-white">
+                        {label}
+                      </span>
                     </div>
                   );
                 })}
@@ -975,7 +1473,9 @@ export function OnboardingWizard({
                   <span className="tabular-nums">
                     Step {step + 1} of {STEP_LABELS.length}
                   </span>
-                  <span className="truncate md:hidden">{STEP_LABELS[step]}</span>
+                  <span className="truncate md:hidden">
+                    {STEP_LABELS[step]}
+                  </span>
                   <div className="h-1.5 w-24 overflow-hidden rounded-full bg-muted sm:w-28">
                     <div
                       className="h-full rounded-full bg-gradient-to-r from-primary to-orange-400 transition-all duration-300"
@@ -1012,7 +1512,11 @@ export function OnboardingWizard({
                   onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
                   aria-label="Toggle theme"
                 >
-                  {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+                  {theme === "dark" ? (
+                    <Sun className="h-4 w-4" />
+                  ) : (
+                    <Moon className="h-4 w-4" />
+                  )}
                 </Button>
                 <Button
                   type="button"
@@ -1033,627 +1537,726 @@ export function OnboardingWizard({
 
             <div className="px-4 py-5 sm:px-6 sm:py-6">
               <div className="pb-8">
-              {step === 0 && (
-                <section>
-                  <p className="mb-2 text-xs font-medium uppercase tracking-[0.14em] text-primary">
-                    Business details
-                  </p>
-                  <h2 className="font-onboarding text-2xl font-medium tracking-[-0.03em] sm:text-3xl">
-                    Tell us about your business
-                  </h2>
-                  <p className="mt-2 mb-7 max-w-2xl text-sm leading-relaxed text-muted-foreground">
-                    Business name, contact, and address — these appear on receipts and your public profile.
-                  </p>
+                {step === 0 && (
+                  <section>
+                    <p className="mb-2 text-xs font-medium uppercase tracking-[0.14em] text-primary">
+                      Business details
+                    </p>
+                    <h2 className="font-onboarding text-2xl font-medium tracking-[-0.03em] sm:text-3xl">
+                      Tell us about your business
+                    </h2>
+                    <p className="mt-2 mb-7 max-w-2xl text-sm leading-relaxed text-muted-foreground">
+                      Business name, contact, and address — these appear on
+                      receipts and your public profile.
+                    </p>
 
-                  {replay && syncingProfile && (
-                    <div className="mb-4 flex items-center gap-2 rounded-xl border border-primary/20 bg-secondary/60 px-3 py-2 text-xs font-medium text-muted-foreground">
-                      <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
-                      Syncing data from Restaurant Profile…
-                    </div>
-                  )}
-
-                  <div className="space-y-6 overflow-visible rounded-2xl border border-border bg-card/40 p-5">
-                    <div className="flex items-center gap-2 text-sm font-medium">
-                      <Store className="h-4 w-4 text-primary" />
-                      General information
-                    </div>
-
-                    <div className="grid gap-4 sm:grid-cols-2">
-                      <div className="space-y-2">
-                        <Label htmlFor="restaurantName">Business Name*</Label>
-                        <Input
-                          id="restaurantName"
-                          value={draft.restaurantName}
-                          onChange={(e) => patch("restaurantName", e.target.value)}
-                          placeholder="e.g. Himalayan Grill"
-                          className={fieldErrorClass("restaurantName")}
-                          aria-invalid={Boolean(fieldErrors.restaurantName)}
-                        />
-                        <FieldError name="restaurantName" />
+                    {replay && syncingProfile && (
+                      <div className="mb-4 flex items-center gap-2 rounded-xl border border-primary/20 bg-secondary/60 px-3 py-2 text-xs font-medium text-muted-foreground">
+                        <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+                        Syncing data from Restaurant Profile…
                       </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="phone">Phone Number*</Label>
-                        <AppPhoneInput
-                          id="phone"
-                          value={draft.phone}
-                          onChange={(value) => patch("phone", value)}
-                          defaultCountry="NP"
-                          placeholder="Enter phone number"
-                          className={fieldErrors.phone ? "[&_.PhoneInput]:border-destructive" : undefined}
-                        />
-                        <FieldError name="phone" />
+                    )}
+
+                    <div className="space-y-6 overflow-visible rounded-2xl border border-border bg-card/40 p-5">
+                      <div className="flex items-center gap-2 text-sm font-medium">
+                        <Store className="h-4 w-4 text-primary" />
+                        General information
                       </div>
+
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <div className="space-y-2">
+                          <Label htmlFor="restaurantName">Business Name*</Label>
+                          <Input
+                            id="restaurantName"
+                            value={draft.restaurantName}
+                            onChange={(e) =>
+                              patch("restaurantName", e.target.value)
+                            }
+                            placeholder="e.g. Himalayan Grill"
+                            className={fieldErrorClass("restaurantName")}
+                            aria-invalid={Boolean(fieldErrors.restaurantName)}
+                          />
+                          <FieldError name="restaurantName" />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="phone">Phone Number*</Label>
+                          <AppPhoneInput
+                            id="phone"
+                            value={draft.phone}
+                            onChange={(value) => patch("phone", value)}
+                            defaultCountry="NP"
+                            placeholder="Enter phone number"
+                            className={
+                              fieldErrors.phone
+                                ? "[&_.PhoneInput]:border-destructive"
+                                : undefined
+                            }
+                          />
+                          <FieldError name="phone" />
+                        </div>
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-1.5">
+                            <Label htmlFor="email">Email address</Label>
+                            {draft.email || user?.email ? (
+                              <span
+                                className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
+                                title="Verified"
+                                aria-label="Verified"
+                              >
+                                <Check className="h-3 w-3" strokeWidth={2.5} />
+                              </span>
+                            ) : null}
+                          </div>
+                          <Input
+                            id="email"
+                            type="email"
+                            value={draft.email || user?.email || ""}
+                            readOnly
+                            disabled
+                            className="cursor-not-allowed bg-muted/50 opacity-100"
+                            placeholder="Verified account email"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="taxNumber">PAN / VAT Number</Label>
+                          <Input
+                            id="taxNumber"
+                            value={
+                              isActiveVat
+                                ? (fiscalProfile?.seller_pan ?? draft.taxNumber)
+                                : draft.taxNumber
+                            }
+                            onChange={(e) => patch("taxNumber", e.target.value)}
+                            disabled={isActiveVat || fiscalProfileLoading}
+                            placeholder="Company registration number"
+                          />
+                          {isActiveVat && (
+                            <p className="text-xs text-muted-foreground">
+                              Managed by the active fiscal compliance profile.
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
                       <div className="space-y-2">
                         <div className="flex items-center gap-1.5">
-                          <Label htmlFor="email">Email address</Label>
-                          {(draft.email || user?.email) ? (
-                            <span
-                              className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
-                              title="Verified"
-                              aria-label="Verified"
-                            >
-                              <Check className="h-3 w-3" strokeWidth={2.5} />
-                            </span>
-                          ) : null}
+                          <Label htmlFor="address">Physical Address*</Label>
+                          <FieldInfo>
+                            Type an address or open the map — both stay in sync.
+                            Format: street, area, city, state, country.
+                          </FieldInfo>
                         </div>
-                        <Input
-                          id="email"
-                          type="email"
-                          value={draft.email || user?.email || ""}
-                          readOnly
-                          disabled
-                          className="cursor-not-allowed bg-muted/50 opacity-100"
-                          placeholder="Verified account email"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="taxNumber">PAN / VAT Number</Label>
-                        <Input
-                          id="taxNumber"
-                          value={
-                            isActiveVat
-                              ? fiscalProfile?.seller_pan ?? draft.taxNumber
-                              : draft.taxNumber
-                          }
-                          onChange={(e) => patch("taxNumber", e.target.value)}
-                          disabled={isActiveVat || fiscalProfileLoading}
-                          placeholder="Company registration number"
-                        />
-                        {isActiveVat && (
-                          <p className="text-xs text-muted-foreground">
-                            Managed by the active fiscal compliance profile.
-                          </p>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-1.5">
-                        <Label htmlFor="address">Physical Address*</Label>
-                        <FieldInfo>
-                          Type an address or open the map — both stay in sync. Format: street, area,
-                          city, state, country.
-                        </FieldInfo>
-                      </div>
-                      <div className="relative">
-                        <Input
-                          id="address"
-                          value={draft.address}
-                          onChange={(e) => handleAddressChange(e.target.value)}
-                          placeholder="Street, area, city, state, country"
-                          className={cn("pr-11", fieldErrorClass("address"))}
-                          aria-invalid={Boolean(fieldErrors.address)}
-                        />
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="absolute right-1 top-1/2 h-8 w-8 -translate-y-1/2 text-primary hover:bg-transparent hover:text-primary"
-                          onClick={() => setLocationMapOpen(true)}
-                          title="Set location on map"
-                          aria-label="Open map to set location"
-                        >
-                          <Map className="h-4 w-4" />
-                        </Button>
-                      </div>
-                      <FieldError name="address" />
-                      <FieldError name="location" />
-                      {resolvingAddress ? (
-                        <p className="flex items-center gap-2 text-[11px] text-muted-foreground">
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          Syncing address and map…
-                        </p>
-                      ) : null}
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="description">About / Description</Label>
-                      <Textarea
-                        id="description"
-                        value={draft.description}
-                        onChange={(e) => patch("description", e.target.value)}
-                        placeholder="A brief description of your restaurant"
-                        rows={4}
-                      />
-                    </div>
-                  </div>
-                </section>
-              )}
-
-              {step === 1 && (
-                <section>
-                  <p className="mb-2 text-xs font-medium uppercase tracking-[0.14em] text-primary">
-                    Workspace
-                  </p>
-                  <h2 className="font-onboarding text-2xl font-medium tracking-[-0.03em] sm:text-3xl">
-                    Brand your business and choose a workspace
-                  </h2>
-                  <p className="mt-2 mb-7 max-w-2xl text-sm leading-relaxed text-muted-foreground">
-                    Upload your logo and cover, then pick restaurant, hotel, or both — you can switch later.
-                  </p>
-
-                  <div className="mb-8 overflow-visible rounded-2xl border border-border bg-card/40 p-5">
-                    <div className="mb-4 flex items-center gap-2 text-sm font-medium">
-                      <Camera className="h-4 w-4 text-primary" />
-                      Branding &amp; media
-                    </div>
-                    <div className="relative mb-14 w-full rounded-xl border border-border bg-muted/30 shadow-sm sm:mb-16">
-                      <button
-                        type="button"
-                        onClick={() => coverInputRef.current?.click()}
-                        className="group relative flex h-40 w-full flex-col items-center justify-center overflow-hidden rounded-t-xl text-muted-foreground transition hover:bg-muted/50 md:h-52"
-                        aria-label="Upload cover"
-                      >
-                        {uploadingCover ? (
-                          <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                        ) : draft.coverPhoto ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            src={getImageUrl(draft.coverPhoto)}
-                            alt="Cover"
-                            className="absolute inset-0 h-full w-full object-cover"
+                        <div className="relative">
+                          <Input
+                            id="address"
+                            value={draft.address}
+                            onChange={(e) =>
+                              handleAddressChange(e.target.value)
+                            }
+                            placeholder="Street, area, city, state, country"
+                            className={cn("pr-11", fieldErrorClass("address"))}
+                            aria-invalid={Boolean(fieldErrors.address)}
                           />
-                        ) : (
-                          <>
-                            <Camera className="mb-2 h-8 w-8" />
-                            <span className="text-sm font-medium text-foreground">Add cover photo</span>
-                            <span className="mt-1 text-[10px]">16:9 landscape</span>
-                          </>
-                        )}
-                        <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition-opacity group-hover:opacity-100">
-                          <Upload className="h-6 w-6 text-white" />
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="absolute right-1 top-1/2 h-8 w-8 -translate-y-1/2 text-primary hover:bg-transparent hover:text-primary"
+                            onClick={() => setLocationMapOpen(true)}
+                            title="Set location on map"
+                            aria-label="Open map to set location"
+                          >
+                            <Map className="h-4 w-4" />
+                          </Button>
                         </div>
-                        <Input
-                          ref={coverInputRef}
-                          type="file"
-                          className="hidden"
-                          accept="image/*"
-                          onChange={(e) => void handleImageUpload(e, "cover")}
-                        />
-                      </button>
+                        <FieldError name="address" />
+                        <FieldError name="location" />
+                        {resolvingAddress ? (
+                          <p className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            Syncing address and map…
+                          </p>
+                        ) : null}
+                      </div>
 
-                      <div className="absolute bottom-0 left-1/2 z-10 -translate-x-1/2 translate-y-1/2">
+                      <div className="space-y-2">
+                        <Label htmlFor="description">About / Description</Label>
+                        <Textarea
+                          id="description"
+                          value={draft.description}
+                          onChange={(e) => patch("description", e.target.value)}
+                          placeholder="A brief description of your restaurant"
+                          rows={4}
+                        />
+                      </div>
+                    </div>
+                  </section>
+                )}
+
+                {step === 1 && (
+                  <section>
+                    <p className="mb-2 text-xs font-medium uppercase tracking-[0.14em] text-primary">
+                      Workspace
+                    </p>
+                    <h2 className="font-onboarding text-2xl font-medium tracking-[-0.03em] sm:text-3xl">
+                      Brand your business and choose a workspace
+                    </h2>
+                    <p className="mt-2 mb-7 max-w-2xl text-sm leading-relaxed text-muted-foreground">
+                      Upload your logo and cover, then pick restaurant, hotel,
+                      or both — you can switch later.
+                    </p>
+
+                    <div className="mb-8 overflow-visible rounded-2xl border border-border bg-card/40 p-5">
+                      <div className="mb-4 flex items-center gap-2 text-sm font-medium">
+                        <Camera className="h-4 w-4 text-primary" />
+                        Branding &amp; media
+                      </div>
+                      <div className="relative mb-14 w-full rounded-xl border border-border bg-muted/30 shadow-sm sm:mb-16">
                         <button
                           type="button"
-                          onClick={() => logoInputRef.current?.click()}
-                          className="group relative flex h-28 w-28 flex-col items-center justify-center overflow-hidden rounded-full border-4 border-background bg-background text-muted-foreground shadow-md transition hover:border-primary/30 sm:h-32 sm:w-32"
-                          aria-label="Upload logo"
+                          onClick={() => coverInputRef.current?.click()}
+                          className="group relative flex h-40 w-full flex-col items-center justify-center overflow-hidden rounded-t-xl text-muted-foreground transition hover:bg-muted/50 md:h-52"
+                          aria-label="Upload cover"
                         >
-                          {uploadingLogo ? (
+                          {uploadingCover ? (
                             <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                          ) : draft.profilePicture ? (
+                          ) : draft.coverPhoto ? (
                             // eslint-disable-next-line @next/next/no-img-element
                             <img
-                              src={getImageUrl(draft.profilePicture)}
-                              alt="Logo"
+                              src={getImageUrl(draft.coverPhoto)}
+                              alt="Cover"
                               className="absolute inset-0 h-full w-full object-cover"
                             />
                           ) : (
                             <>
-                              <Store className="mb-1 h-7 w-7" />
-                              <span className="text-[10px]">Logo 1:1</span>
+                              <Camera className="mb-2 h-8 w-8" />
+                              <span className="text-sm font-medium text-foreground">
+                                Add cover photo
+                              </span>
+                              <span className="mt-1 text-[10px]">
+                                16:9 landscape
+                              </span>
                             </>
                           )}
                           <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition-opacity group-hover:opacity-100">
-                            <Upload className="h-5 w-5 text-white" />
+                            <Upload className="h-6 w-6 text-white" />
                           </div>
                           <Input
-                            ref={logoInputRef}
+                            ref={coverInputRef}
                             type="file"
                             className="hidden"
                             accept="image/*"
-                            onChange={(e) => void handleImageUpload(e, "logo")}
+                            onChange={(e) => void handleImageUpload(e, "cover")}
                           />
                         </button>
+
+                        <div className="absolute bottom-0 left-1/2 z-10 -translate-x-1/2 translate-y-1/2">
+                          <button
+                            type="button"
+                            onClick={() => logoInputRef.current?.click()}
+                            className="group relative flex h-28 w-28 flex-col items-center justify-center overflow-hidden rounded-full border-4 border-background bg-background text-muted-foreground shadow-md transition hover:border-primary/30 sm:h-32 sm:w-32"
+                            aria-label="Upload logo"
+                          >
+                            {uploadingLogo ? (
+                              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                            ) : draft.profilePicture ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img
+                                src={getImageUrl(draft.profilePicture)}
+                                alt="Logo"
+                                className="absolute inset-0 h-full w-full object-cover"
+                              />
+                            ) : (
+                              <>
+                                <Store className="mb-1 h-7 w-7" />
+                                <span className="text-[10px]">Logo 1:1</span>
+                              </>
+                            )}
+                            <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition-opacity group-hover:opacity-100">
+                              <Upload className="h-5 w-5 text-white" />
+                            </div>
+                            <Input
+                              ref={logoInputRef}
+                              type="file"
+                              className="hidden"
+                              accept="image/*"
+                              onChange={(e) =>
+                                void handleImageUpload(e, "logo")
+                              }
+                            />
+                          </button>
+                        </div>
                       </div>
                     </div>
-                  </div>
 
-                  <div className="grid w-full gap-3 sm:grid-cols-3 sm:items-stretch">
-                    {WORKSPACE_OPTIONS.map((option) => {
-                      const Icon = WORKSPACE_ICONS[option.value];
-                      const selected = draft.workspace === option.value;
-                      return (
-                        <button
-                          key={option.value}
-                          type="button"
-                          onClick={() => patch("workspace", option.value)}
-                          className={cn(
-                            "flex h-full flex-col items-center rounded-2xl border p-5 text-center transition-all hover:-translate-y-0.5 hover:shadow-sm",
-                            selected
-                              ? "border-primary bg-secondary shadow-sm ring-1 ring-primary/20"
-                              : "border-border bg-card hover:border-primary/40",
-                            fieldErrors.workspace && !selected && "border-destructive/60"
-                          )}
-                        >
-                          <div
+                    <div className="grid w-full gap-3 sm:grid-cols-3 sm:items-stretch">
+                      {WORKSPACE_OPTIONS.map((option) => {
+                        const Icon = WORKSPACE_ICONS[option.value];
+                        const selected = draft.workspace === option.value;
+                        return (
+                          <button
+                            key={option.value}
+                            type="button"
+                            onClick={() => patch("workspace", option.value)}
                             className={cn(
-                              "mb-3 grid h-11 w-11 place-items-center rounded-xl",
-                              selected ? "bg-primary text-primary-foreground" : "bg-muted text-primary"
+                              "flex h-full flex-col items-center rounded-2xl border p-5 text-center transition-all hover:-translate-y-0.5 hover:shadow-sm",
+                              selected
+                                ? "border-primary bg-secondary shadow-sm ring-1 ring-primary/20"
+                                : "border-border bg-card hover:border-primary/40",
+                              fieldErrors.workspace &&
+                                !selected &&
+                                "border-destructive/60",
                             )}
                           >
-                            <Icon className="h-5 w-5" />
-                          </div>
-                          <div className="font-medium">{option.title}</div>
-                          <p className="mt-1 flex-1 text-xs leading-relaxed text-muted-foreground">
-                            {option.description}
-                          </p>
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <FieldError name="workspace" />
-                </section>
-              )}
-
-              {step === 2 && (
-                <section>
-                  <p className="mb-2 text-xs font-medium uppercase tracking-[0.14em] text-primary">
-                    Operations
-                  </p>
-                  <h2 className="font-onboarding text-2xl font-medium tracking-[-0.03em] sm:text-3xl">
-                    {draft.workspace === "hotel"
-                      ? "Set your hotel schedule and timezone"
-                      : "Set schedule and how you serve"}
-                  </h2>
-                  <p className="mt-2 mb-7 max-w-2xl text-sm leading-relaxed text-muted-foreground">
-                    {draft.workspace === "hotel"
-                      ? "Timezone and business day start for hotel operations. You can refine rooms and settings later."
-                      : "Timezone, business day start, and service style — dine-in, cafe, or cloud kitchen. Change anytime in settings."}
-                  </p>
-
-                  <div className="mb-7 grid gap-4 sm:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label htmlFor="timezone">Timezone*</Label>
-                      <TimezoneSelect
-                        id="timezone"
-                        value={draft.timezone}
-                        onChange={(tz) => patch("timezone", tz)}
-                        placeholder="Select timezone"
-                        className={fieldErrorClass("timezone")}
-                      />
-                      <FieldError name="timezone" />
-                    </div>
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-1.5">
-                        <Label htmlFor="businessDayStartTime">Business Day Starts At*</Label>
-                        <FieldInfo>
-                          Orders before this time are counted toward the previous business day.
-                        </FieldInfo>
-                      </div>
-                      <Input
-                        id="businessDayStartTime"
-                        type="time"
-                        step={60}
-                        value={draft.businessDayStartTime}
-                        onChange={(e) =>
-                          patch("businessDayStartTime", toHourMinute(e.target.value))
-                        }
-                        className={fieldErrorClass("businessDayStartTime")}
-                        aria-invalid={Boolean(fieldErrors.businessDayStartTime)}
-                      />
-                      <FieldError name="businessDayStartTime" />
-                    </div>
-                  </div>
-
-                  {draft.workspace === "hotel" ? (
-                    <div className="rounded-2xl border border-border bg-muted/30 p-5 text-sm text-muted-foreground">
-                      Hotel workspace selected. Continue to configure the remaining essentials.
-                    </div>
-                  ) : (
-                    <>
-                      <div className="grid gap-3 sm:grid-cols-3">
-                        {BUSINESS_TYPE_OPTIONS.map((option) => {
-                          const Icon = BUSINESS_ICONS[option.value];
-                          const selected = draft.businessType === option.value;
-                          return (
-                            <button
-                              key={option.value}
-                              type="button"
-                              onClick={() => patch("businessType", option.value)}
+                            <div
                               className={cn(
-                                "rounded-2xl border p-5 text-left transition-all hover:-translate-y-0.5",
+                                "mb-3 grid h-11 w-11 place-items-center rounded-xl",
                                 selected
-                                  ? "border-primary bg-secondary shadow-sm"
-                                  : "border-border bg-card hover:border-primary/40",
-                                fieldErrors.businessType && !selected && "border-destructive/60"
+                                  ? "bg-primary text-primary-foreground"
+                                  : "bg-muted text-primary",
                               )}
                             >
-                              <div
-                                className={cn(
-                                  "mb-3 grid h-11 w-11 place-items-center rounded-xl",
-                                  selected
-                                    ? "bg-primary text-primary-foreground"
-                                    : "bg-muted text-primary"
-                                )}
-                              >
-                                <Icon className="h-5 w-5" />
-                              </div>
-                              <div className="font-medium">{option.title}</div>
-                              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                                {option.description}
-                              </p>
-                            </button>
-                          );
-                        })}
-                      </div>
-                      <FieldError name="businessType" />
-                    </>
-                  )}
-                </section>
-              )}
-
-              {step === 3 && (
-                <section>
-                  <p className="mb-2 text-xs font-medium uppercase tracking-[0.14em] text-primary">
-                    Essentials
-                  </p>
-                  <h2 className="font-onboarding text-2xl font-medium tracking-[-0.03em] sm:text-3xl">
-                    Configure payments and operations
-                  </h2>
-                  <p className="mt-2 mb-7 max-w-2xl text-sm leading-relaxed text-muted-foreground">
-                    Tables, currency, tax, receipts, and accepted payment methods for checkout.
-                  </p>
-                  {isActiveVat && (
-                    <div className="mb-5 flex gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm dark:border-emerald-900 dark:bg-emerald-950/30">
-                      <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" />
-                      <div>
-                        <p className="font-medium text-emerald-900 dark:text-emerald-100">
-                          VAT e-billing is active
-                        </p>
-                        <p className="mt-1 text-emerald-800/80 dark:text-emerald-200/80">
-                          PAN, VAT rate and tax visibility are controlled by the fiscal compliance
-                          profile and cannot be changed from onboarding.
-                        </p>
-                      </div>
+                              <Icon className="h-5 w-5" />
+                            </div>
+                            <div className="font-medium">{option.title}</div>
+                            <p className="mt-1 flex-1 text-xs leading-relaxed text-muted-foreground">
+                              {option.description}
+                            </p>
+                          </button>
+                        );
+                      })}
                     </div>
-                  )}
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    {draft.workspace !== "hotel" && draft.businessType !== "cloud_kitchen" && (
+                    <FieldError name="workspace" />
+                  </section>
+                )}
+
+                {step === 2 && (
+                  <section>
+                    <p className="mb-2 text-xs font-medium uppercase tracking-[0.14em] text-primary">
+                      Operations
+                    </p>
+                    <h2 className="font-onboarding text-2xl font-medium tracking-[-0.03em] sm:text-3xl">
+                      {draft.workspace === "hotel"
+                        ? "Set your hotel schedule and timezone"
+                        : "Set schedule and how you serve"}
+                    </h2>
+                    <p className="mt-2 mb-7 max-w-2xl text-sm leading-relaxed text-muted-foreground">
+                      {draft.workspace === "hotel"
+                        ? "Timezone and business day start for hotel operations. You can refine rooms and settings later."
+                        : "Timezone, business day start, and service style — dine-in, cafe, or cloud kitchen. Change anytime in settings."}
+                    </p>
+
+                    <div className="mb-7 grid gap-4 sm:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label htmlFor="timezone">Timezone*</Label>
+                        <TimezoneSelect
+                          id="timezone"
+                          value={draft.timezone}
+                          onChange={(tz) => patch("timezone", tz)}
+                          placeholder="Select timezone"
+                          className={fieldErrorClass("timezone")}
+                        />
+                        <FieldError name="timezone" />
+                      </div>
                       <div className="space-y-2">
                         <div className="flex items-center gap-1.5">
-                          <Label htmlFor="tables">Number of tables</Label>
+                          <Label htmlFor="businessDayStartTime">
+                            Business Day Starts At*
+                          </Label>
                           <FieldInfo>
-                            How many dine-in tables to create for floor plans and table orders. You
-                            can add or remove tables later.
+                            Orders before this time are counted toward the
+                            previous business day.
                           </FieldInfo>
                         </div>
                         <Input
-                          id="tables"
-                          type="number"
-                          min={0}
-                          max={40}
-                          value={draft.tables}
-                          onChange={(e) => patch("tables", Number(e.target.value) || 0)}
-                          className={fieldErrorClass("tables")}
-                          aria-invalid={Boolean(fieldErrors.tables)}
+                          id="businessDayStartTime"
+                          type="time"
+                          step={60}
+                          value={draft.businessDayStartTime}
+                          onChange={(e) =>
+                            patch(
+                              "businessDayStartTime",
+                              toHourMinute(e.target.value),
+                            )
+                          }
+                          className={fieldErrorClass("businessDayStartTime")}
+                          aria-invalid={Boolean(
+                            fieldErrors.businessDayStartTime,
+                          )}
                         />
-                        <FieldError name="tables" />
+                        <FieldError name="businessDayStartTime" />
+                      </div>
+                    </div>
+
+                    {draft.workspace === "hotel" ? (
+                      <div className="rounded-2xl border border-border bg-muted/30 p-5 text-sm text-muted-foreground">
+                        Hotel workspace selected. Continue to configure the
+                        remaining essentials.
+                      </div>
+                    ) : (
+                      <>
+                        <div className="grid gap-3 sm:grid-cols-3">
+                          {BUSINESS_TYPE_OPTIONS.map((option) => {
+                            const Icon = BUSINESS_ICONS[option.value];
+                            const selected =
+                              draft.businessType === option.value;
+                            return (
+                              <button
+                                key={option.value}
+                                type="button"
+                                onClick={() =>
+                                  patch("businessType", option.value)
+                                }
+                                className={cn(
+                                  "rounded-2xl border p-5 text-left transition-all hover:-translate-y-0.5",
+                                  selected
+                                    ? "border-primary bg-secondary shadow-sm"
+                                    : "border-border bg-card hover:border-primary/40",
+                                  fieldErrors.businessType &&
+                                    !selected &&
+                                    "border-destructive/60",
+                                )}
+                              >
+                                <div
+                                  className={cn(
+                                    "mb-3 grid h-11 w-11 place-items-center rounded-xl",
+                                    selected
+                                      ? "bg-primary text-primary-foreground"
+                                      : "bg-muted text-primary",
+                                  )}
+                                >
+                                  <Icon className="h-5 w-5" />
+                                </div>
+                                <div className="font-medium">
+                                  {option.title}
+                                </div>
+                                <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                                  {option.description}
+                                </p>
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <FieldError name="businessType" />
+                      </>
+                    )}
+                  </section>
+                )}
+
+                {step === 3 && (
+                  <section>
+                    <p className="mb-2 text-xs font-medium uppercase tracking-[0.14em] text-primary">
+                      Essentials
+                    </p>
+                    <h2 className="font-onboarding text-2xl font-medium tracking-[-0.03em] sm:text-3xl">
+                      Configure payments and operations
+                    </h2>
+                    <p className="mt-2 mb-7 max-w-2xl text-sm leading-relaxed text-muted-foreground">
+                      Tables, currency, tax, receipts, and accepted payment
+                      methods for checkout.
+                    </p>
+                    {isActiveVat && (
+                      <div className="mb-5 flex gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm dark:border-emerald-900 dark:bg-emerald-950/30">
+                        <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" />
+                        <div>
+                          <p className="font-medium text-emerald-900 dark:text-emerald-100">
+                            VAT e-billing is active
+                          </p>
+                          <p className="mt-1 text-emerald-800/80 dark:text-emerald-200/80">
+                            PAN, VAT rate and tax visibility are controlled by
+                            the fiscal compliance profile and cannot be changed
+                            from onboarding.
+                          </p>
+                        </div>
                       </div>
                     )}
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-1.5">
-                        <Label>Currency*</Label>
-                        <FieldInfo>
-                          Display preference for now — you can refine billing later in settings.
-                        </FieldInfo>
-                      </div>
-                      <Select
-                        value={draft.currency}
-                        onValueChange={(value) => patch("currency", value)}
-                      >
-                        <SelectTrigger className={fieldErrorClass("currency")}>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="NPR">NPR - Nepalese Rupee</SelectItem>
-                          <SelectItem value="AUD">AUD - Australian Dollar</SelectItem>
-                          <SelectItem value="USD">USD - US Dollar</SelectItem>
-                          <SelectItem value="INR">INR - Indian Rupee</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <FieldError name="currency" />
-                    </div>
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-1.5">
-                        <Label htmlFor="taxRate">Default tax rate (%)*</Label>
-                        <FieldInfo>
-                          Applied as your default tax on orders. You can add more tax rules later in
-                          settings.
-                        </FieldInfo>
-                      </div>
-                      <Input
-                        id="taxRate"
-                        type="number"
-                        min={0}
-                        max={100}
-                        disabled={
-                          fiscalProfileLoading ||
-                          isActiveVat ||
-                          !draft.taxEnabled
-                        }
-                        value={isActiveVat ? 13 : draft.taxRate}
-                        onChange={(e) => patch("taxRate", Number(e.target.value) || 0)}
-                        className={fieldErrorClass("taxRate")}
-                        aria-invalid={Boolean(fieldErrors.taxRate)}
-                      />
-                      <FieldError name="taxRate" />
-                    </div>
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-1.5">
-                        <Label htmlFor="orderStart">Order numbering starts from*</Label>
-                        <FieldInfo>
-                          Saved locally as a reminder — order numbers follow your backend sequence.
-                        </FieldInfo>
-                      </div>
-                      <Input
-                        id="orderStart"
-                        type="number"
-                        min={1}
-                        value={draft.orderStart}
-                        onChange={(e) => patch("orderStart", Number(e.target.value) || 1)}
-                        className={fieldErrorClass("orderStart")}
-                        aria-invalid={Boolean(fieldErrors.orderStart)}
-                      />
-                      <FieldError name="orderStart" />
-                    </div>
-
-                    <div className="grid gap-4 sm:col-span-2 sm:grid-cols-2">
-                      <div className="divide-y divide-border rounded-2xl border border-border">
-                        <div className="flex items-center justify-between gap-4 p-4">
-                          <div className="flex min-w-0 items-center gap-1.5">
-                            <p className="font-medium text-foreground">Tax calculation</p>
-                            <FieldInfo>Allow configured taxes on eligible bills.</FieldInfo>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      {draft.workspace !== "hotel" &&
+                        draft.businessType !== "cloud_kitchen" && (
+                          <div className="space-y-2">
+                            <div className="flex items-center gap-1.5">
+                              <Label htmlFor="tables">Number of tables</Label>
+                              <FieldInfo>
+                                How many dine-in tables to create for floor
+                                plans and table orders. You can add or remove
+                                tables later.
+                              </FieldInfo>
+                            </div>
+                            <Input
+                              id="tables"
+                              type="number"
+                              min={0}
+                              max={40}
+                              value={draft.tables}
+                              onChange={(e) =>
+                                patch("tables", Number(e.target.value) || 0)
+                              }
+                              className={fieldErrorClass("tables")}
+                              aria-invalid={Boolean(fieldErrors.tables)}
+                            />
+                            <FieldError name="tables" />
                           </div>
-                          <Switch
-                            checked={isActiveVat ? true : draft.taxEnabled}
-                            onCheckedChange={(checked) => patch("taxEnabled", checked)}
-                            disabled={isActiveVat || fiscalProfileLoading}
-                            aria-label="Tax calculation"
-                          />
+                        )}
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-1.5">
+                          <Label>Currency*</Label>
+                          <FieldInfo>
+                            Display preference for now — you can refine billing
+                            later in settings.
+                          </FieldInfo>
                         </div>
-                        <div className="flex items-center justify-between gap-4 p-4">
-                          <div className="flex min-w-0 items-center gap-1.5">
-                            <p className="font-medium text-foreground">Kitchen tickets</p>
-                            <FieldInfo>Create KOTs for food preparation.</FieldInfo>
-                          </div>
-                          <Switch
-                            checked={draft.kotEnabled}
-                            onCheckedChange={(checked) => patch("kotEnabled", checked)}
-                            aria-label="Kitchen tickets"
-                          />
-                        </div>
+                        <Select
+                          value={draft.currency}
+                          onValueChange={(value) => patch("currency", value)}
+                        >
+                          <SelectTrigger
+                            className={fieldErrorClass("currency")}
+                          >
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="NPR">
+                              NPR - Nepalese Rupee
+                            </SelectItem>
+                            <SelectItem value="AUD">
+                              AUD - Australian Dollar
+                            </SelectItem>
+                            <SelectItem value="USD">USD - US Dollar</SelectItem>
+                            <SelectItem value="INR">
+                              INR - Indian Rupee
+                            </SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FieldError name="currency" />
                       </div>
-                      <div className="divide-y divide-border rounded-2xl border border-border">
-                        <div className="flex items-center justify-between gap-4 p-4">
-                          <div className="flex min-w-0 items-center gap-1.5">
-                            <p className="font-medium text-foreground">Logo on receipt</p>
-                            <FieldInfo>Use your brand in the receipt header.</FieldInfo>
-                          </div>
-                          <Switch
-                            checked={draft.receiptShowLogo}
-                            onCheckedChange={(checked) => patch("receiptShowLogo", checked)}
-                            aria-label="Logo on receipt"
-                          />
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-1.5">
+                          <Label htmlFor="taxRate">Default tax rate (%)*</Label>
+                          <FieldInfo>
+                            Applied as your default tax on orders. You can add
+                            more tax rules later in settings.
+                          </FieldInfo>
                         </div>
-                        <div className="flex items-center justify-between gap-4 p-4">
-                          <div className="flex min-w-0 items-center gap-1.5">
-                            <p className="font-medium text-foreground">PAN on receipt</p>
-                            <FieldInfo>Show the tax registration number.</FieldInfo>
-                          </div>
-                          <Switch
-                            checked={isActiveVat ? true : draft.receiptShowPan}
-                            onCheckedChange={(checked) => patch("receiptShowPan", checked)}
-                            disabled={isActiveVat || fiscalProfileLoading}
-                            aria-label="PAN on receipt"
-                          />
-                        </div>
+                        <Input
+                          id="taxRate"
+                          type="number"
+                          min={0}
+                          max={100}
+                          disabled={
+                            fiscalProfileLoading ||
+                            isActiveVat ||
+                            !draft.taxEnabled
+                          }
+                          value={isActiveVat ? 13 : draft.taxRate}
+                          onChange={(e) =>
+                            patch("taxRate", Number(e.target.value) || 0)
+                          }
+                          className={fieldErrorClass("taxRate")}
+                          aria-invalid={Boolean(fieldErrors.taxRate)}
+                        />
+                        <FieldError name="taxRate" />
                       </div>
-                    </div>
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-1.5">
+                          <Label htmlFor="orderStart">
+                            Order numbering starts from*
+                          </Label>
+                          <FieldInfo>
+                            Saved locally as a reminder — order numbers follow
+                            your backend sequence.
+                          </FieldInfo>
+                        </div>
+                        <Input
+                          id="orderStart"
+                          type="number"
+                          min={1}
+                          value={draft.orderStart}
+                          onChange={(e) =>
+                            patch("orderStart", Number(e.target.value) || 1)
+                          }
+                          className={fieldErrorClass("orderStart")}
+                          aria-invalid={Boolean(fieldErrors.orderStart)}
+                        />
+                        <FieldError name="orderStart" />
+                      </div>
 
-                    <div className="space-y-2 sm:col-span-2">
-                      <Label htmlFor="receiptFooter">Receipt footer</Label>
-                      <Input
-                        id="receiptFooter"
-                        value={draft.receiptFooter}
-                        onChange={(e) => patch("receiptFooter", e.target.value)}
-                        placeholder="Thank you for dining with us."
-                      />
-                    </div>
+                      <div className="grid gap-4 sm:col-span-2 sm:grid-cols-2">
+                        <div className="divide-y divide-border rounded-2xl border border-border">
+                          <div className="flex items-center justify-between gap-4 p-4">
+                            <div className="flex min-w-0 items-center gap-1.5">
+                              <p className="font-medium text-foreground">
+                                Tax calculation
+                              </p>
+                              <FieldInfo>
+                                Allow configured taxes on eligible bills.
+                              </FieldInfo>
+                            </div>
+                            <Switch
+                              checked={isActiveVat ? true : draft.taxEnabled}
+                              onCheckedChange={(checked) =>
+                                patch("taxEnabled", checked)
+                              }
+                              disabled={isActiveVat || fiscalProfileLoading}
+                              aria-label="Tax calculation"
+                            />
+                          </div>
+                          <div className="flex items-center justify-between gap-4 p-4">
+                            <div className="flex min-w-0 items-center gap-1.5">
+                              <p className="font-medium text-foreground">
+                                Kitchen tickets
+                              </p>
+                              <FieldInfo>
+                                Create KOTs for food preparation.
+                              </FieldInfo>
+                            </div>
+                            <Switch
+                              checked={draft.kotEnabled}
+                              onCheckedChange={(checked) =>
+                                patch("kotEnabled", checked)
+                              }
+                              aria-label="Kitchen tickets"
+                            />
+                          </div>
+                        </div>
+                        <div className="divide-y divide-border rounded-2xl border border-border">
+                          <div className="flex items-center justify-between gap-4 p-4">
+                            <div className="flex min-w-0 items-center gap-1.5">
+                              <p className="font-medium text-foreground">
+                                Logo on receipt
+                              </p>
+                              <FieldInfo>
+                                Use your brand in the receipt header.
+                              </FieldInfo>
+                            </div>
+                            <Switch
+                              checked={draft.receiptShowLogo}
+                              onCheckedChange={(checked) =>
+                                patch("receiptShowLogo", checked)
+                              }
+                              aria-label="Logo on receipt"
+                            />
+                          </div>
+                          <div className="flex items-center justify-between gap-4 p-4">
+                            <div className="flex min-w-0 items-center gap-1.5">
+                              <p className="font-medium text-foreground">
+                                PAN on receipt
+                              </p>
+                              <FieldInfo>
+                                Show the tax registration number.
+                              </FieldInfo>
+                            </div>
+                            <Switch
+                              checked={
+                                isActiveVat ? true : draft.receiptShowPan
+                              }
+                              onCheckedChange={(checked) =>
+                                patch("receiptShowPan", checked)
+                              }
+                              disabled={isActiveVat || fiscalProfileLoading}
+                              aria-label="PAN on receipt"
+                            />
+                          </div>
+                        </div>
+                      </div>
 
-                    <div className="space-y-3 sm:col-span-2">
-                      <div className="flex items-center gap-1.5">
-                        <Label>Accepted payment methods*</Label>
-                        <FieldInfo>
-                          Choose which payment options cashiers can use at checkout. You can change
-                          these later in settings.
-                        </FieldInfo>
+                      <div className="space-y-2 sm:col-span-2">
+                        <Label htmlFor="receiptFooter">Receipt footer</Label>
+                        <Input
+                          id="receiptFooter"
+                          value={draft.receiptFooter}
+                          onChange={(e) =>
+                            patch("receiptFooter", e.target.value)
+                          }
+                          placeholder="Thank you for dining with us."
+                        />
                       </div>
-                      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                        {PAYMENT_OPTIONS.map((option) => {
-                          const Icon = PAYMENT_ICONS[option.value];
-                          const selected = draft.payments.includes(option.value);
-                          return (
-                            <button
-                              key={option.value}
-                              type="button"
-                              onClick={() => togglePayment(option.value)}
-                              className={cn(
-                                "rounded-2xl border p-4 text-left transition-all",
-                                selected
-                                  ? "border-primary bg-secondary"
-                                  : "border-border bg-card hover:border-primary/40",
-                                fieldErrors.payments && !selected && "border-destructive/60"
-                              )}
-                            >
-                              <Icon className="mb-2 h-5 w-5 text-primary" />
-                              <div className="font-medium">{option.title}</div>
-                            </button>
-                          );
-                        })}
-                      </div>
-                      <FieldError name="payments" />
-                    </div>
-                  </div>
-                </section>
-              )}
 
-              {step === 4 && (
-                <section>
-                  <p className="mb-2 text-xs font-medium uppercase tracking-[0.14em] text-primary">
-                    Review
-                  </p>
-                  <h2 className="font-onboarding text-2xl font-medium tracking-[-0.03em] sm:text-3xl">
-                    Review your business setup
-                  </h2>
-                  <p className="mt-2 mb-7 max-w-2xl text-sm leading-relaxed text-muted-foreground">
-                    Confirm the details below, then finish to open your dashboard.
-                  </p>
-                  <div className="rounded-2xl border border-border bg-muted/30 p-5">
-                    {summaryRows.map((row) => (
-                      <div
-                        key={row.label}
-                        className="flex items-start justify-between gap-6 border-b border-dashed border-border py-3 last:border-0"
-                      >
-                        <span className="text-sm text-muted-foreground">{row.label}</span>
-                        <strong className="max-w-[60%] text-right text-sm">{row.value}</strong>
+                      <div className="space-y-3 sm:col-span-2">
+                        <div className="flex items-center gap-1.5">
+                          <Label>Accepted payment methods*</Label>
+                          <FieldInfo>
+                            Choose which payment options cashiers can use at
+                            checkout. You can change these later in settings.
+                          </FieldInfo>
+                        </div>
+                        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                          {PAYMENT_OPTIONS.map((option) => {
+                            const Icon = PAYMENT_ICONS[option.value];
+                            const selected = draft.payments.includes(
+                              option.value,
+                            );
+                            return (
+                              <button
+                                key={option.value}
+                                type="button"
+                                onClick={() => togglePayment(option.value)}
+                                className={cn(
+                                  "rounded-2xl border p-4 text-left transition-all",
+                                  selected
+                                    ? "border-primary bg-secondary"
+                                    : "border-border bg-card hover:border-primary/40",
+                                  fieldErrors.payments &&
+                                    !selected &&
+                                    "border-destructive/60",
+                                )}
+                              >
+                                <Icon className="mb-2 h-5 w-5 text-primary" />
+                                <div className="font-medium">
+                                  {option.title}
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <FieldError name="payments" />
                       </div>
-                    ))}
-                  </div>
-                  <div className="mt-8 text-center">
-                    <div className="mx-auto mb-4 grid h-16 w-16 place-items-center rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
-                      <Check className="h-8 w-8" />
                     </div>
-                    <h3 className="text-lg font-medium">Your workspace is ready</h3>
-                    <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
-                      After finishing, you will open the dashboard
-                      {draft.workspace === "both"
-                        ? " (Restaurant POS). You can switch to Hotel anytime from the sidebar."
-                        : ", and a short guided tour will highlight the most important options."}
+                  </section>
+                )}
+
+                {step === 4 && (
+                  <section>
+                    <p className="mb-2 text-xs font-medium uppercase tracking-[0.14em] text-primary">
+                      Review
                     </p>
-                  </div>
-                </section>
-              )}
+                    <h2 className="font-onboarding text-2xl font-medium tracking-[-0.03em] sm:text-3xl">
+                      Review your business setup
+                    </h2>
+                    <p className="mt-2 mb-7 max-w-2xl text-sm leading-relaxed text-muted-foreground">
+                      Confirm the details below, then finish to open your
+                      dashboard.
+                    </p>
+                    <div className="rounded-2xl border border-border bg-muted/30 p-5">
+                      {summaryRows.map((row) => (
+                        <div
+                          key={row.label}
+                          className="flex items-start justify-between gap-6 border-b border-dashed border-border py-3 last:border-0"
+                        >
+                          <span className="text-sm text-muted-foreground">
+                            {row.label}
+                          </span>
+                          <strong className="max-w-[60%] text-right text-sm">
+                            {row.value}
+                          </strong>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="mt-8 text-center">
+                      <div className="mx-auto mb-4 grid h-16 w-16 place-items-center rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
+                        <Check className="h-8 w-8" />
+                      </div>
+                      <h3 className="text-lg font-medium">
+                        Your workspace is ready
+                      </h3>
+                      <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
+                        After finishing, you will open the dashboard
+                        {draft.workspace === "both"
+                          ? " (Restaurant POS). You can switch to Hotel anytime from the sidebar."
+                          : ", and a short guided tour will highlight the most important options."}
+                      </p>
+                    </div>
+                  </section>
+                )}
               </div>
             </div>
 
@@ -1669,7 +2272,12 @@ export function OnboardingWizard({
               </Button>
               <Button
                 type="button"
-                disabled={submitting || uploadingLogo || uploadingCover || resolvingAddress}
+                disabled={
+                  submitting ||
+                  uploadingLogo ||
+                  uploadingCover ||
+                  resolvingAddress
+                }
                 onClick={() => void next()}
                 className="min-w-[140px]"
               >
@@ -1679,7 +2287,11 @@ export function OnboardingWizard({
                     Saving…
                   </>
                 ) : step === STEP_LABELS.length - 1 ? (
-                  replay ? "Done" : "Finish setup"
+                  replay ? (
+                    "Done"
+                  ) : (
+                    "Finish setup"
+                  )
                 ) : (
                   "Continue"
                 )}
@@ -1701,7 +2313,7 @@ export function OnboardingWizard({
             "gap-3 overflow-hidden p-5",
             locationMapMaximized
               ? "flex h-[92vh] w-[96vw] max-w-[96vw] flex-col sm:max-w-[96vw]"
-              : "w-[min(100%,36rem)] max-w-none sm:max-w-xl"
+              : "w-[min(100%,36rem)] max-w-none sm:max-w-xl",
           )}
         >
           <div className="absolute right-11 top-3.5 z-[60] flex items-center gap-0.5">
@@ -1711,10 +2323,22 @@ export function OnboardingWizard({
               size="icon"
               className="h-8 w-8 text-muted-foreground hover:text-foreground"
               onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-              title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-              aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+              title={
+                theme === "dark"
+                  ? "Switch to light mode"
+                  : "Switch to dark mode"
+              }
+              aria-label={
+                theme === "dark"
+                  ? "Switch to light mode"
+                  : "Switch to dark mode"
+              }
             >
-              {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+              {theme === "dark" ? (
+                <Sun className="h-4 w-4" />
+              ) : (
+                <Moon className="h-4 w-4" />
+              )}
             </Button>
             <Button
               type="button"
@@ -1723,7 +2347,9 @@ export function OnboardingWizard({
               className="h-8 w-8 text-muted-foreground hover:text-foreground"
               onClick={() => setLocationMapMaximized((v) => !v)}
               title={locationMapMaximized ? "Minimize map" : "Maximize map"}
-              aria-label={locationMapMaximized ? "Minimize map" : "Maximize map"}
+              aria-label={
+                locationMapMaximized ? "Minimize map" : "Maximize map"
+              }
             >
               {locationMapMaximized ? (
                 <Minimize2 className="h-4 w-4" />
@@ -1745,8 +2371,8 @@ export function OnboardingWizard({
             <div className="flex items-center gap-1.5">
               <Label htmlFor="map-address">Physical Address*</Label>
               <FieldInfo>
-                Type an address or move the pin — both stay in sync. Format: street, area, city,
-                state, country.
+                Type an address or move the pin — both stay in sync. Format:
+                street, area, city, state, country.
               </FieldInfo>
             </div>
             <Input
@@ -1765,7 +2391,7 @@ export function OnboardingWizard({
           <div
             className={cn(
               "overflow-hidden rounded-xl border bg-muted p-2.5",
-              locationMapMaximized ? "flex min-h-0 flex-1 flex-col" : ""
+              locationMapMaximized ? "flex min-h-0 flex-1 flex-col" : "",
             )}
           >
             {locationMapOpen ? (
@@ -1775,7 +2401,11 @@ export function OnboardingWizard({
                 longitude={draft.longitude}
                 onChange={handleLocationChange}
                 height={locationMapMaximized ? undefined : 220}
-                className={locationMapMaximized ? "h-full min-h-[280px] flex-1" : undefined}
+                className={
+                  locationMapMaximized
+                    ? "h-full min-h-[280px] flex-1"
+                    : undefined
+                }
               />
             ) : null}
           </div>

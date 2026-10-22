@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
-import { ArrowLeft, Loader2, RefreshCw, ChevronLeft, ChevronRight } from "lucide-react";
+import { Loader2, ChevronLeft, ChevronRight } from "lucide-react";
 
 import apiClient from "@/lib/api-client";
 import { AnalyticsApis } from "@/lib/api/endpoints";
@@ -22,6 +21,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { AppPage } from "@/components/patterns/page/app-page";
+import { PageHeader } from "@/components/patterns/page/page-header";
+import { ReportFilters } from "@/components/reports/report-filters";
+import { DataList, ListRow } from "@/components/patterns/data/data-list";
 import { toast } from "sonner";
 
 type InventoryItemDetail = {
@@ -128,52 +131,33 @@ export default function AnalyticsInventoryPage() {
   if (!canViewAnalytics) return <AnalyticsAccessDenied />;
 
   return (
-    <div className="flex flex-col gap-6 max-w-[1600px] mx-auto p-6">
+    <AppPage width="wide" className="pb-20">
       {fetchError ? (
         <AnalyticsFetchError message={fetchError} onRetry={fetchDetails} />
       ) : null}
-      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-        <div className="flex items-center gap-4">
-          <Link href="/analytics">
-            <Button variant="ghost" size="icon" className="rounded-full">
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-          </Link>
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">Inventory Analytics</h1>
-            <p className="text-muted-foreground">Expense spend grouped by vendor or category.</p>
-          </div>
-        </div>
-        <Button variant="outline" onClick={fetchDetails} disabled={loading}>
-          {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <RefreshCw className="w-4 h-4 mr-2" />}
-          Refresh
-        </Button>
-      </div>
+      <PageHeader title="Inventory analytics" description="Track purchase cost by vendor or category." />
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-2 gap-2 sm:gap-3">
         <Card className="border-border">
-          <CardHeader className="pb-3">
+          <CardHeader className="p-3 pb-0 sm:p-4 sm:pb-0">
             <CardTitle className="text-sm text-muted-foreground">Expense To Sales</CardTitle>
           </CardHeader>
-          <CardContent className="text-2xl font-semibold">
+          <CardContent className="p-3 text-lg font-semibold tabular-nums sm:p-4">
             {data ? `${Number(data.purchase_to_sales_pct || 0).toFixed(2)}%` : "—"}
           </CardContent>
         </Card>
         <Card className="border-border">
-          <CardHeader className="pb-3">
+          <CardHeader className="p-3 pb-0 sm:p-4 sm:pb-0">
             <CardTitle className="text-sm text-muted-foreground">Groups</CardTitle>
           </CardHeader>
-          <CardContent className="text-2xl font-semibold">
+          <CardContent className="p-3 text-lg font-semibold tabular-nums sm:p-4">
             {data ? Number(data.total_items || 0).toLocaleString() : "—"}
           </CardContent>
         </Card>
       </div>
 
-      <Card className="border-border">
-        <CardHeader>
-          <CardTitle className="text-base">Filters</CardTitle>
-        </CardHeader>
-        <CardContent className="grid grid-cols-1 md:grid-cols-6 gap-4">
+      <ReportFilters title="Inventory filters" activeCount={Number(view !== "item")}>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
           <div className="space-y-2 md:col-span-1">
             <Label>From</Label>
             <Input
@@ -230,8 +214,8 @@ export default function AnalyticsInventoryPage() {
               </SelectContent>
             </Select>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </ReportFilters>
 
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -258,8 +242,13 @@ export default function AnalyticsInventoryPage() {
         ) : null}
       </div>
 
-      <Card className="border-border shadow-sm overflow-hidden">
-        <Table>
+      <Card className="overflow-hidden border-border shadow-sm">
+        <DataList className="rounded-none border-x-0 border-y-0 md:hidden">
+          {(data?.items || []).map((it) => (
+            <ListRow key={it.id} title={it.name || "Unnamed"} description={it.category || "Uncategorized"} meta={`${Number(it.purchase_count || 0).toLocaleString()} purchases`} trailing={<span className="font-semibold tabular-nums">Rs. {money.format(Number(it.total_cost || 0))}</span>} />
+          ))}
+        </DataList>
+        <div className="hidden md:block"><Table>
           <TableHeader className="bg-muted/30">
             <TableRow>
               <TableHead>{view === "category" ? "Category" : "Vendor"}</TableHead>
@@ -295,8 +284,8 @@ export default function AnalyticsInventoryPage() {
               ))
             )}
           </TableBody>
-        </Table>
+        </Table></div>
       </Card>
-    </div>
+    </AppPage>
   );
 }

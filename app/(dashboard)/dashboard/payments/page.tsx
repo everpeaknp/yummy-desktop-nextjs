@@ -39,7 +39,7 @@ export default function DashboardPaymentsPage() {
     <div className="mx-auto w-full max-w-[1400px] px-4 py-8 space-y-8">
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
-          <h1 className="text-4xl font-black tracking-tight">Payments</h1>
+          <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">Payments</h1>
           <p className="mt-1 text-muted-foreground font-medium">
             Payment health, settlement, and refunds
           </p>
@@ -125,4 +125,3 @@ export default function DashboardPaymentsPage() {
     </div>
   );
 }
-

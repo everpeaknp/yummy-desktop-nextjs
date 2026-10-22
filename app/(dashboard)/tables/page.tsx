@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import Image from "next/image";
 import { useAuth } from "@/hooks/use-auth";
+import { hasPermission } from "@/lib/role-permissions";
 import { useRouter } from "next/navigation";
 import apiClient from "@/lib/api-client";
 import { TableApis, TableTypeApis } from "@/lib/api/endpoints";
@@ -52,6 +53,11 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { AppPage } from "@/components/patterns/page/app-page";
+import { PageHeader } from "@/components/patterns/page/page-header";
+import { FilterChip } from "@/components/patterns/controls/filter-chip";
+import { EmptyState } from "@/components/patterns/feedback/feedback-state";
+import { TableVisitAccess } from '@/components/tables/table-visit-access';
 
 interface TableType {
   id: number;
@@ -211,6 +217,14 @@ export default function TablesPage() {
     );
   };
 
+  const handleTableResize = (tableId: number, width: number, height: number) => {
+    setTables((prev) =>
+      prev.map((table) => table.id === tableId
+        ? { ...table, layout_width: width, layout_height: height }
+        : table)
+    );
+  };
+
   const handleAutoArrange = (
     roomName: string,
     updates: Record<number, { posX: number; posY: number }>,
@@ -231,13 +245,20 @@ export default function TablesPage() {
       // Save moved tables
       const movedTables = tables.filter((t) => {
         const orig = originalTables.find((o) => o.id === t.id);
-        return orig && (orig.pos_x !== t.pos_x || orig.pos_y !== t.pos_y);
+        return orig && (
+          orig.pos_x !== t.pos_x
+          || orig.pos_y !== t.pos_y
+          || orig.layout_width !== t.layout_width
+          || orig.layout_height !== t.layout_height
+        );
       });
 
       for (const table of movedTables) {
         await apiClient.put(TableApis.updateTable(table.id), {
           pos_x: table.pos_x,
           pos_y: table.pos_y,
+          layout_width: table.layout_width ?? 15,
+          layout_height: table.layout_height ?? 17.25,
         });
       }
 
@@ -481,18 +502,8 @@ export default function TablesPage() {
 
   const getQrUrl = (token: string) => {
     const configuredQrBase = process.env.NEXT_PUBLIC_MENU_QR_BASE_URL;
-    if (configuredQrBase) {
-      return `${configuredQrBase.replace(/\/+$/, "")}/${token}`;
-    }
-
-    // Local default: customer menu app route
-    if (typeof window !== "undefined" && window.location.hostname === "localhost") {
-      return `http://localhost:3002/qr/${token}`;
-    }
-
-    // Production fallback aligned with existing public menu path style.
-    const baseUrl = typeof window !== "undefined" ? window.location.origin.replace("-web", "-menu") : "";
-    return `${baseUrl}/v/${token}`;
+    const menuQrBase = configuredQrBase || "https://menu.yummyever.com/qr";
+    return `${menuQrBase.replace(/\/+$/, "")}/${token}`;
   };
 
   const handlePrintQr = () => {
@@ -518,90 +529,123 @@ export default function TablesPage() {
     }
   };
 
-  const currentPermissions = user?.permissions || [];
-  const isAdmin = user?.role?.toLowerCase() === "admin" || 
-                  user?.primary_role?.toLowerCase() === "admin" || 
-                  user?.roles?.some(r => r.toLowerCase() === "admin");
-  const canManageQr = isAdmin || currentPermissions.includes("qr.manage");
-  const canPrintQr = isAdmin || currentPermissions.includes("qr.print");
+  const canManageTables = hasPermission(user, "tables.manage");
+  const canManageQr = hasPermission(user, "qr.manage");
+  const canPrintQr = hasPermission(user, "qr.print");
 
   // ═══════════════════════════════════════════════
   // RENDER
   // ═══════════════════════════════════════════════
   return (
-    <div className="flex flex-col gap-5 max-w-[1600px] mx-auto p-5 md:p-6">
+    <AppPage width="wide">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Tables</h1>
-          <p className="text-sm text-muted-foreground">
-            Switch halls/floors and add tables to the active category.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          {isLayoutMode ? (
+      <div className="hidden md:block">
+        <PageHeader
+          title="Tables"
+          description="Switch areas and add tables to the active layout."
+          actions={
             <>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={cancelLayoutMode}
-                className="text-red-500 hover:text-red-600"
-              >
-                <X className="w-4 h-4 mr-1" /> Cancel
-              </Button>
-              <Button
-                size="sm"
-                onClick={saveLayout}
-                disabled={savingLayout}
-                className="bg-orange-600 hover:bg-orange-700 text-white"
-              >
-                {savingLayout ? (
-                  <Loader2 className="w-4 h-4 mr-1 animate-spin" />
-                ) : (
-                  <Save className="w-4 h-4 mr-1" />
-                )}
-                Save
-              </Button>
+            {isLayoutMode ? (
+              <>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={cancelLayoutMode}
+                  className="h-11 rounded-xl text-red-500 hover:text-red-600"
+                >
+                  <X className="w-4 h-4 mr-1" /> Cancel
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={saveLayout}
+                  disabled={savingLayout}
+                  className="h-11 rounded-xl"
+                >
+                  {savingLayout ? (
+                    <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+                  ) : (
+                    <Save className="w-4 h-4 mr-1" />
+                  )}
+                  Save
+                </Button>
+              </>
+            ) : canManageTables ? (
+              <>
+                <Button variant="outline" className="h-11 rounded-xl" onClick={enterLayoutMode}>
+                  <MapPinned className="w-4 h-4 mr-1" /> Edit Layout
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={openAddTable}
+                  className="h-11 rounded-xl"
+                >
+                  <Plus className="w-4 h-4 mr-1" /> Add Table
+                </Button>
+              </>
+            ) : null}
             </>
-          ) : (
-            <>
-              <Button variant="outline" size="sm" onClick={enterLayoutMode}>
-                <MapPinned className="w-4 h-4 mr-1" /> Edit Layout
-              </Button>
-              <Button
-                size="sm"
-                onClick={openAddTable}
-                className="bg-orange-600 hover:bg-orange-700 text-white"
-              >
-                <Plus className="w-4 h-4 mr-1" /> Add Table
-              </Button>
-            </>
-          )}
-        </div>
+          }
+        />
+      </div>
+
+      {hasPermission(user, 'pos.order.edit') && <TableVisitAccess />}
+      <div className="flex items-center gap-2 md:hidden">
+        {isLayoutMode ? (
+          <>
+            <Button
+              variant="outline"
+              onClick={cancelLayoutMode}
+              className="h-11 flex-1 rounded-xl"
+            >
+              <X className="mr-1.5 h-4 w-4" /> Cancel
+            </Button>
+            <Button
+              onClick={saveLayout}
+              disabled={savingLayout}
+              className="h-11 flex-1 rounded-xl"
+            >
+              {savingLayout ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Save className="mr-1.5 h-4 w-4" />}
+              Save layout
+            </Button>
+          </>
+        ) : canManageTables ? (
+          <>
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={enterLayoutMode}
+              className="h-11 w-11 shrink-0 rounded-xl"
+              aria-label="Edit table layout"
+            >
+              <MapPinned className="h-4 w-4" />
+            </Button>
+            <Button onClick={openAddTable} className="h-11 min-w-0 flex-1 rounded-xl">
+              <Plus className="mr-1.5 h-4 w-4" /> Add table
+            </Button>
+          </>
+        ) : null}
       </div>
 
       {/* Area Filter Chips — matching Flutter RoomSelectorBar */}
-      <div className="flex flex-wrap items-center gap-2">
+      <div
+        className="-mx-1 flex items-center gap-2 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        aria-label="Table areas"
+      >
         {areaOptions.map((area) => {
           const tt = tableTypes.find((t) => t.name === area);
           return (
             <div key={area} className="relative group">
-              <button
+              <FilterChip
                 onClick={() => setSelectedArea(area)}
-                className={cn(
-                  "px-4 py-1.5 rounded-full text-sm font-medium transition-colors border",
-                  selectedArea === area
-                    ? "bg-orange-600 text-white border-orange-600"
-                    : "bg-card text-foreground border-border hover:bg-muted"
-                )}
+                active={selectedArea === area}
               >
                 {area}
-              </button>
+              </FilterChip>
               {/* Context menu for real areas (not "All Areas") */}
-              {tt && !isLayoutMode && (
+              {tt && canManageTables && !isLayoutMode && (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <button className="absolute -top-1 -right-1 opacity-0 group-hover:opacity-100 transition-opacity bg-card border border-border rounded-full w-5 h-5 flex items-center justify-center shadow-sm">
+                    <button className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full border border-border bg-card opacity-100 shadow-sm transition-opacity md:opacity-0 md:group-hover:opacity-100">
                       <MoreVertical className="w-3 h-3" />
                     </button>
                   </DropdownMenuTrigger>
@@ -621,18 +665,17 @@ export default function TablesPage() {
             </div>
           );
         })}
-        {!isLayoutMode && (
-          <button
+        {!isLayoutMode && canManageTables && (
+          <FilterChip
             onClick={openAddArea}
-            className="px-3 py-1.5 rounded-full text-sm font-medium border border-border bg-card text-foreground hover:bg-muted transition-colors flex items-center gap-1"
           >
             <Plus className="w-3.5 h-3.5" /> Add Area
-          </button>
+          </FilterChip>
         )}
       </div>
 
       {/* Status Legend — matching Flutter TableStatusLegend */}
-      <div className="flex items-center gap-5 text-sm text-muted-foreground">
+      <div className="flex items-center gap-3 overflow-x-auto text-xs text-muted-foreground sm:gap-5 sm:text-sm">
         <LegendDot color="bg-emerald-500" label="Available" />
         <LegendDot color="bg-red-500" label="Occupied" />
         <LegendDot color="bg-orange-500" label="Reserved" />
@@ -644,25 +687,22 @@ export default function TablesPage() {
           <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
         </div>
       ) : tables.length === 0 ? (
-        <div className="h-64 flex flex-col items-center justify-center text-muted-foreground border-2 border-dashed border-border rounded-lg gap-3">
-          <Armchair className="w-12 h-12 opacity-20" />
-          <p>No tables configured.</p>
-          <Button
-            size="sm"
-            onClick={openAddTable}
-            className="bg-orange-600 hover:bg-orange-700 text-white"
-          >
-            <Plus className="w-4 h-4 mr-1" /> Add Table
-          </Button>
-        </div>
+        <EmptyState
+          icon={<Armchair className="h-5 w-5" />}
+          title="No tables configured"
+          description="Add the first table to start building this layout."
+          actionLabel={canManageTables ? "Add table" : undefined}
+          onAction={canManageTables ? openAddTable : undefined}
+        />
       ) : selectedArea !== "All Areas" ? (
         <RoomContainer
           title={selectedArea}
           tables={filteredTables}
           layoutHeight={getLayoutHeight(selectedArea)}
           isLayoutMode={isLayoutMode}
-          onTableClick={isLayoutMode ? undefined : openEditTable}
+          onTableClick={isLayoutMode || !canManageTables ? undefined : openEditTable}
           onTableDrop={isLayoutMode ? handleTableDrop : undefined}
+          onTableResize={isLayoutMode ? handleTableResize : undefined}
           onHeightChanged={isLayoutMode ? (h) => handleHeightChanged(selectedArea, h) : undefined}
           onAutoArrange={isLayoutMode ? (updates, h) => handleAutoArrange(selectedArea, updates, h) : undefined}
         />
@@ -675,8 +715,9 @@ export default function TablesPage() {
               tables={groupedTables[roomName]}
               layoutHeight={getLayoutHeight(roomName)}
               isLayoutMode={isLayoutMode}
-              onTableClick={isLayoutMode ? undefined : openEditTable}
+              onTableClick={isLayoutMode || !canManageTables ? undefined : openEditTable}
               onTableDrop={isLayoutMode ? handleTableDrop : undefined}
+              onTableResize={isLayoutMode ? handleTableResize : undefined}
               onHeightChanged={isLayoutMode ? (h) => handleHeightChanged(roomName, h) : undefined}
               onAutoArrange={isLayoutMode ? (updates, h) => handleAutoArrange(roomName, updates, h) : undefined}
             />
@@ -685,7 +726,7 @@ export default function TablesPage() {
       )}
 
       {/* ═══ TABLE FORM DIALOG ═══ */}
-      <Dialog open={tableDialogOpen} onOpenChange={setTableDialogOpen}>
+      {canManageTables ? <Dialog open={tableDialogOpen} onOpenChange={setTableDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>{editingTable ? "Edit Table" : "Add Table"}</DialogTitle>
@@ -781,10 +822,10 @@ export default function TablesPage() {
             </Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog>
+      </Dialog> : null}
 
       {/* ═══ AREA DIALOG ═══ */}
-      <Dialog open={areaDialogOpen} onOpenChange={setAreaDialogOpen}>
+      {canManageTables ? <Dialog open={areaDialogOpen} onOpenChange={setAreaDialogOpen}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>
@@ -820,7 +861,7 @@ export default function TablesPage() {
             </Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog>
+      </Dialog> : null}
 
       {/* ═══ RESERVATION DETAILS SHEET ═══ */}
       <ReservationDetailsSheet
@@ -828,6 +869,7 @@ export default function TablesPage() {
         onOpenChange={setReservationSheetOpen}
         reservation={selectedReservation}
         onRefresh={() => fetchData(true)}
+        canManage={hasPermission(user, "tables.reservation.manage")}
       />
 
       {loadingReservation && (
@@ -1009,7 +1051,7 @@ export default function TablesPage() {
           </div>
         </DialogContent>
       </Dialog>
-    </div>
+    </AppPage>
   );
 }
 

@@ -13,10 +13,12 @@ const config: Config = {
           sans: ["var(--font-inter)", "ui-sans-serif", "system-ui", "sans-serif"],
           onboarding: [
             "var(--font-onboarding)",
+            "Sora",
             "ui-sans-serif",
             "system-ui",
             "sans-serif",
           ],
+
         },
         borderColor: {
             DEFAULT: 'hsl(var(--border))',

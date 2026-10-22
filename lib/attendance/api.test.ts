@@ -6,6 +6,7 @@ vi.mock("@/lib/api-client", () => ({
     get: vi.fn(),
     post: vi.fn(),
     patch: vi.fn(),
+    delete: vi.fn(),
   },
 }));
 
@@ -18,9 +19,32 @@ beforeEach(() => {
   mocked.get.mockResolvedValue({ data: { data: {} } });
   mocked.post.mockResolvedValue({ data: { data: {} } });
   mocked.patch.mockResolvedValue({ data: { data: {} } });
+  mocked.delete.mockResolvedValue({ data: { data: {} } });
 });
 
 describe("attendanceApi", () => {
+  it("scopes earnings detail to self or an explicit staff profile", async () => {
+    await attendanceApi.payrollPeriod("2026-10-01", "2026-10-20", { own: true, staffId: 99 });
+    expect(mocked.get).toHaveBeenLastCalledWith("/attendance/me/payroll-period?date_from=2026-10-01&date_to=2026-10-20");
+    await attendanceApi.payrollPeriod("2026-10-01", "2026-10-20", { staffId: 3 });
+    expect(mocked.get).toHaveBeenLastCalledWith("/staff/3/salary/period?date_from=2026-10-01&date_to=2026-10-20");
+  });
+  it("scopes the self register without accepting another staff id", async () => {
+    await attendanceApi.register({ dateFrom: "2026-10-01", dateTo: "2026-10-20", own: true, staffId: 99 });
+    expect(mocked.get).toHaveBeenCalledWith("/attendance/me/register?date_from=2026-10-01&date_to=2026-10-20");
+    await attendanceApi.register({ dateFrom: "2026-10-01", dateTo: "2026-10-20", staffId: 12 });
+    expect(mocked.get).toHaveBeenCalledWith("/attendance/register?date_from=2026-10-01&date_to=2026-10-20&staff_id=12");
+  });
+  it("uses self-only attendance endpoints for a staff member's workspace", async () => {
+    await attendanceApi.myStatus();
+    await attendanceApi.myEntries({ dateFrom: "2026-10-01", dateTo: "2026-10-07", limit: 6 });
+
+    expect(mocked.get).toHaveBeenCalledWith("/attendance/me/status");
+    expect(mocked.get).toHaveBeenCalledWith(
+      "/attendance/me/entries?date_from=2026-10-01&date_to=2026-10-07&limit=6",
+    );
+  });
+
   it("calls settings and schedule endpoints", async () => {
     await attendanceApi.getSettings();
     await attendanceApi.updateSettings({ timezone: "Asia/Kathmandu" });
@@ -45,6 +69,7 @@ describe("attendanceApi", () => {
       reason: "Forgot checkout",
     });
     await attendanceApi.audit(9);
+    await attendanceApi.finalizePayrollExport("2026-06-23", "2026-06-24");
 
     expect(mocked.get).toHaveBeenCalledWith("/attendance/overview?date_from=2026-06-23&date_to=2026-06-24");
     expect(mocked.get).toHaveBeenCalledWith("/attendance/entries?date_from=2026-06-23&staff_id=4&limit=50");
@@ -60,6 +85,10 @@ describe("attendanceApi", () => {
       status: "adjusted",
     });
     expect(mocked.get).toHaveBeenCalledWith("/attendance/entries/9/audit");
+    expect(mocked.post).toHaveBeenCalledWith("/attendance/payroll-export/finalize", {
+      date_from: "2026-06-23",
+      date_to: "2026-06-24",
+    });
     expect(attendanceApi.exportCsvUrl("2026-06-23", "2026-06-24")).toBe("/attendance/export.csv?date_from=2026-06-23&date_to=2026-06-24");
 
     mocked.get.mockResolvedValueOnce({
@@ -74,20 +103,22 @@ describe("attendanceApi", () => {
     expect(exported.filename).toBe("attendance.csv");
   });
 
-  it("calls QR device connector and mobile-device endpoints", async () => {
+  it("calls QR and biometric device endpoints", async () => {
     await attendanceApi.createQrSession({ station_label: "Front", ttl_seconds: 60 });
+    await attendanceApi.submitMobilePunch({ qr_token: "qr-token", latitude: 28.2, longitude: 83.9, accuracy_meters: 12 });
     await attendanceApi.createDevice({ name: "ZK" });
     await attendanceApi.updateDevice(7, { is_active: false });
+    await attendanceApi.deleteShiftTemplate(6);
+    await attendanceApi.deleteSchedule(5);
     await attendanceApi.upsertDeviceMapping({ device_id: 7, staff_id: 2, device_user_id: "42" });
-    await attendanceApi.createConnectorPairingCode({ device_id: 7, ttl_seconds: 600 });
-    await attendanceApi.decideMobileDevice(3, "revoke", "lost phone");
 
     expect(mocked.post).toHaveBeenCalledWith("/attendance/qr-sessions", { station_label: "Front", ttl_seconds: 60 });
+    expect(mocked.post).toHaveBeenCalledWith("/attendance/mobile-punch", expect.objectContaining({ qr_token: "qr-token", latitude: 28.2, longitude: 83.9, accuracy_meters: 12 }));
     expect(mocked.post).toHaveBeenCalledWith("/attendance/devices", { name: "ZK" });
     expect(mocked.patch).toHaveBeenCalledWith("/attendance/devices/7", { is_active: false });
+    expect(mocked.delete).toHaveBeenCalledWith("/attendance/shift-templates/6");
+    expect(mocked.delete).toHaveBeenCalledWith("/attendance/schedules/5");
     expect(mocked.post).toHaveBeenCalledWith("/attendance/device-mappings", { device_id: 7, staff_id: 2, device_user_id: "42" });
-    expect(mocked.post).toHaveBeenCalledWith("/attendance/connectors/pairing-codes", { device_id: 7, ttl_seconds: 600 });
-    expect(mocked.post).toHaveBeenCalledWith("/attendance/mobile-devices/3/revoke", { reason: "lost phone" });
   });
 });
 

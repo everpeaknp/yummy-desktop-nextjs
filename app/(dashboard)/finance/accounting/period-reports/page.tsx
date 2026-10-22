@@ -1,3 +1,5 @@
-import PeriodReportsPage from "@/app/(dashboard)/period-reports/page";
+import { redirect } from "next/navigation";
 
-export default PeriodReportsPage;
+export default function LegacyAccountingPeriodReportsPage() {
+  redirect("/finance/accounting");
+}

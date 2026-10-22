@@ -107,6 +107,7 @@ export type CurrentSubscription = {
   entitlements: EntitlementMap;
   usage: SubscriptionUsageMap;
   addons: CurrentAddon[];
+  quota_compliance?: { required: boolean; issues: Array<{ key: string; label: string; limit: number; used: number; items: Array<{ id: number; label: string }> }> };
 };
 
 export type UpgradeRequestPayload = {
@@ -140,6 +141,30 @@ export type SubscriptionInvoice = {
   source: string;
   line_items: Array<Record<string, unknown>>;
   created_at: string | null;
+};
+
+export type SubscriptionFonepayCheckout = {
+  invoice_id: number | string;
+  prn: string;
+  status: "pending" | "paid" | "failed" | "expired" | "superseded" | "review_required" | string;
+  qr_payload?: Record<string, unknown> | null;
+  summary?: {
+    plan_code: string;
+    plan_name: string;
+    billing_interval_months: number;
+    currency: string;
+    subtotal: number;
+    discount_amount: number;
+    total_amount: number;
+    promo_code?: string | null;
+    expires_at?: string | null;
+  };
+};
+
+export type SubscriptionCheckoutPayload = {
+  plan_code: string;
+  billing_interval_months: number;
+  promo_code?: string | null;
 };
 
 export type BaseResponse<T> = {

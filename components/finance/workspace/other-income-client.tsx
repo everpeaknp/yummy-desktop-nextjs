@@ -1,0 +1,561 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { CircleDollarSign, Loader2, Plus } from "lucide-react";
+import { toast } from "sonner";
+
+import apiClient from "@/lib/api-client";
+import { IncomeApis } from "@/lib/api/endpoints";
+import { financeReportingApi } from "@/lib/api/finance-reporting-api";
+import { useAuth } from "@/hooks/use-auth";
+import { hasPermission } from "@/lib/role-permissions";
+import { useRestaurant } from "@/hooks/use-restaurant";
+import {
+  AllocationLinesEditor,
+  type AllocationLineItem,
+  type EligibleHead,
+} from "@/components/finance/allocation-lines-editor";
+import {
+  CashBankAccountSelect,
+  type CashBankAccountOption,
+} from "@/components/finance/cash-bank-account-select";
+import { StationPicker } from "@/components/stations/station-picker";
+import { legacyStationBucketForStationName } from "@/lib/finance-station-scope";
+import { formatCurrency, formatDate } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  TransactionDetailSheet,
+  type TransactionDetailModel,
+} from "@/components/finance/transaction-detail/transaction-detail-sheet";
+import { AppPage } from "@/components/patterns/page/app-page";
+import { PageHeader } from "@/components/patterns/page/page-header";
+
+type IncomeRow = {
+  id?: number;
+  amount: number;
+  paid_at: string;
+  description?: string | null;
+  source?: string | null;
+  source_type?: string | null;
+  order_id?: number | null;
+  orderId?: number | null;
+  payment_method?: string | null;
+  business_line?: string | null;
+  station?: string | null;
+  station_id?: number | null;
+  status?: string | null;
+  created_by?: number | null;
+  created_by_name?: string | null;
+  created_at?: string | null;
+  income_lines?: Array<{
+    id?: number;
+    reporting_head_id?: number | null;
+    amount: number | string;
+    description?: string | null;
+    head?: {
+      code?: string | null;
+      name?: string | null;
+    } | null;
+  }>;
+};
+
+function yyyyMmDd(date: Date) {
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+const money = formatCurrency;
+
+export function OtherIncomeClient() {
+  const searchParams = useSearchParams();
+  const user = useAuth((state) => state.user);
+  const restaurant = useRestaurant((state) => state.restaurant);
+  const canManageCoa = hasPermission(user, "finance.coa.manage");
+  const [rows, setRows] = useState<IncomeRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [amount, setAmount] = useState("");
+  const [description, setDescription] = useState("");
+  const [businessLine, setBusinessLine] = useState<"restaurant" | "hotel">(
+    "restaurant",
+  );
+  const [account, setAccount] = useState<CashBankAccountOption | null>(null);
+  const [stationId, setStationId] = useState<number | null>(null);
+  const [stationName, setStationName] = useState<string | null>(null);
+  const [heads, setHeads] = useState<EligibleHead[]>([]);
+  const [lines, setLines] = useState<AllocationLineItem[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [selectedIncome, setSelectedIncome] = useState<IncomeRow | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState<string | null>(null);
+  const now = useMemo(() => new Date(), []);
+
+  useEffect(() => {
+    if (
+      searchParams.get("business_line") === "hotel" &&
+      restaurant?.hotel_enabled
+    ) {
+      setBusinessLine("hotel");
+    }
+  }, [restaurant?.hotel_enabled, searchParams]);
+
+  const load = useCallback(async () => {
+    if (!user?.restaurant_id) return;
+    setLoading(true);
+    try {
+      const response = await apiClient.get(IncomeApis.recent, {
+        params: {
+          restaurant_id: user.restaurant_id,
+          date_from: yyyyMmDd(new Date(now.getFullYear(), now.getMonth(), 1)),
+          date_to: yyyyMmDd(now),
+          business_line: "all",
+          limit: 100,
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        },
+      });
+      const entries = Array.isArray(response.data?.data)
+        ? (response.data.data as IncomeRow[])
+        : [];
+      setRows(
+        entries.filter((entry) => {
+          if (entry.order_id || entry.orderId) return false;
+          const source =
+            `${entry.source || ""} ${entry.source_type || ""}`.toLowerCase();
+          return (
+            !source ||
+            source.includes("manual") ||
+            source.includes("other") ||
+            source.includes("income")
+          );
+        }),
+      );
+    } catch (error: any) {
+      toast.error(
+        error.response?.data?.detail || "Could not load other income.",
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, [now, user?.restaurant_id]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const openCreate = () => {
+    const line =
+      restaurant?.hotel_enabled && !restaurant?.restaurant_enabled
+        ? "hotel"
+        : "restaurant";
+    setBusinessLine(line);
+    setAmount("");
+    setDescription("");
+    setAccount(null);
+    setLines([]);
+    setStationId(null);
+    setStationName(null);
+    setDialogOpen(true);
+  };
+
+  useEffect(() => {
+    if (!dialogOpen || !user?.restaurant_id) return;
+    financeReportingApi
+      .getEligibleLeaves(Number(user.restaurant_id), {
+        head_type: "income",
+        business_line: businessLine,
+      })
+      .then((result) => setHeads(result as EligibleHead[]))
+      .catch(() => setHeads([]));
+  }, [businessLine, dialogOpen, user?.restaurant_id]);
+
+  const parsedAmount = Number(amount || 0);
+  const isAllocated =
+    parsedAmount > 0 &&
+    lines.length > 0 &&
+    Math.round(parsedAmount * 100) ===
+      lines.reduce(
+        (sum, line) => sum + Math.round(Number(line.amount || 0) * 100),
+        0,
+      );
+
+  const save = async () => {
+    if (!user?.restaurant_id || !account || !isAllocated) {
+      toast.error(
+        "Enter an amount, receiving account, and a fully balanced income allocation.",
+      );
+      return;
+    }
+    setSaving(true);
+    try {
+      await apiClient.post(
+        IncomeApis.manual,
+        {
+          restaurant_id: Number(user.restaurant_id),
+          amount: parsedAmount,
+          payment_method:
+            account.account_type === "drawer" ? "cash" : "bank_transfer",
+          paid_at: new Date().toISOString(),
+          description: description.trim() || null,
+          business_line: businessLine,
+          station: legacyStationBucketForStationName(stationName, businessLine),
+          station_id: stationId,
+          account_type: account.account_type,
+          account_id: account.id,
+          ...(account.account_type === "drawer"
+            ? { drawer_session_id: account.drawer_session_id }
+            : {}),
+          lines,
+        },
+        {
+          params: {
+            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          },
+        },
+      );
+      toast.success("Other income recorded.");
+      setDialogOpen(false);
+      void load();
+    } catch (error: any) {
+      toast.error(
+        error.response?.data?.detail ||
+          error.response?.data?.message ||
+          "Could not record income.",
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const total = rows.reduce((sum, row) => sum + Number(row.amount || 0), 0);
+  const openIncome = async (row: IncomeRow) => {
+    setSelectedIncome(row);
+    setDetailError(null);
+    if (!row.id || !user?.restaurant_id) return;
+    setDetailLoading(true);
+    try {
+      const response = await apiClient.get(
+        IncomeApis.detail(row.id, Number(user.restaurant_id)),
+      );
+      setSelectedIncome({ ...row, ...(response.data?.data || {}) });
+    } catch (error: any) {
+      setDetailError(
+        error.response?.data?.detail ||
+          "Could not load the complete income entry.",
+      );
+    } finally {
+      setDetailLoading(false);
+    }
+  };
+  const selectedDetail: TransactionDetailModel | null = selectedIncome
+    ? {
+        eyebrow: "Other income",
+        title: selectedIncome.description || "Other income received",
+        reference: null,
+        subtitle: "Non-sales income receipt",
+        occurredAt: selectedIncome.paid_at,
+        status: selectedIncome.status || "recorded",
+        amount: selectedIncome.amount,
+        amountLabel: "Amount received",
+        amountTone: "in",
+        sections: [
+          {
+            title: "Receipt overview",
+            fields: [
+              {
+                label: "Received through",
+                value:
+                  selectedIncome.payment_method?.replaceAll("_", " ") || "—",
+              },
+              {
+                label: "Source",
+                value:
+                  selectedIncome.source ||
+                  selectedIncome.source_type ||
+                  "Manual entry",
+              },
+              {
+                label: "Recorded by",
+                value:
+                  selectedIncome.created_by_name ||
+                  (selectedIncome.created_by === user?.id
+                    ? user?.full_name || "Current user"
+                    : "System"),
+              },
+            ],
+          },
+          {
+            title: "Income allocation",
+            description:
+              "How this receipt was assigned to income account heads.",
+            table: selectedIncome.income_lines?.length
+              ? {
+                  columns: ["Account head", "Description", "Amount"],
+                  rows: selectedIncome.income_lines.map((line) => [
+                    line.reporting_head_id
+                      ? line.head?.name
+                        ? `${line.head.code ? `${line.head.code} · ` : ""}${line.head.name}`
+                        : "Income account"
+                      : "Income",
+                    line.description || "—",
+                    money(Number(line.amount || 0)),
+                  ]),
+                }
+              : undefined,
+            internal: true,
+            emptyText:
+              "This legacy receipt has no saved line-level allocation.",
+          },
+        ],
+      }
+    : null;
+
+  return (
+    <AppPage width="wide" density="compact">
+      <PageHeader
+        title="Other income"
+        description="Non-sales income such as rent, commission, interest, and grants."
+        actions={
+          <Button className="w-full sm:w-auto" onClick={openCreate}>
+            <Plus className="mr-2 h-4 w-4" />
+            Record income
+          </Button>
+        }
+      />
+      <Card className="max-w-sm border-border shadow-none">
+        <CardContent className="flex items-center justify-between p-4">
+          <div>
+            <p className="text-xs font-medium text-muted-foreground">
+              Other income this month
+            </p>
+            <p className="mt-1 text-xl font-semibold tabular-nums">
+              {money(total)}
+            </p>
+          </div>
+          <CircleDollarSign className="h-6 w-6 text-emerald-600" />
+        </CardContent>
+      </Card>
+      <Card className="border-border shadow-none">
+        <CardContent className="p-0">
+          {loading ? (
+            <div className="flex min-h-64 items-center justify-center">
+              <Loader2 className="h-6 w-6 animate-spin text-primary" />
+            </div>
+          ) : rows.length ? (
+            <>
+              <div className="divide-y sm:hidden">
+                {rows.map((row, index) => (
+                  <button
+                    key={row.id || `${row.paid_at}:${index}`}
+                    type="button"
+                    onClick={() => void openIncome(row)}
+                    className="flex min-h-20 w-full items-center justify-between gap-4 px-4 py-3 text-left transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">
+                        {row.description || "Other income"}
+                      </p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {formatDate(row.paid_at)} ·{" "}
+                        {row.payment_method?.replaceAll("_", " ") ||
+                          "Method not specified"}
+                      </p>
+                    </div>
+                    <p className="shrink-0 text-sm font-semibold tabular-nums text-emerald-600">
+                      + {money(row.amount)}
+                    </p>
+                  </button>
+                ))}
+              </div>
+              <div className="hidden overflow-x-auto lg:block">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Date</TableHead>
+                      <TableHead>Description</TableHead>
+                      <TableHead>Source</TableHead>
+                      <TableHead>Received through</TableHead>
+                      <TableHead className="text-right">Amount</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {rows.map((row, index) => (
+                      <TableRow
+                        key={row.id || `${row.paid_at}:${index}`}
+                        tabIndex={0}
+                        role="button"
+                        onClick={() => void openIncome(row)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            void openIncome(row);
+                          }
+                        }}
+                        className="cursor-pointer focus-visible:bg-muted/40 focus-visible:outline-none"
+                      >
+                        <TableCell>{formatDate(row.paid_at)}</TableCell>
+                        <TableCell className="font-medium">
+                          {row.description || "Other income"}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="secondary">Other income</Badge>
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">
+                          {row.payment_method?.replaceAll("_", " ") || "—"}
+                        </TableCell>
+                        <TableCell className="text-right font-semibold text-emerald-600">
+                          + {money(row.amount)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </>
+          ) : (
+            <div className="flex min-h-64 items-center justify-center text-sm text-muted-foreground">
+              No other income was recorded this month.
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Add other income</DialogTitle>
+            <DialogDescription>
+              Record genuine non-sales income and allocate it to one or more
+              income heads.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-5 py-2">
+            {restaurant?.hotel_enabled && restaurant?.restaurant_enabled ? (
+              <div className="grid gap-2">
+                <Label>Business</Label>
+                <Select
+                  value={businessLine}
+                  onValueChange={(value) => {
+                    setBusinessLine(value as "restaurant" | "hotel");
+                    setLines([]);
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="restaurant">Restaurant</SelectItem>
+                    <SelectItem value="hotel">Hotel</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : null}
+            <div className="grid gap-2">
+              <Label>Amount</Label>
+              <Input
+                type="number"
+                min="0.01"
+                step="0.01"
+                value={amount}
+                onChange={(event) => {
+                  setAmount(event.target.value);
+                  setLines([]);
+                }}
+                placeholder="0.00"
+              />
+            </div>
+            <CashBankAccountSelect
+              value={account}
+              onChange={setAccount}
+              businessLine={businessLine}
+              label="Receive into"
+            />
+            {user?.restaurant_id && (
+              <StationPicker
+                restaurantId={user.restaurant_id}
+                value={stationId}
+                onChange={(id, station) => {
+                  setStationId(id);
+                  setStationName(station?.name ?? null);
+                }}
+              />
+            )}
+            <div className="grid gap-2">
+              <Label>Description</Label>
+              <Textarea
+                value={description}
+                onChange={(event) => setDescription(event.target.value)}
+                placeholder="What was this income for?"
+              />
+            </div>
+            <AllocationLinesEditor
+              totalAmount={parsedAmount}
+              eligibleHeads={heads}
+              lines={lines}
+              onChange={setLines}
+              headTypeLabel="Income head"
+              disabled={saving}
+              restaurantId={user?.restaurant_id ?? undefined}
+              headType="income"
+              canCreateHead={canManageCoa}
+              onHeadCreated={(head) => setHeads((prev) => [head, ...prev])}
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setDialogOpen(false)}
+              disabled={saving}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => void save()}
+              disabled={saving || !account || !isAllocated}
+            >
+              {saving ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : null}
+              Record income
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <TransactionDetailSheet
+        open={selectedIncome != null}
+        onOpenChange={(open) => !open && setSelectedIncome(null)}
+        detail={selectedDetail}
+        loading={detailLoading}
+        error={detailError}
+      />
+    </AppPage>
+  );
+}

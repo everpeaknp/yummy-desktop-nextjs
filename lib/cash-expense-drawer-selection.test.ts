@@ -49,14 +49,14 @@ describe("cash expense drawer selection", () => {
     ).toEqual({});
   });
 
-  it("blocks cash when controls are enabled and no drawer is selected", () => {
-    expect(() =>
+  it("lets the backend auto-open the drawer when no active session is selected", () => {
+    expect(
       buildCashExpenseDrawerPayload({
         paymentMethod: "cash",
         controlsEnabled: true,
         selectedDrawerSessionId: "",
       }),
-    ).toThrow("Select an open cash drawer before recording this cash expense.");
+    ).toEqual({});
   });
 
   it("attaches the selected drawer when one drawer is available", () => {

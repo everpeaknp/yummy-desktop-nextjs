@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
-import { ArrowLeft, Loader2, RefreshCw, ChevronLeft, ChevronRight } from "lucide-react";
+import { Loader2, ChevronLeft, ChevronRight } from "lucide-react";
 
 import apiClient from "@/lib/api-client";
 import { AnalyticsApis, ItemCategoryApis } from "@/lib/api/endpoints";
@@ -24,6 +23,10 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
+import { AppPage } from "@/components/patterns/page/app-page";
+import { PageHeader } from "@/components/patterns/page/page-header";
+import { ReportFilters } from "@/components/patterns/controls/report-filters";
+import { DataList, ListRow } from "@/components/patterns/data/data-list";
 
 type KitchenItemMetric = {
   item_id: number;
@@ -156,55 +159,35 @@ export default function AnalyticsKitchenPage() {
   if (!canViewAnalytics) return <AnalyticsAccessDenied />;
 
   return (
-    <div className="flex flex-col gap-6 max-w-[1600px] mx-auto p-6">
+    <AppPage width="wide" className="pb-24">
       {fetchError ? (
         <AnalyticsFetchError message={fetchError} onRetry={fetchDetails} />
       ) : null}
-      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-        <div className="flex items-center gap-4">
-          <Link href="/analytics">
-            <Button variant="ghost" size="icon" className="rounded-full">
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-          </Link>
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">Kitchen Analytics</h1>
-            <p className="text-muted-foreground">Prep-time proxy metrics by menu item.</p>
-          </div>
-        </div>
-        <Button variant="outline" onClick={fetchDetails} disabled={loading}>
-          {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <RefreshCw className="w-4 h-4 mr-2" />}
-          Refresh
-        </Button>
-      </div>
+      <PageHeader title="Kitchen analytics" description="Prep-time proxy metrics by menu item." />
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Card className="border-border">
-          <CardHeader className="pb-3">
+      <div className="grid grid-cols-2 gap-2 sm:gap-3">
+        <Card className="rounded-xl border-border">
+          <CardHeader className="p-3 pb-0 sm:p-4 sm:pb-0">
             <CardTitle className="text-sm text-muted-foreground">Overall Avg Prep Time</CardTitle>
           </CardHeader>
-          <CardContent className="text-2xl font-semibold">
+          <CardContent className="p-3 pt-1 text-lg font-semibold tabular-nums sm:p-4 sm:pt-1">
             {data ? `${Number(data.overall_avg_prep_time || 0).toFixed(2)} min` : "—"}
           </CardContent>
         </Card>
-        <Card className="border-border">
-          <CardHeader className="pb-3">
+        <Card className="rounded-xl border-border">
+          <CardHeader className="p-3 pb-0 sm:p-4 sm:pb-0">
             <CardTitle className="text-sm text-muted-foreground">Items Tracked</CardTitle>
           </CardHeader>
-          <CardContent className="text-2xl font-semibold">
+          <CardContent className="p-3 pt-1 text-lg font-semibold tabular-nums sm:p-4 sm:pt-1">
             {data ? Number(data.total_items || 0).toLocaleString() : "—"}
           </CardContent>
         </Card>
       </div>
 
-      <Card className="border-border">
-        <CardHeader>
-          <CardTitle className="text-base">Filters</CardTitle>
-        </CardHeader>
-        <CardContent className="grid grid-cols-1 md:grid-cols-6 gap-4">
+      <ReportFilters title="Kitchen filters" className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <div className="space-y-2 md:col-span-1">
             <Label>From</Label>
-            <Input
+            <Input className="h-11"
               type="date"
               value={dateFrom}
               onChange={(e) => {
@@ -215,7 +198,7 @@ export default function AnalyticsKitchenPage() {
           </div>
           <div className="space-y-2 md:col-span-1">
             <Label>To</Label>
-            <Input
+            <Input className="h-11"
               type="date"
               value={dateTo}
               onChange={(e) => {
@@ -235,7 +218,7 @@ export default function AnalyticsKitchenPage() {
               }}
               disabled={!showBusinessLine}
             >
-              <SelectTrigger>
+              <SelectTrigger className="h-11">
                 <SelectValue placeholder="All" />
               </SelectTrigger>
               <SelectContent>
@@ -249,7 +232,7 @@ export default function AnalyticsKitchenPage() {
           <div className="space-y-2 md:col-span-1">
             <Label>Page Size</Label>
             <Select value={String(pageSize)} onValueChange={(v) => { setPage(1); setPageSize(Number(v)); }}>
-              <SelectTrigger>
+              <SelectTrigger className="h-11">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -260,8 +243,7 @@ export default function AnalyticsKitchenPage() {
               </SelectContent>
             </Select>
           </div>
-        </CardContent>
-      </Card>
+      </ReportFilters>
 
       <Card className="border-border shadow-sm">
         <CardHeader className="pb-3">
@@ -329,7 +311,15 @@ export default function AnalyticsKitchenPage() {
         ) : null}
       </div>
 
-      <Card className="border-border shadow-sm overflow-hidden">
+      <Card className="overflow-hidden rounded-xl border-border shadow-sm">
+        <div className="md:hidden">
+          <DataList>
+            {loading && !data ? <div className="px-4 py-10 text-center text-sm text-muted-foreground"><Loader2 className="mr-2 inline h-4 w-4 animate-spin" />Loading...</div> : null}
+            {!loading && (data?.items?.length || 0) === 0 ? <div className="px-4 py-10 text-center text-sm text-muted-foreground">No results found for this range.</div> : null}
+            {(data?.items || []).map((item) => <ListRow key={item.item_id} title={item.item_name || "Unnamed item"} description={item.category || "Uncategorised"} value={<div className="text-right"><p className="font-semibold tabular-nums">{Number(item.avg_prep_time_min || 0).toFixed(1)} min</p><p className="text-xs text-muted-foreground">{Number(item.total_orders || 0).toLocaleString()} orders</p></div>} />)}
+          </DataList>
+        </div>
+        <div className="hidden md:block">
         <Table>
           <TableHeader className="bg-muted/30">
             <TableRow>
@@ -365,7 +355,8 @@ export default function AnalyticsKitchenPage() {
             )}
           </TableBody>
         </Table>
+        </div>
       </Card>
-    </div>
+    </AppPage>
   );
 }

@@ -61,10 +61,10 @@ export function TableGraphic({ tableName, capacity, status, currentGuests, class
               <path d="M14 8h4"/>
             </svg>
           </div>
-          <span className={cn("font-black text-2xl tracking-tight leading-none uppercase mb-1", colors.text)}>
+          <span title={tableName} className={cn("w-full overflow-hidden break-words px-1 text-center font-black text-[clamp(0.55rem,2.2vw,1.5rem)] leading-[0.95] uppercase [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2]", colors.text)}>
             {tableName}
           </span>
-          <span className={cn("font-bold text-sm opacity-90 leading-none", colors.text)}>
+          <span className={cn("font-bold text-[clamp(0.5rem,1.4vw,0.875rem)] opacity-90 leading-none", colors.text)}>
             {capacity}
           </span>
         </div>
@@ -81,8 +81,10 @@ export function TableGraphic({ tableName, capacity, status, currentGuests, class
   const left = allSeats.slice(perSide * 2, perSide * 3);
   const right = allSeats.slice(perSide * 3, perSide * 4);
 
+  const labelScale = Math.max(8, 60 / Math.max(tableName.length, 2));
+
   return (
-    <div className={cn("relative w-full h-full flex items-center justify-center", className)}>
+    <div className={cn("relative h-full w-full [container-type:size]", className)}>
       {/* Top chairs */}
       {top.length > 0 && (
         <div className="absolute top-0 left-0 right-0 flex justify-evenly">
@@ -103,7 +105,7 @@ export function TableGraphic({ tableName, capacity, status, currentGuests, class
 
       {/* Left chairs */}
       {left.length > 0 && (
-        <div className="absolute left-0 top-0 bottom-0 flex flex-col justify-evenly">
+        <div className="absolute bottom-0 left-0 top-0 flex flex-col justify-evenly">
           {left.map((occupied, i) => (
             <Chair key={`l-${i}`} occupied={occupied} rotate={-90} />
           ))}
@@ -112,7 +114,7 @@ export function TableGraphic({ tableName, capacity, status, currentGuests, class
 
       {/* Right chairs */}
       {right.length > 0 && (
-        <div className="absolute right-0 top-0 bottom-0 flex flex-col justify-evenly">
+        <div className="absolute bottom-0 right-0 top-0 flex flex-col justify-evenly">
           {right.map((occupied, i) => (
             <Chair key={`r-${i}`} occupied={occupied} rotate={90} />
           ))}
@@ -121,17 +123,23 @@ export function TableGraphic({ tableName, capacity, status, currentGuests, class
 
       <div
         className={cn(
-          "flex flex-col items-center justify-center rounded-lg border-2 p-1",
+          "absolute left-1/2 top-1/2 flex h-[55%] w-[60%] -translate-x-1/2 -translate-y-1/2 flex-col items-center justify-center overflow-hidden rounded-lg border-2 p-[3px]",
           colors.bg,
           colors.border,
           // Size: leave room for chairs on each side
-          "w-[60%] h-[55%]"
         )}
       >
-        <span className={cn("font-black text-lg leading-none mb-1", colors.text)}>
+        <span
+          title={tableName}
+          className={cn("block max-w-full whitespace-nowrap text-center font-extrabold leading-none", colors.text)}
+          style={{ fontSize: `min(18px, ${labelScale}cqw)` }}
+        >
           {tableName}
         </span>
-        <span className={cn("font-bold text-xs opacity-90 leading-none", colors.text)}>
+        <span
+          className={cn("mt-[3px] font-bold leading-none", colors.text)}
+          style={{ fontSize: "min(12px, 16cqw)" }}
+        >
           {capacity}
         </span>
       </div>
@@ -143,12 +151,12 @@ function Chair({ occupied, rotate = 0 }: { occupied: boolean; rotate?: number })
   // Matching Flutter: occupied = #E65D42 (orange-red), free = grey.300
   return (
     <svg
-      width="12"
-      height="12"
+      width="16"
+      height="16"
       viewBox="0 0 24 24"
       fill="none"
-      style={{ transform: `rotate(${rotate}deg)` }}
       className="shrink-0"
+      style={{ width: "clamp(8px, 14cqw, 16px)", height: "clamp(8px, 14cqw, 16px)", transform: `rotate(${rotate}deg)` }}
     >
       {/* Simple chair icon matching Flutter Icons.chair */}
       <rect x="5" y="3" width="14" height="10" rx="3" fill={occupied ? "#E65D42" : "#9ca3af"} />

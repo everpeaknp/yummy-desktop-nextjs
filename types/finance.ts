@@ -77,8 +77,12 @@ export type FinanceTransactionRow = {
   instrument_type?: string | null;
   instrument_name?: string | null;
   customer_id?: number | null;
+  customer_name?: string | null;
   supplier_id?: number | null;
+  supplier_name?: string | null;
   order_id?: number | null;
+  order_number?: number | null;
+  invoice_number?: string | null;
   metadata_json?: Record<string, unknown> | null;
 };
 

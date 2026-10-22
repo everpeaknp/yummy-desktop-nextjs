@@ -1,5 +1,7 @@
 "use client";
 
+import { useAuth } from "@/hooks/use-auth";
+import { hasPermission } from "@/lib/role-permissions";
 import { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -23,23 +25,17 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Loader2 } from "lucide-react";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { StationPicker } from "@/components/stations/station-picker";
 
 const formSchema = z.object({
   name: z.string().min(1, "Name is required"),
-  type: z.enum(["kitchen", "bar", "cafe"]),
+  station_id: z.number().optional(),
 });
 
 interface Category {
   id: number;
   name: string;
-  type: string;
+  station_id?: number | null;
 }
 
 interface CategoryDialogProps {
@@ -47,6 +43,7 @@ interface CategoryDialogProps {
   onOpenChange: (open: boolean) => void;
   onSubmit: (data: z.infer<typeof formSchema>) => Promise<void>;
   initialData?: Category | null;
+  restaurantId: number;
 }
 
 export function CategoryDialog({
@@ -54,12 +51,16 @@ export function CategoryDialog({
   onOpenChange,
   onSubmit,
   initialData,
+  restaurantId,
 }: CategoryDialogProps) {
+  const user = useAuth((state) => state.user);
+  const canManageStations = hasPermission(user, "inventory.stations.manage");
+  const canViewStations = canManageStations || hasPermission(user, "inventory.stations.view");
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
       name: "",
-      type: "kitchen",
+      station_id: undefined,
     },
   });
 
@@ -67,24 +68,28 @@ export function CategoryDialog({
     if (initialData) {
       form.reset({
         name: initialData.name,
-        type: initialData.type as any,
+        station_id: initialData.station_id ?? undefined,
       });
     } else {
       form.reset({
         name: "",
-        type: "kitchen",
+        station_id: undefined,
       });
     }
   }, [initialData, form, open]);
 
   const handleSubmit = async (values: z.infer<typeof formSchema>) => {
-    await onSubmit(values);
+    if (!initialData && (!canViewStations || values.station_id == null)) {
+      form.setError("station_id", { message: "Station access and selection are required to create a category." });
+      return;
+    }
+    await onSubmit(canViewStations ? values : { name: values.name });
     onOpenChange(false);
   };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[425px]">
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-[425px]">
         <DialogHeader>
           <DialogTitle>
             {initialData ? "Edit Category" : "Add Category"}
@@ -96,47 +101,63 @@ export function CategoryDialog({
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
-            <FormField
-              control={form.control}
-              name="name"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Name</FormLabel>
-                  <FormControl>
-                    <Input placeholder="e.g. Appetizers" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="type"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Type</FormLabel>
-                  <Select onValueChange={field.onChange} defaultValue={field.value} value={field.value}>
+          <form
+            onSubmit={form.handleSubmit(handleSubmit)}
+            className="space-y-5"
+          >
+            <div className="border-t pt-5">
+              <FormField
+                control={form.control}
+                name="name"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Name</FormLabel>
                     <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select category type" />
-                      </SelectTrigger>
+                      <Input placeholder="e.g. Appetizers" {...field} />
                     </FormControl>
-                    <SelectContent>
-                      <SelectItem value="kitchen">Kitchen</SelectItem>
-                      <SelectItem value="bar">Bar</SelectItem>
-                      <SelectItem value="cafe">Cafe</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              {canViewStations ? (
+              <FormField
+                control={form.control}
+                name="station_id"
+                render={({ field }) => (
+                  <FormItem>
+                    <StationPicker
+                      canManageStations={canManageStations}
+                      restaurantId={restaurantId}
+                      value={field.value ?? null}
+                      onChange={(stationId) =>
+                        field.onChange(stationId ?? undefined)
+                      }
+                      label="Station"
+                      placeholder="Select a station"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Routes items in this category to the selected preparation
+                      station.
+                    </p>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              ) : (
+                <p className="mt-4 text-xs text-muted-foreground">
+                  {initialData ? "Station assignment stays unchanged. Station access is required to change it." : "Station access is required to select a preparation station and create a category."}
+                </p>
               )}
-            />
+            </div>
             <DialogFooter>
-              <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => onOpenChange(false)}
+              >
                 Cancel
               </Button>
-              <Button type="submit" disabled={form.formState.isSubmitting}>
+              <Button type="submit" disabled={form.formState.isSubmitting || (!initialData && !canViewStations)}>
                 {form.formState.isSubmitting && (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 )}

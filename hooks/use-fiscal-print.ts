@@ -81,5 +81,15 @@ export function useFiscalPrint(document: FiscalDocument | null) {
     [document],
   );
 
-  return { print, printing, error, lastAuthorization };
+  const clearLastAuthorization = useCallback(() => {
+    setLastAuthorization(null);
+  }, []);
+
+  return {
+    print,
+    printing,
+    error,
+    lastAuthorization,
+    clearLastAuthorization,
+  };
 }

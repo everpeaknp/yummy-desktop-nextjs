@@ -300,7 +300,6 @@ test("accounting route group and planned components exist", () => {
     "app/(dashboard)/finance/accounting/vouchers/page.tsx",
     "app/(dashboard)/finance/accounting/vouchers/[id]/page.tsx",
     "app/(dashboard)/finance/accounting/day-closes/page.tsx",
-    "app/(dashboard)/finance/accounting/period-reports/page.tsx",
     "app/(dashboard)/finance/accounting/periods/page.tsx",
     "app/(dashboard)/finance/accounting/chart-of-accounts/page.tsx",
     "app/(dashboard)/finance/accounting/ledger-mapping/page.tsx",
@@ -381,7 +380,7 @@ test("role management exposes granular cash accounting presets", () => {
   }
 });
 
-test("accounting daybook UI exposes cash control and ledger sections", () => {
+test("accounting daybook redirects to the current finance report while its data contract remains available", () => {
   const endpoints = read("lib/api/endpoints.ts");
   assert.match(endpoints, /\bdaybook:/);
   assert.match(endpoints, /\/accounting\/daybook/);
@@ -402,19 +401,17 @@ test("accounting daybook UI exposes cash control and ledger sections", () => {
   assert.match(nav, /Daybook/);
 
   const page = read("app/(dashboard)/finance/accounting/daybook/page.tsx");
-  assert.match(page, /DaybookClient/);
+  assert.match(page, /redirect\("\/finance\/reports\/daybook"\)/);
 
   const source = read("components/finance/accounting/daybook-client.tsx");
   for (const token of [
     "DaybookClient",
     "AccountingApis.daybook",
-    "Cash Control",
+    "Cash detail",
     "Payment Instruments",
     "Transfers",
     "Ledger Impact",
     "Exceptions",
-    "opening_balance",
-    "closing_balance",
   ]) {
     assert.match(source, new RegExp(token));
   }
@@ -1005,7 +1002,6 @@ test("accounting navigation groups workflows for owner and accountant use", () =
     "Opening Balances",
     "Vouchers",
     "Day Closes",
-    "Period Reports",
     "Periods",
     "Settlements",
     "AR Aging",
@@ -1061,39 +1057,13 @@ test("accounting day-close review bridges operational close to ledger checks", (
   const nav = read("components/finance/accounting/accounting-nav.tsx");
   for (const token of [
     "/finance/accounting/day-closes",
-    "/finance/accounting/period-reports",
     "Day Closes",
-    "Period Reports",
   ]) {
     assert.match(nav, new RegExp(token));
   }
 
-  const globalSearch = read("components/layout/global-search.tsx");
-  for (const token of [
-    "/finance/accounting/day-closes",
-    "/finance/accounting/period-reports",
-    "Accounting Day Closes",
-    "Accounting Period Reports",
-  ]) {
-    assert.match(globalSearch, new RegExp(token));
-  }
-
   const page = read("app/(dashboard)/finance/accounting/day-closes/page.tsx");
   assert.match(page, /DayCloseReviewClient/);
-  const alias = read(
-    "app/(dashboard)/finance/accounting/period-reports/page.tsx",
-  );
-  assert.match(alias, /period-reports\/page/);
-
-  const periodReports = read("app/(dashboard)/period-reports/page.tsx");
-  for (const token of [
-    "Operational Period Reports",
-    "Ledger locking is controlled from Accounting Periods",
-    "Review operational report",
-    "Confirm operational period report",
-  ]) {
-    assert.match(periodReports, new RegExp(token));
-  }
 
   const client = read(
     "components/finance/accounting/day-close-review-client.tsx",

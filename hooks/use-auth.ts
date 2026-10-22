@@ -26,6 +26,9 @@ interface User {
   restaurant_id: number | null;
   permissions: string[];
   currency?: string;
+  photo_url?: string | null;
+  phone?: string | null;
+  avatar_url?: string | null;
 }
 
 interface AuthState {
@@ -117,7 +120,11 @@ export const useAuth = create<AuthState>()(
             if (res.data.status === 'success') {
               syncAuthFromRefreshResponse(res.data.data);
               const refreshed = get().user;
-              if (!Array.isArray(refreshed?.permissions) || refreshed.permissions.length === 0) {
+              if (
+                !Array.isArray(refreshed?.permissions) ||
+                refreshed.permissions.length === 0 ||
+                refreshed?.photo_url === undefined
+              ) {
                 await get().syncUserProfile();
               }
             }
@@ -162,6 +169,7 @@ export const useAuth = create<AuthState>()(
                 : current.restaurant_id,
               currency: p.currency ?? current.currency,
               permissions: Array.isArray(p.permissions) ? p.permissions : [],
+              photo_url: p.photo_url || current.photo_url || null,
             },
           });
         } catch (error) {
@@ -204,6 +212,9 @@ export const useAuth = create<AuthState>()(
                   (restored.restaurant_id != null ||
                     (restored.roles?.length ?? 0) > 0)
                 ) {
+                  if (restored.photo_url === undefined) {
+                    void get().syncUserProfile();
+                  }
                   return;
                 }
               }
@@ -252,6 +263,7 @@ export const useAuth = create<AuthState>()(
                       restaurant_id: p.restaurant_id,
                       currency: p.currency,
                       permissions: Array.isArray(p.permissions) ? p.permissions : [],
+                      photo_url: p.photo_url || null,
                     };
                     set({
                       user: mappedUser,

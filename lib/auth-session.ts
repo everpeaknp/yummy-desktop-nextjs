@@ -13,6 +13,7 @@ export interface RefreshSessionData {
   restaurant_id?: number | null;
   currency?: string;
   permissions?: string[];
+  photo_url?: string | null;
 }
 
 export function syncAuthFromRefreshResponse(data: RefreshSessionData): void {
@@ -22,6 +23,7 @@ export function syncAuthFromRefreshResponse(data: RefreshSessionData): void {
   const permissions = Array.isArray(data.permissions)
     ? data.permissions
     : currentUser?.permissions || [];
+  const photo_url = data.photo_url !== undefined ? data.photo_url : currentUser?.photo_url;
 
   useAuth.getState().setAuth(
     {
@@ -34,6 +36,7 @@ export function syncAuthFromRefreshResponse(data: RefreshSessionData): void {
       restaurant_id: data.restaurant_id ?? null,
       currency: data.currency,
       permissions,
+      photo_url,
     },
     data.access_token,
     data.refresh_token ?? useAuth.getState().refreshToken

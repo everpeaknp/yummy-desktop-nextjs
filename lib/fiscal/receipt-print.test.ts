@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
-  buildFiscalReceiptRawPayload,
   fiscalCopyDesignation,
+  fiscalDocumentNumberLabel,
   isFiscalCbmsPending,
 } from "./receipt-print";
-import type { FiscalDocument, PrintAuthorization } from "./types";
+import type { FiscalDocument } from "./types";
 
 const document: FiscalDocument = {
   id: 9,
@@ -48,28 +48,13 @@ describe("fiscal receipt print contract", () => {
     expect(fiscalCopyDesignation(0, "ORIGINAL")).toBe("ORIGINAL");
     expect(fiscalCopyDesignation(2, "COPY 2")).toBe("COPY 2");
     expect(fiscalCopyDesignation(2)).toBe("COPY 2");
+    expect(fiscalCopyDesignation()).toBe("PRINT PREVIEW");
   });
 
-  it("builds raw printer content only from the immutable fiscal document", () => {
-    const authorization: PrintAuthorization = {
-      authorization_id: 77,
-      authorization_token: "secret-token",
-      expires_at: "2026-07-24T03:00:00Z",
-      copy_number: 0,
-      designation: "ORIGINAL",
-      document,
-    };
-
-    const output = buildFiscalReceiptRawPayload(authorization);
-
-    expect(output).toContain("TAX INVOICE");
-    expect(output).toContain("TI-2083-000001");
-    expect(output).toContain("PAN: 123456789");
-    expect(output).toContain("Buyer PAN: 987654321");
-    expect(output).toContain("Taxable Amount: NPR 884.96");
-    expect(output).toContain("VAT: NPR 115.04");
-    expect(output).toContain("CBMS STATUS: PENDING");
-    expect(output).not.toContain("secret-token");
+  it("labels each legal document number by its fiscal document type", () => {
+    expect(fiscalDocumentNumberLabel("tax_invoice")).toBe("Invoice number");
+    expect(fiscalDocumentNumberLabel("credit_note")).toBe("Credit note number");
+    expect(fiscalDocumentNumberLabel("provisional_bill")).toBe("Bill number");
   });
 
   it("marks CBMS complete only when the immutable document says so", () => {

@@ -8,6 +8,25 @@ export const API_REQUEST_TIMEOUT_MS = 30_000;
 
 const getApiBaseUrl = () => {
   let envUrl = process.env.NEXT_PUBLIC_API_URL || 'https://api.yummyever.com';
+
+  // A LAN client must reach the backend running on the host machine, not its
+  // own localhost. Keep localhost for local browser development, but replace
+  // it with the current private-network host when the web app is opened by IP.
+  if (typeof window !== 'undefined') {
+    const browserHost = window.location.hostname;
+    const isLocalBrowser = browserHost === 'localhost' || browserHost === '127.0.0.1';
+    try {
+      const configuredUrl = new URL(envUrl);
+      const isLoopbackApi =
+        configuredUrl.hostname === 'localhost' || configuredUrl.hostname === '127.0.0.1';
+      if (!isLocalBrowser && isLoopbackApi) {
+        configuredUrl.hostname = browserHost;
+        envUrl = configuredUrl.toString().replace(/\/$/, '');
+      }
+    } catch {
+      // Keep the configured value; Axios will report an invalid API URL.
+    }
+  }
   
   // CRITICAL: Force HTTPS for production domain to prevent mixed content errors
   // If we're on app.yummyever.com, we MUST use HTTPS for the API

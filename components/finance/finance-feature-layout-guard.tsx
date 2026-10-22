@@ -4,7 +4,9 @@ import Link from "next/link";
 import { AlertTriangle, BookOpen, FileText, Loader2 } from "lucide-react";
 
 import { useRestaurant } from "@/hooks/use-restaurant";
+import { useEntitlement } from "@/hooks/use-subscription";
 import { type FinanceFeatureKey, isFinanceFeatureEnabled } from "@/lib/finance-feature-access";
+import { EntitlementGate } from "@/components/subscription/entitlement-gate";
 
 const featureCopy: Record<FinanceFeatureKey, { title: string; description: string; icon: typeof BookOpen }> = {
   reports: {
@@ -28,6 +30,10 @@ export function FinanceFeatureLayoutGuard({
 }) {
   const restaurant = useRestaurant((state) => state.restaurant);
   const loading = useRestaurant((state) => state.loading);
+  const planEntitlement = feature === "reports"
+    ? "finance.live_insights.enabled"
+    : "finance.accounting.enabled";
+  const planAccess = useEntitlement(planEntitlement, true);
 
   if (!restaurant && loading) {
     return (
@@ -35,6 +41,21 @@ export function FinanceFeatureLayoutGuard({
         <Loader2 className="h-7 w-7 animate-spin text-primary" />
       </div>
     );
+  }
+
+  if (planAccess.loading) {
+    return (
+      <div className="flex min-h-[50vh] items-center justify-center">
+        <Loader2 className="h-7 w-7 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  // A plan limitation always takes precedence over an operational flag. This
+  // keeps the message honest: only entitled restaurants see the support/setup
+  // state below.
+  if (!planAccess.allowed) {
+    return <EntitlementGate entitlement={planEntitlement} legacyFallback>{null}</EntitlementGate>;
   }
 
   if (isFinanceFeatureEnabled(restaurant, feature)) {
@@ -52,9 +73,9 @@ export function FinanceFeatureLayoutGuard({
         </div>
         <h1 className="text-2xl font-semibold text-foreground">{copy.title}</h1>
         <p className="mt-3 text-sm text-muted-foreground">{copy.description}</p>
-        <div className="mt-4 flex items-start gap-3 rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+        <div className="mt-4 flex items-start gap-3 rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-900 dark:text-amber-200">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-          <span>Ask a Yummy Admin to enable this module for the restaurant if it should be available.</span>
+          <span>Your plan includes this area, but it has not been activated for this restaurant yet. Contact Yummy support if you expect access.</span>
         </div>
         <div className="mt-6 flex flex-wrap gap-3">
           <Link

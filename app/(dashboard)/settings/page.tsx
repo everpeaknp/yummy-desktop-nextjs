@@ -1,5 +1,5 @@
-import { redirect } from "next/navigation";
+import { SettingsHub } from "@/components/settings/settings-hub";
 
 export default function SettingsPage() {
-  redirect("/manage/settings");
+  return <SettingsHub />;
 }

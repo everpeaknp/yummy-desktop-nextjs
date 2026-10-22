@@ -252,7 +252,7 @@ export function VatExportClient() {
             <div>
               <h1 className="text-2xl font-bold tracking-tight">VAT materialized export</h1>
               <p className="text-sm text-muted-foreground">
-                Validate Sales Book VAT against ledger VAT Summary before generating a CSV export.
+                Validate Sales report VAT against ledger VAT Summary before generating a CSV export.
               </p>
             </div>
           </div>
@@ -318,7 +318,7 @@ export function VatExportClient() {
       <div className="grid gap-4 md:grid-cols-4">
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-muted-foreground">Sales Book VAT</CardTitle>
+            <CardTitle className="text-sm text-muted-foreground">Sales report VAT</CardTitle>
           </CardHeader>
           <CardContent className="text-2xl font-bold">{formatMoney(latestRun?.sales_book_total ?? 0)}</CardContent>
         </Card>
@@ -358,7 +358,7 @@ export function VatExportClient() {
                   <div className="font-semibold">{error.code}</div>
                   <div className="text-muted-foreground">{error.message}</div>
                   <div className="mt-2 grid gap-2 md:grid-cols-3">
-                    <span>Sales Book VAT: {formatMoney(error.sales_book_total ?? 0)}</span>
+                    <span>Sales report VAT: {formatMoney(error.sales_book_total ?? 0)}</span>
                     <span>Ledger VAT Summary: {formatMoney(error.vat_summary_total ?? 0)}</span>
                     <span>Difference: {formatMoney(error.difference ?? 0)}</span>
                   </div>
@@ -380,7 +380,7 @@ export function VatExportClient() {
                 <TableHead>Run</TableHead>
                 <TableHead>Period</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead className="text-right">Sales Book VAT</TableHead>
+                <TableHead className="text-right">Sales report VAT</TableHead>
                 <TableHead className="text-right">Ledger VAT Summary</TableHead>
                 <TableHead className="text-right">Difference</TableHead>
                 <TableHead className="text-right">Rows</TableHead>

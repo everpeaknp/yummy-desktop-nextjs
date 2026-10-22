@@ -1,5 +1,5 @@
-import { DaybookClient } from "@/components/finance/accounting/daybook-client";
+import { redirect } from "next/navigation";
 
 export default function AccountingDaybookPage() {
-  return <DaybookClient />;
+  redirect("/finance/reports/daybook");
 }

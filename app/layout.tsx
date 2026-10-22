@@ -13,6 +13,10 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: "Yummy - Restaurant Management",
   description: "Next.js Admin Dashboard for Yummy",
+  icons: {
+    icon: [{ url: "/favicon.ico", sizes: "any" }],
+    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180" }],
+  },
 };
 
 import { Toaster } from "@/components/ui/toaster";

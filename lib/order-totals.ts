@@ -19,3 +19,21 @@ export function getRecordedOrderDiscount(order: {
 
   return Number(discount.toFixed(2));
 }
+
+export function getOrderDiscountLabel(order: {
+  growth_offer_id?: number | null;
+  growth_campaign_id?: number | null;
+  growth_offer_name?: string | null;
+  manual_discount_amount?: number | null;
+}): string {
+  const offerName = order.growth_offer_name?.trim();
+  if (offerName) {
+    // Some existing offer snapshots contain a repeated trailing "offer".
+    // Keep the actual offer name, but avoid presenting it twice to staff.
+    const displayName = offerName.replace(/(?:\s+offer){2,}\s*$/i, " offer");
+    return `Grow offer: ${displayName}`;
+  }
+  if (order.growth_offer_id || order.growth_campaign_id) return "Grow offer";
+  if (Number(order.manual_discount_amount || 0) > 0) return "Manual discount";
+  return "Discount";
+}

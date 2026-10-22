@@ -1,7 +1,25 @@
 import { useState } from "react";
 import { useTheme } from "next-themes";
-import { Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis, Legend } from "recharts";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Area,
+  AreaChart,
+  Bar,
+  BarChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+  Legend,
+} from "recharts";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { formatCompactCurrency, formatCurrency } from "@/lib/utils";
 
 interface RevenueChartProps {
   data: any[];
@@ -53,7 +71,11 @@ export function RevenueChart({
   const { theme } = useTheme();
   const [chartType, setChartType] = useState<"area" | "bar">("area");
 
-  const isHourly = !!(hourlyData && hourlyData.labels && hourlyData.labels.length > 0);
+  const isHourly = !!(
+    hourlyData &&
+    hourlyData.labels &&
+    hourlyData.labels.length > 0
+  );
 
   const chartData = isHourly
     ? hourlyData!.labels.map((label, idx) => ({
@@ -65,7 +87,8 @@ export function RevenueChart({
       ? data
       : [];
 
-  const chartTitle = title ?? (isHourly ? "Hourly Performance" : "Revenue Trend");
+  const chartTitle =
+    title ?? (isHourly ? "Hourly Performance" : "Revenue Trend");
   const chartDescription =
     description ??
     (isHourly
@@ -77,7 +100,9 @@ export function RevenueChart({
       <CardHeader className="flex flex-row items-center justify-between space-y-0 border-b border-black/[0.08] pb-4 dark:border-white/10">
         <div>
           <CardTitle className="dc-card-title">{chartTitle}</CardTitle>
-          <CardDescription className="text-xs text-muted-foreground">{chartDescription}</CardDescription>
+          <CardDescription className="text-xs text-muted-foreground">
+            {chartDescription}
+          </CardDescription>
         </div>
         <div className="flex rounded-xl border border-black/[0.08] bg-muted/50 p-1 text-xs dark:border-white/15">
           <button
@@ -106,32 +131,65 @@ export function RevenueChart({
         <div className="h-[300px] w-full min-w-0 shrink-0">
           {loading ? (
             <div className="h-full w-full flex items-center justify-center bg-muted/20 animate-pulse rounded-md">
-              <span className="text-muted-foreground text-sm">Loading chart...</span>
+              <span className="text-muted-foreground text-sm">
+                Loading chart...
+              </span>
             </div>
           ) : chartData.length > 0 ? (
-            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={240}>
+            <ResponsiveContainer
+              width="100%"
+              height="100%"
+              minWidth={0}
+              minHeight={240}
+            >
               {chartType === "area" ? (
                 <AreaChart data={chartData}>
                   <defs>
-                    <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
+                    <linearGradient
+                      id="colorRevenue"
+                      x1="0"
+                      y1="0"
+                      x2="0"
+                      y2="1"
+                    >
                       <stop offset="5%" stopColor="#f97316" stopOpacity={0.8} />
                       <stop offset="95%" stopColor="#f97316" stopOpacity={0} />
                     </linearGradient>
                     {isHourly && (
-                      <linearGradient id="colorOrders" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.8} />
-                        <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+                      <linearGradient
+                        id="colorOrders"
+                        x1="0"
+                        y1="0"
+                        x2="0"
+                        y2="1"
+                      >
+                        <stop
+                          offset="5%"
+                          stopColor="#3b82f6"
+                          stopOpacity={0.8}
+                        />
+                        <stop
+                          offset="95%"
+                          stopColor="#3b82f6"
+                          stopOpacity={0}
+                        />
                       </linearGradient>
                     )}
                   </defs>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={theme === "dark" ? "#333" : "#eee"} />
+                  <CartesianGrid
+                    strokeDasharray="3 3"
+                    vertical={false}
+                    stroke={theme === "dark" ? "#333" : "#eee"}
+                  />
                   <XAxis
                     dataKey="date"
                     stroke="#888888"
                     fontSize={12}
                     tickLine={false}
                     axisLine={false}
-                    tickFormatter={(value) => (isHourly ? value : formatChartLabel(value))}
+                    tickFormatter={(value) =>
+                      isHourly ? value : formatChartLabel(value)
+                    }
                   />
                   <YAxis
                     yAxisId="left"
@@ -139,9 +197,7 @@ export function RevenueChart({
                     fontSize={12}
                     tickLine={false}
                     axisLine={false}
-                    tickFormatter={(value) =>
-                      `Rs.${value >= 1000 ? (value / 1000).toFixed(1) + "k" : value}`
-                    }
+                    tickFormatter={(value) => formatCompactCurrency(value)}
                   />
                   {isHourly && (
                     <YAxis
@@ -162,10 +218,13 @@ export function RevenueChart({
                       boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
                     }}
                     formatter={(value: any, name: any) => {
-                      if (name === "revenue") return [`Rs. ${Number(value).toLocaleString()}`, "Revenue"];
+                      if (name === "revenue")
+                        return [formatCurrency(value), "Revenue"];
                       return [value, "Orders"];
                     }}
-                    labelFormatter={(label) => formatTooltipLabel(String(label), isHourly)}
+                    labelFormatter={(label) =>
+                      formatTooltipLabel(String(label), isHourly)
+                    }
                   />
                   <Area
                     yAxisId="left"
@@ -193,14 +252,20 @@ export function RevenueChart({
                 </AreaChart>
               ) : (
                 <BarChart data={chartData}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={theme === "dark" ? "#333" : "#eee"} />
+                  <CartesianGrid
+                    strokeDasharray="3 3"
+                    vertical={false}
+                    stroke={theme === "dark" ? "#333" : "#eee"}
+                  />
                   <XAxis
                     dataKey="date"
                     stroke="#888888"
                     fontSize={12}
                     tickLine={false}
                     axisLine={false}
-                    tickFormatter={(value) => (isHourly ? value : formatChartLabel(value))}
+                    tickFormatter={(value) =>
+                      isHourly ? value : formatChartLabel(value)
+                    }
                   />
                   <YAxis
                     yAxisId="left"
@@ -208,9 +273,7 @@ export function RevenueChart({
                     fontSize={12}
                     tickLine={false}
                     axisLine={false}
-                    tickFormatter={(value) =>
-                      `Rs.${value >= 1000 ? (value / 1000).toFixed(1) + "k" : value}`
-                    }
+                    tickFormatter={(value) => formatCompactCurrency(value)}
                   />
                   {isHourly && (
                     <YAxis
@@ -231,10 +294,13 @@ export function RevenueChart({
                       boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
                     }}
                     formatter={(value: any, name: any) => {
-                      if (name === "revenue") return [`Rs. ${Number(value).toLocaleString()}`, "Revenue"];
+                      if (name === "revenue")
+                        return [formatCurrency(value), "Revenue"];
                       return [value, "Orders"];
                     }}
-                    labelFormatter={(label) => formatTooltipLabel(String(label), isHourly)}
+                    labelFormatter={(label) =>
+                      formatTooltipLabel(String(label), isHourly)
+                    }
                   />
                   <Bar
                     yAxisId="left"

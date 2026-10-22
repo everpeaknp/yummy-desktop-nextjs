@@ -76,7 +76,7 @@ test("cashier day-close UI has drawer opening closing and operational status com
     "Settlement pending",
     "Expected cash",
     "Cash sales",
-    "Drops/transfers",
+    "Drops / transfers",
     "previous_retained_float",
     "Confirm and open",
     "Report different amount",
@@ -98,18 +98,23 @@ test("cashier day-close UI has drawer opening closing and operational status com
   for (const token of [
     "Cash Drawers",
     "DrawerSessionPanel",
-    "Safe to bank transfer",
-    "Total controlled cash",
-    "Cash in transit",
-    "AccountingApis.createCashTransfer",
-    "immediate_bank_deposit",
-    "pending_bank_deposit",
-    "confirm_bank_deposit",
-    "Checkout automatically uses the logged-in cashier's active drawer",
-    "/finance/accounting/daybook",
+    "Cash in drawers",
+    "Configure drawers",
+    "Active drawer",
+    "Checkout uses the logged-in cashier's active drawer",
+    "restaurant?.current_business_date",
+    "businessDate=",
+    "Operational business date unavailable",
+    "session.configuration_name || session.drawer_key",
+    "Business date",
+    "Opened:",
+    "Closed:",
   ]) {
     assertIncludes(cashDrawersPage, token);
   }
+
+  const restaurantHook = read("hooks/use-restaurant.ts");
+  assertIncludes(restaurantHook, "current_business_date?: string | null");
 
   const countDialog = read("components/day-close/drawer-count-dialog.tsx");
   for (const token of [
@@ -123,7 +128,7 @@ test("cashier day-close UI has drawer opening closing and operational status com
     "Submit corrected count",
     "recountMode",
     "isZeroCashSettlement",
-    "No cash to settle",
+    "There is no physical cash to allocate",
     "response?.data?.detail",
     "denominations",
     "DrawerSessionApis.closingPrompt",
@@ -131,48 +136,59 @@ test("cashier day-close UI has drawer opening closing and operational status com
     "DrawerSessionApis.settlementDecision",
     "finance.drawer.close.own",
     "finance.variance.approve",
-    "Settlement decision",
-    "Retained float",
-    "Pending bank deposit",
-    "Transfer to safe",
+    "Where should the counted cash go?",
+    "Available as the next opening float.",
+    "No transfers. All allocated cash stays in the drawer.",
+    "Deposit slip or transfer reference",
   ]) {
     assertIncludes(countDialog, token);
   }
 
-  assertIncludes(cashDrawersPage, "finance.cash.transfer.to_bank");
+  assertIncludes(countDialog, "finance.cash.transfer.to_bank");
 
   const status = read("components/day-close/operational-close-status.tsx");
   for (const token of [
     "OperationalCloseStatus",
     "Operational day closed",
-    "Accounting ready",
-    "Accounting review required",
-    "drawer",
+    "Finance check complete",
+    "Finance review required",
+    "Cash counted",
   ]) {
     assertIncludes(status, token);
   }
 });
 
-test("day-close modal and snapshot render drawer evidence without client finance recalculation", () => {
-  const modal = read("components/analytics/day-close-modal.tsx");
+test("day-close uses a centralized plain-language presentation contract", () => {
+  const presentation = read("lib/presentation/day-close.ts");
   for (const token of [
-    "OperationalCloseStatus",
-    "Cash drawer verification",
-    "/cash-drawers",
-    "operational confirmation",
-    "accounting review status",
+    "buildDayClosePresentation",
+    "DAY_CLOSE_TERMS",
+    "Activity included",
+    "Payments collected",
+    "Cash the system expects",
+    "Cash counted",
+    "Finance review required",
+    "Counted from cash drawers",
+    "Manually counted",
+    "Not counted",
+    "FIX_BLOCKERS",
+    "RESOLVE_CASH",
+    "CLOSE_DAY",
+    "VIEW_RESULT",
   ]) {
-    assertIncludes(modal, token);
+    assertIncludes(presentation, token);
   }
 
-  const snapshot = read("components/analytics/day-close-snapshot-panel.tsx");
+  const flow = read("components/day-close/day-close-flow.tsx");
   for (const token of [
-    "Drawer Evidence",
-    "opening count",
-    "closing count",
-    "retained float",
-    "Accounting Checks",
+    "buildDayClosePresentation",
+    "Review day",
+    "Confirm cash",
+    "Review close",
+    "Day closed",
+    "Cash the system expects",
   ]) {
-    assertIncludes(snapshot, token);
+    assertIncludes(flow, token);
   }
+  assert.ok(!exists("components/analytics/day-close-modal.tsx"));
 });

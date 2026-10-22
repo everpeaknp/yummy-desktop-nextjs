@@ -13,6 +13,8 @@ export interface TableData {
   current_guests?: number;
   pos_x: number;
   pos_y: number;
+  layout_width?: number;
+  layout_height?: number;
   table_type_id?: number;
   table_type_name?: string;
   active_order_ids?: number[];
@@ -29,6 +31,7 @@ interface RoomContainerProps {
   isLayoutMode?: boolean;
   onTableClick?: (table: TableData) => void;
   onTableDrop?: (tableId: number, posX: number, posY: number) => void;
+  onTableResize?: (tableId: number, width: number, height: number) => void;
   onHeightChanged?: (newHeight: number) => void;
   onAutoArrange?: (updates: Record<number, { posX: number; posY: number }>, newHeight: number) => void;
   selectedTableId?: number;
@@ -46,6 +49,7 @@ export function RoomContainer({
   isLayoutMode = false,
   onTableClick,
   onTableDrop,
+  onTableResize,
   onHeightChanged,
   onAutoArrange,
   selectedTableId,
@@ -129,6 +133,7 @@ export function RoomContainer({
             isLayoutMode={isLayoutMode}
             onTableClick={onTableClick}
             onTableDrop={onTableDrop}
+            onTableResize={onTableResize}
             selectedTableId={selectedTableId}
             selectedTableIds={selectedTableIds}
           />
@@ -160,6 +165,7 @@ function SpatialLayout({
   isLayoutMode,
   onTableClick,
   onTableDrop,
+  onTableResize,
   selectedTableId,
   selectedTableIds,
 }: {
@@ -170,6 +176,7 @@ function SpatialLayout({
   isLayoutMode?: boolean;
   onTableClick?: (table: TableData) => void;
   onTableDrop?: (tableId: number, posX: number, posY: number) => void;
+  onTableResize?: (tableId: number, width: number, height: number) => void;
   selectedTableId?: number;
   selectedTableIds?: number[];
 }) {
@@ -178,9 +185,30 @@ function SpatialLayout({
   const dragOffsetRef = useRef<{ ox: number; oy: number }>({ ox: 0, oy: 0 });
 
   const [zMap, setZMap] = useState<Record<number, number>>({});
+  const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
   const zCounter = useRef(1);
   const TABLE_WIDTH = compactView ? 12 : 15;
   const TABLE_HEIGHT = TABLE_WIDTH * 1.15;
+  const FLUTTER_DEFAULT_TABLE_WIDTH = 15;
+  const FLUTTER_MIN_DEFAULT_TABLE_WIDTH_PX = 70;
+  const FLUTTER_MAX_DEFAULT_TABLE_WIDTH_PX = 160;
+
+  // Flutter lays out a floor plan against its actual rendered canvas.  Keep
+  // the same coordinate system here instead of mixing percentage positions
+  // with CSS width clamps (which made the tables overlap on narrow phones).
+  useEffect(() => {
+    const node = containerRef.current;
+    if (!node) return;
+
+    const update = () => {
+      const rect = node.getBoundingClientRect();
+      setCanvasSize({ width: rect.width, height: rect.height });
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
 
   const bringToFront = useCallback((tableId: number) => {
     zCounter.current += 1;
@@ -220,8 +248,9 @@ function SpatialLayout({
 
     const minX = Math.min(...valid.map((t) => t.pos_x));
     const minY = Math.min(...valid.map((t) => t.pos_y));
-    const maxX = Math.max(...valid.map((t) => t.pos_x + TABLE_WIDTH));
-    const maxY = Math.max(...valid.map((t) => t.pos_y + TABLE_HEIGHT));
+    const maxX = Math.max(...valid.map((t) => t.pos_x + (t.layout_width ?? TABLE_WIDTH)));
+    const canvasRatio = Math.max(0.01, layoutHeight / BASELINE_WIDTH);
+    const maxY = Math.max(...valid.map((t) => t.pos_y + (t.layout_height ?? TABLE_HEIGHT) / canvasRatio));
 
     const rangeX = Math.max(1, maxX - minX);
     const rangeY = Math.max(1, maxY - minY);
@@ -259,6 +288,13 @@ function SpatialLayout({
       {tables.map((table) => {
         const rawLeftPct = table.pos_x ?? 0;
         const rawTopPct = table.pos_y ?? 0;
+        const tableWidth = table.layout_width ?? TABLE_WIDTH;
+        const tableHeight = table.layout_height ?? TABLE_HEIGHT;
+        // Match Flutter's responsive table footprint: a 15% layout table may
+        // never collapse below 70px on phones, while custom table dimensions
+        // scale proportionally around that baseline.
+        const minTableWidth = Math.max(36, (FLUTTER_MIN_DEFAULT_TABLE_WIDTH_PX * tableWidth) / FLUTTER_DEFAULT_TABLE_WIDTH);
+        const maxTableWidth = (FLUTTER_MAX_DEFAULT_TABLE_WIDTH_PX * tableWidth) / FLUTTER_DEFAULT_TABLE_WIDTH;
 
         const leftPct = fittedBounds
           ? 6 + ((rawLeftPct - fittedBounds.minX) / fittedBounds.rangeX) * 78
@@ -266,6 +302,37 @@ function SpatialLayout({
         const topPct = fittedBounds
           ? 6 + ((rawTopPct - fittedBounds.minY) / fittedBounds.rangeY) * 78
           : rawTopPct;
+
+        const canvasWidth = canvasSize.width;
+        const canvasHeight = canvasSize.height;
+        // Direct port of TablesScreen._buildSpatialLayout in the Flutter app.
+        // The baseline dimensions are retained for saved layouts, but every
+        // table gets a usable mobile footprint before its position is clamped.
+        const proposedDefaultWidth = Math.min(
+          FLUTTER_MAX_DEFAULT_TABLE_WIDTH_PX,
+          Math.max(FLUTTER_MIN_DEFAULT_TABLE_WIDTH_PX, canvasWidth * 0.15)
+        );
+        const defaultTableWidth = Math.max(
+          50,
+          Math.min(proposedDefaultWidth, Math.max(50, canvasWidth - 16))
+        );
+        const defaultTableHeight = defaultTableWidth * 1.15;
+        const resolvedWidth = canvasWidth
+          ? Math.min(
+              Math.max((defaultTableWidth * tableWidth) / FLUTTER_DEFAULT_TABLE_WIDTH, 36),
+              Math.max(36, canvasWidth - 16)
+            )
+          : 0;
+        const resolvedHeight = canvasWidth && canvasHeight
+          ? Math.min(
+              Math.max((defaultTableHeight * tableHeight) / TABLE_HEIGHT, 36),
+              Math.max(36, canvasHeight - 8)
+            )
+          : 0;
+        const requestedLeft = (leftPct / 100) * canvasWidth;
+        const requestedTop = (topPct / 100) * canvasHeight;
+        const resolvedLeft = Math.min(Math.max(requestedLeft, 0), Math.max(0, canvasWidth - resolvedWidth));
+        const resolvedTop = Math.min(Math.max(requestedTop, 0), Math.max(0, canvasHeight - resolvedHeight));
 
         return (
           <div
@@ -278,10 +345,13 @@ function SpatialLayout({
               (selectedTableId === table.id || selectedTableIds?.includes(table.id)) && "ring-4 ring-primary rounded-full shadow-lg"
             )}
             style={{
-              left: `${leftPct}%`,
-              top: `${topPct}%`,
-              width: `${TABLE_WIDTH}%`,
-              aspectRatio: "1 / 1.15",
+              left: canvasWidth ? `${resolvedLeft}px` : `${leftPct}%`,
+              top: canvasHeight ? `${resolvedTop}px` : `${topPct}%`,
+              width: canvasWidth
+                ? `${resolvedWidth}px`
+                : `clamp(${minTableWidth}px, ${tableWidth}%, ${maxTableWidth}px)`,
+              height: canvasHeight ? `${resolvedHeight}px` : undefined,
+              aspectRatio: canvasHeight ? undefined : `${tableWidth} / ${tableHeight}`,
               zIndex: zMap[table.id] ?? 0,
             }}
             draggable={isLayoutMode}
@@ -319,6 +389,36 @@ function SpatialLayout({
               currentGuests={table.current_guests}
               spaceKind={table.space_kind}
             />
+            {isLayoutMode && onTableResize ? (
+              <button
+                type="button"
+                draggable={false}
+                aria-label={`Resize ${table.table_name}`}
+                className="absolute bottom-0 right-0 h-5 w-5 cursor-nwse-resize rounded-md border border-orange-400 bg-card/95 shadow-sm"
+                onPointerDown={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  const startX = event.clientX;
+                  const startY = event.clientY;
+                  const startWidth = tableWidth;
+                  const startHeight = tableHeight;
+                  const bounds = containerRef.current?.getBoundingClientRect();
+                  if (!bounds) return;
+                  const move = (pointer: PointerEvent) => {
+                    const width = Math.max(6, Math.min(45, startWidth + ((pointer.clientX - startX) / bounds.width) * 100));
+                    const height = Math.max(6, Math.min(55, startHeight + ((pointer.clientY - startY) / bounds.width) * 100));
+                    onTableResize(table.id, width, height);
+                  };
+                  const stop = () => {
+                    window.removeEventListener("pointermove", move);
+                    window.removeEventListener("pointerup", stop);
+                  };
+                  window.addEventListener("pointermove", move);
+                  window.addEventListener("pointerup", stop, { once: true });
+                }}
+                onClick={(event) => event.stopPropagation()}
+              />
+            ) : null}
           </div>
         );
       })}

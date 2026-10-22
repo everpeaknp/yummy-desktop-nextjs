@@ -16,6 +16,7 @@ export function SessionBootstrap() {
   const hydrated = useAuthHydrated();
   const user = useAuth((s) => s.user);
   const token = useAuth((s) => s.token);
+  const isRedirecting = useAuth((s) => s.isRedirecting);
   const bootstrapSession = useAuth((s) => s.bootstrapSession);
   const logout = useAuth((s) => s.logout);
   const fetchRestaurant = useRestaurant((s) => s.fetchRestaurant);
@@ -56,13 +57,21 @@ export function SessionBootstrap() {
   useEffect(() => {
     if (!hydrated || !restoreDone) return;
     if (!hasSessionRestoreFinished() && hasStoredSession()) return;
-    if (!user || !token) return;
+    if (!user || !token || isRedirecting) return;
     if (!PUBLIC_PATHS.has(pathname)) return;
     if (redirectedRef.current) return;
 
     redirectedRef.current = true;
     router.replace(resolvePostLoginRoute(user));
-  }, [hydrated, restoreDone, user, token, pathname, router]);
+  }, [hydrated, restoreDone, user, token, isRedirecting, pathname, router]);
+
+  useEffect(() => {
+    // Interactive login owns its restaurant-aware redirect. Remember that
+    // ownership even after the short global loading overlay clears itself.
+    if (isRedirecting && user && token && PUBLIC_PATHS.has(pathname)) {
+      redirectedRef.current = true;
+    }
+  }, [isRedirecting, user, token, pathname]);
 
   return null;
 }
