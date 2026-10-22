@@ -94,10 +94,6 @@ function isPopupBlockedError(err: unknown): boolean {
 export async function signInWithGoogle(): Promise<string | null> {
   const provider = buildGoogleProvider();
 
-  if (shouldUseGoogleRedirect()) {
-    return signInWithGoogleRedirect(provider);
-  }
-
   try {
     const result = await signInWithPopup(auth, provider);
     return result.user.getIdToken(true);

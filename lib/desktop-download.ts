@@ -11,7 +11,7 @@ export const DESKTOP_APP_RELEASES_URL =
  * Override via NEXT_PUBLIC_DESKTOP_RELEASE_TAG when pinning a release.
  */
 export const DESKTOP_RELEASE_TAG =
-  process.env.NEXT_PUBLIC_DESKTOP_RELEASE_TAG ?? "v0.1.5";
+  process.env.NEXT_PUBLIC_DESKTOP_RELEASE_TAG ?? "v0.1.6";
 
 /**
  * Version in Yummy.POS.Setup.{version}.exe (from package.json at build time).
