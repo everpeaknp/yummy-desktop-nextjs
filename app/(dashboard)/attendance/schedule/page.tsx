@@ -36,6 +36,14 @@ function errorMessage(error: unknown, fallback: string) {
   return error instanceof Error && error.message ? error.message : fallback;
 }
 
+async function loadPart<T>(name: string, request: Promise<T>): Promise<T> {
+  try {
+    return await request;
+  } catch (error) {
+    throw new Error(`${name}: ${errorMessage(error, "Request failed")}`);
+  }
+}
+
 type TemplateForm = { id: number | null; name: string; start_local_time: string; end_local_time: string; unpaid_break_minutes: string };
 const emptyTemplate = (): TemplateForm => ({ id: null, name: "", start_local_time: "09:00", end_local_time: "17:00", unpaid_break_minutes: "0" });
 
@@ -61,9 +69,9 @@ export default function TeamSchedule() {
     setLoading(true);
     try {
       const [team, shifts, audit] = await Promise.all([
-        attendanceApi.teamSchedule(week),
-        attendanceApi.listShiftTemplates(),
-        attendanceApi.listScheduleAudit(),
+        loadPart("Team schedule", attendanceApi.teamSchedule(week)),
+        loadPart("Shift templates", attendanceApi.listShiftTemplates()),
+        loadPart("Schedule history", attendanceApi.listScheduleAudit()),
       ]);
       setRows(team);
       setTemplates(shifts.filter((item) => item.is_active));

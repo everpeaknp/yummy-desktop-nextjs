@@ -15,12 +15,8 @@ const HOP_BY_HOP_HEADERS = new Set([
 ]);
 
 function getAttendanceBaseUrl() {
-  const configured = process.env.ATTENDANCE_API_URL;
-  if (configured) return configured.replace(/\/+$/, "");
-  if (process.env.NODE_ENV === "production") {
-    throw new Error("ATTENDANCE_API_URL is required in production");
-  }
-  return "http://127.0.0.1:8002";
+  return (process.env.BACKEND_API_URL || process.env.NEXT_PUBLIC_API_URL ||
+    "https://api.yummyever.com").replace(/\/+$/, "");
 }
 
 async function handler(
