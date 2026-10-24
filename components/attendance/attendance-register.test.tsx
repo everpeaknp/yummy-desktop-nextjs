@@ -52,6 +52,32 @@ describe("AttendanceRegister", () => {
     expect(screen.queryByRole("button", { name: "Export CSV" })).not.toBeInTheDocument();
     expect(attendanceApi.register).toHaveBeenCalledWith(expect.objectContaining({ own: true }));
   });
+  it("shows separate QR devices in an individual record", async () => {
+    vi.mocked(attendanceApi.register).mockResolvedValue({
+      ...report,
+      rows: [{ ...report.rows[0], days: [{
+        ...report.rows[0].days[0],
+        entries: [{ ...report.rows[0].days[0].entries[0], source: "qr_mobile",
+          clock_in_device_name: "Front desk phone (#4)",
+          clock_out_device_name: "Kitchen phone (#9)" }],
+      }] }],
+    });
+    render(<AttendanceRegister own />);
+    fireEvent.click(await screen.findByRole("button", { name: /Niraj.*20/ }));
+    expect(screen.getByText(/Clock-in device: Front desk phone \(#4\).*Clock-out device: Kitchen phone \(#9\)/)).toBeInTheDocument();
+  });
+  it("labels missing evidence without implying a completed clock-out", async () => {
+    vi.mocked(attendanceApi.register).mockResolvedValue({
+      ...report,
+      rows: [{ ...report.rows[0], days: [{
+        ...report.rows[0].days[0],
+        entries: [{ ...report.rows[0].days[0].entries[0], source: "qr_mobile", clock_out_at: null }],
+      }] }],
+    });
+    render(<AttendanceRegister own />);
+    fireEvent.click(await screen.findByRole("button", { name: /Niraj.*20/ }));
+    expect(screen.getByText(/Clock-in device: Device unavailable.*Clock-out device: Awaiting clock-out/)).toBeInTheDocument();
+  });
   it("shows failure instead of empty results and supports retry", async () => {
     vi.mocked(attendanceApi.register).mockRejectedValueOnce(new Error("offline"));
     render(<AttendanceRegister />);

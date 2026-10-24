@@ -12,7 +12,7 @@ export type RegisterDay = {
   regular_minutes: number; overtime_minutes: number; eligible_regular_minutes: number; eligible_overtime_minutes: number;
   break_minutes: number; late_minutes: number; early_minutes: number; review_count: number; excluded_count: number;
   paid_leave_days: number; unpaid_leave_days: number; holiday: string | null;
-  entries: { id: number; clock_in_at: string; clock_out_at: string | null; approval_status: string; exception_code: string | null; regular_minutes: number; overtime_minutes: number }[];
+  entries: { id: number; clock_in_at: string; clock_out_at: string | null; source?: "qr_mobile" | "biometric_device" | "manual_adjustment" | null; clock_in_device_name?: string | null; clock_out_device_name?: string | null; approval_status: string; exception_code: string | null; regular_minutes: number; overtime_minutes: number }[];
 };
 export type RegisterStaff = { staff_id: number; user_id: number; staff_name: string; summary: Record<string, number>; days: RegisterDay[] };
 export type AttendanceRegister = { date_from: string; date_to: string; timezone: string; as_of: string; rows: RegisterStaff[] };

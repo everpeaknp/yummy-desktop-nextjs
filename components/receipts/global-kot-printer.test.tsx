@@ -47,6 +47,20 @@ describe("KOT claim requires a usable local print bridge", () => {
     expect(mocks.post.mock.invocationCallOrder[0]).toBeLessThan(printNetworkRaw.mock.invocationCallOrder[0]);
   });
 
+  it("claims the print event shared with Flutter before printing", async () => {
+    const printNetworkRaw = vi.fn().mockResolvedValue({ success: true });
+    (window as any).electronAPI = { printNetworkRaw };
+    render(<GlobalKotPrinter />);
+    await act(async () => window.dispatchEvent(new CustomEvent("yummy:kot-print", {
+      detail: { ...ticket, print_event_id: 27 },
+    })));
+    await waitFor(() => expect(printNetworkRaw).toHaveBeenCalledTimes(1));
+    expect(mocks.post).toHaveBeenCalledWith("/kots/print-events/27/mark-printed");
+    const payloadCall = mocks.get.mock.calls.findIndex(([url]) => url === "/kots/45079/print-payload");
+    expect(payloadCall).toBeGreaterThanOrEqual(0);
+    expect(mocks.get.mock.invocationCallOrder[payloadCall]).toBeLessThan(mocks.post.mock.invocationCallOrder[0]);
+  });
+
   it("does not claim a non-network printer without a silent print bridge", async () => {
     (window as any).electronAPI = { printNetworkRaw: vi.fn() };
     render(<GlobalKotPrinter />);

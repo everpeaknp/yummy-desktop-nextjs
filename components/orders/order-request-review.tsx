@@ -28,8 +28,20 @@ export function OrderRequestReview({ order, canApprove, canReject, onResolved, e
         setError("This request has already changed. The order list has been refreshed.");
         setResolved(true); setDecision(null); await onResolved(); return;
       }
-      if (decision === "approve") await apiClient.patch(OrderApis.updateOrderStatus(order.id), { status: "pending" });
-      else await apiClient.post(OrderApis.cancelOrder(order.id), { reason: "Customer food request rejected by staff" });
+      if (decision === "approve") {
+        const accepted = await apiClient.patch(OrderApis.updateOrderStatus(order.id), { status: "pending" });
+        const acceptedOrderId = accepted.data?.data?.id || order.id;
+        try {
+          const response = await apiClient.get(`/kots/orders/${acceptedOrderId}`);
+          for (const kot of response.data?.data || []) {
+            if (kot.print_event_id && kot.should_auto_print && !kot.auto_printed_at) {
+              window.dispatchEvent(new CustomEvent("yummy:kot-print", { detail: kot }));
+            }
+          }
+        } catch (printError) {
+          console.error("Could not load accepted order KOTs for printing", printError);
+        }
+      } else await apiClient.post(OrderApis.cancelOrder(order.id), { reason: "Customer food request rejected by staff" });
       setResolved(true); setDecision(null); await onResolved();
     } catch (e: any) {
       const detail = e.response?.data?.detail;

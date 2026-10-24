@@ -621,13 +621,29 @@ export function GlobalKotPrinter() {
       if (!(isNetworkPrinter && typeof winAny.electronAPI.printNetworkRaw === "function")
         && typeof winAny.electronAPI.printSilent !== "function") return;
 
+      // Render before the claim removes this event from the pending lookup.
+      let payloadBase64: string | null = null;
+      if (isNetworkPrinter && winAny.electronAPI.printNetworkRaw) {
+        try {
+          const payloadRes = await apiClient.get(`/kots/${kotId}/print-payload`);
+          payloadBase64 = payloadRes.data?.data?.payload_base64 || null;
+        } catch (renderError) {
+          console.warn(
+            "[GlobalKotPrinter] Canonical render failed; using compatibility renderer:",
+            renderError,
+          );
+        }
+      }
+
       // ── Atomic Backend Claim (prevents Flutter + Electron double printing) ──
       // FAIL-OPEN: only skip if backend EXPLICITLY returns false (another device claimed it).
       // On network errors or timeouts → still print (don't block on backend unavailability).
       if (kotId) {
         try {
           const claimRes = await apiClient.post(
-            `/kots/${kotId}/mark-auto-printed`,
+            dataKot.print_event_id
+              ? `/kots/print-events/${dataKot.print_event_id}/mark-printed`
+              : `/kots/${kotId}/mark-auto-printed`,
           );
           const claimed = claimRes.data?.data;
           if (claimed === false) {
@@ -659,18 +675,6 @@ export function GlobalKotPrinter() {
       if (isNetworkPrinter && winAny.electronAPI.printNetworkRaw) {
         const host = String(assignedPrinter.address || "").trim();
         const port = Number(assignedPrinter.connection_config?.port || 9100);
-        let payloadBase64: string | null = null;
-        try {
-          const payloadRes = await apiClient.get(
-            `/kots/${kotId}/print-payload`,
-          );
-          payloadBase64 = payloadRes.data?.data?.payload_base64 || null;
-        } catch (renderError) {
-          console.warn(
-            "[GlobalKotPrinter] Canonical render failed; using compatibility renderer:",
-            renderError,
-          );
-        }
         const globalSettings = template.find(
           (block: any) => block?.type === "global_settings",
         );

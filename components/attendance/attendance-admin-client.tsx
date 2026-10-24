@@ -93,6 +93,7 @@ import LocationPicker from "@/components/manage/profile/location-picker";
 import { forwardGeocode, reverseGeocode } from "@/lib/geocode";
 import { attendanceRadiusLabel } from "./attendance-policy";
 import { AttendanceRegister } from "./attendance-register";
+import { QrPunchDevices } from "./qr-punch-devices";
 import TeamSchedule from "@/app/(dashboard)/attendance/schedule/page";
 import {
   attendanceApprovalLabel,
@@ -3267,6 +3268,7 @@ function TimesheetTable({
                       {formatDateTime(entry.clock_in_at)} to{" "}
                       {formatDateTime(entry.clock_out_at)}
                     </p>
+                    <QrPunchDevices entry={entry} />
                   </div>
                   <Badge
                     variant={
@@ -3383,6 +3385,7 @@ function TimesheetTable({
                     <TableCell className="min-w-[220px] text-sm">
                       {formatDateTime(entry.clock_in_at)} to{" "}
                       {formatDateTime(entry.clock_out_at)}
+                      <QrPunchDevices entry={entry} />
                     </TableCell>
                     <TableCell className="min-w-[220px] text-sm">
                       <div>

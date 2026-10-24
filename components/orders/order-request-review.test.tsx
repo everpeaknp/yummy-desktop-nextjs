@@ -5,7 +5,13 @@ import { OrderRequestReview } from "./order-request-review";
 
 vi.mock("@/lib/api-client", () => ({ default: { get: vi.fn(), patch: vi.fn(), post: vi.fn() } }));
 const order = { id: 58, table_name: "g", customer_name: "Everacy", grand_total: 10, items: [{ id: 1, name_snapshot: "Coke", qty: 1 }] };
-beforeEach(() => { vi.clearAllMocks(); vi.mocked(apiClient.get).mockResolvedValue({ data: { data: { status: "requested" } } }); });
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.mocked(apiClient.patch).mockResolvedValue({ data: { data: { id: order.id } } });
+  vi.mocked(apiClient.get).mockImplementation(async (url) => ({
+    data: { data: String(url).startsWith("/kots/orders/") ? [] : { status: "requested" } },
+  }));
+});
 afterEach(cleanup);
 
 it("requires confirmation and accepts a food request through the existing approval API", async () => {
@@ -17,6 +23,28 @@ it("requires confirmation and accepts a food request through the existing approv
   fireEvent.click(screen.getByRole("button", { name: "Confirm acceptance" }));
   await waitFor(() => expect(apiClient.patch).toHaveBeenCalledWith("/orders/58/status", { status: "pending" }));
   await waitFor(() => expect(refreshed).toHaveBeenCalledTimes(1));
+});
+it("sends only pending KOT print events from the resolved order to the printer", async () => {
+  vi.mocked(apiClient.patch).mockResolvedValue({ data: { data: { id: 91 } } });
+  vi.mocked(apiClient.get).mockImplementation(async (url) => ({
+    data: { data: String(url).startsWith("/kots/orders/") ? [
+      { id: 1, print_event_id: 11, should_auto_print: true, auto_printed_at: null },
+      { id: 2, print_event_id: 12, should_auto_print: true, auto_printed_at: "2026-01-01" },
+      { id: 3, should_auto_print: true, auto_printed_at: null },
+    ] : { status: "requested" } },
+  }));
+  const onPrint = vi.fn();
+  window.addEventListener("yummy:kot-print", onPrint);
+  try {
+    render(<OrderRequestReview order={order} canApprove canReject onResolved={vi.fn().mockResolvedValue(undefined)} />);
+    fireEvent.click(screen.getByRole("button", { name: "Accept request" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm acceptance" }));
+    await waitFor(() => expect(apiClient.get).toHaveBeenCalledWith("/kots/orders/91"));
+    expect(onPrint).toHaveBeenCalledTimes(1);
+    expect((onPrint.mock.calls[0][0] as CustomEvent).detail.id).toBe(1);
+  } finally {
+    window.removeEventListener("yummy:kot-print", onPrint);
+  }
 });
 it("rejects only the selected request", async () => {
   render(<OrderRequestReview order={order} canApprove canReject onResolved={vi.fn().mockResolvedValue(undefined)} />);

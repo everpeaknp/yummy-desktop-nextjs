@@ -50,6 +50,8 @@ export type AttendanceEntry = {
   source: AttendanceSource;
   status: AttendanceStatus;
   device_id: number | null;
+  clock_in_device_name?: string | null;
+  clock_out_device_name?: string | null;
   qr_session_id: number | null;
   scheduled_start_at: string | null;
   scheduled_end_at: string | null;

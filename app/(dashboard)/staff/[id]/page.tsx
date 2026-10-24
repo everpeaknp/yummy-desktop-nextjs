@@ -1,5 +1,6 @@
 "use client";
 import { AttendanceRegister } from "@/components/attendance/attendance-register";
+import { QrPunchDevices } from "@/components/attendance/qr-punch-devices";
 import { PayrollPeriodReview } from "@/components/attendance/payroll-period-review";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -2251,6 +2252,7 @@ function AttendanceList({
                   ? ` • ${attendanceExceptionLabel(entry.exception_code)}`
                   : ""}
               </p>
+              <QrPunchDevices entry={entry} />
             </div>
             {canManage && !compact ? (
               <div className="flex shrink-0 flex-wrap gap-1">
