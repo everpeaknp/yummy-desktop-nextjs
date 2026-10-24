@@ -14,8 +14,8 @@ export function QrPunchDevices({ entry }: QrPunchDevicesProps) {
 
   return (
     <p className="mt-1 break-words text-xs text-muted-foreground">
-      Clock-in device: {entry.clock_in_device_name || "Device unavailable"} ·{" "}
-      Clock-out device: {entry.clock_out_device_name || (entry.clock_out_at ? "Device unavailable" : "Awaiting clock-out")}
+      Clock-in device: {entry.clock_in_device_name || "Device not recorded"} ·{" "}
+      Clock-out device: {entry.clock_out_device_name || (entry.clock_out_at ? "Device not recorded" : "Awaiting clock-out")}
     </p>
   );
 }

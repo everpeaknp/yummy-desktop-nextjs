@@ -76,7 +76,7 @@ describe("AttendanceRegister", () => {
     });
     render(<AttendanceRegister own />);
     fireEvent.click(await screen.findByRole("button", { name: /Niraj.*20/ }));
-    expect(screen.getByText(/Clock-in device: Device unavailable.*Clock-out device: Awaiting clock-out/)).toBeInTheDocument();
+    expect(screen.getByText(/Clock-in device: Device not recorded.*Clock-out device: Awaiting clock-out/)).toBeInTheDocument();
   });
   it("shows failure instead of empty results and supports retry", async () => {
     vi.mocked(attendanceApi.register).mockRejectedValueOnce(new Error("offline"));
