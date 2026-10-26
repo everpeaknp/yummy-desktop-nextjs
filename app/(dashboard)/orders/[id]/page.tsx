@@ -118,6 +118,7 @@ import { usePosBillingPermissions } from "@/hooks/use-pos-billing-permissions";
 import { getOrderDiscountLabel, getRecordedOrderDiscount } from "@/lib/order-totals";
 import { KotEmbeddedTicketCard, KotTicketDetail, type KitchenTicket, type KotActivityEntry } from "@/components/kitchen/kot-ticket-card";
 import { KotTicketItems } from "@/components/kitchen/kot-ticket-items";
+import { KotSavedPrintEvents } from "@/components/receipts/kot-saved-print-events";
 import { SalesDocumentDetailSheet } from "@/components/finance/transaction-detail/sales-document-detail-sheet";
 import { useMobileAppBarTitle } from "@/components/layout/mobile-app-bar-title";
 
@@ -1417,7 +1418,7 @@ function DetailsTab({
   const [selectedItemNc, setSelectedItemNc] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
 
-  const displayItems = order.items;
+  const displayItems = order.items.filter((item) => Number(item.qty) > 0);
 
   const handleApplyItemUpdate = useCallback(
     async (itemId: number, patch: { qty?: number; is_nc?: boolean }) => {
@@ -1495,7 +1496,7 @@ function DetailsTab({
               <span className="text-sm font-semibold">{order.status === "requested" ? "Items awaiting approval" : "Accepted items"}</span>
             </div>
             <Badge variant="secondary" className="text-xs font-medium">
-              {displayItems.length} items
+              {displayItems.length} {displayItems.length === 1 ? "item" : "items"}
             </Badge>
           </div>
 
@@ -1532,7 +1533,7 @@ function DetailsTab({
                 >
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-foreground">
+                      <p className="break-words text-sm font-semibold text-foreground">
                         {item.name_snapshot}
                       </p>
                       {item.category_name_snapshot && (
@@ -1559,7 +1560,7 @@ function DetailsTab({
                         </div>
                       )}
                       {item.notes && (
-                        <p className="text-xs text-muted-foreground italic mt-1.5">
+                        <p className="mt-1.5 break-words text-xs italic text-muted-foreground">
                           📝 {item.notes}
                         </p>
                       )}
@@ -1971,6 +1972,7 @@ function KOTsTab({
     <Dialog open={selectedKotId !== null} onOpenChange={(open) => { if (!open) { setSelectedKotId(null); setDetailTicket(null); setActivity([]); } }}>
       {detail ? <KotTicketDetail
         ticket={detail}
+        printEvents={<KotSavedPrintEvents kotId={detail.id} />}
         activity={activity}
         activityLoading={activityLoading}
         activityAction={detailError ? <p role="status" className="text-xs text-destructive">{detailError}</p> : null}

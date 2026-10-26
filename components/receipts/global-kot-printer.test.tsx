@@ -3,80 +3,94 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }));
 vi.mock("@/lib/api-client", () => ({ default: mocks }));
-vi.mock("@/hooks/use-restaurant", () => ({ useRestaurant: { getState: () => ({ restaurant: { id: 52 } }) } }));
 import { GlobalKotPrinter } from "./global-kot-printer";
+import { printKotEvent } from "@/lib/kot-print-event";
 
-const ticket = {
-  id: 45079, restaurant_id: 52, station: "bar", order: { id: 10 },
-  items: [{ id: 1, item_name: "Test drink", quantity: 1 }],
-  printer_config: { name: "Test printer", address: "127.0.0.1", printer_type: "network" },
-};
+const slip = { id: 27, action: "ITEM_CANCEL", created_at: "2026-10-26T02:44:00Z", printed_at: null,
+  items: [{ name: "Sprite", qty: 1 }] };
+const ticket = { kot_id: 45079, station: "bar" };
+
 function dispatchTicket() {
   window.dispatchEvent(new CustomEvent("yummy:kot-print", { detail: ticket }));
 }
 
-describe("KOT claim requires a usable local print bridge", () => {
+describe("saved KOT print events", () => {
   beforeEach(() => {
     delete (window as any).electronAPI;
-    mocks.get.mockReset().mockResolvedValue({ data: { data: { kot_template: [] } } });
-    mocks.post.mockReset().mockResolvedValue({ data: { data: true } });
+    localStorage.clear();
+    mocks.get.mockReset().mockImplementation((url: string) => {
+      if (url.endsWith("/print-events")) return Promise.resolve({ data: { data: [slip] } });
+      if (url.endsWith("/print-payload")) return Promise.resolve({ data: { data: {
+        payload_base64: "AAE=", printer_config: { address: "127.0.0.1", connection_config: { port: 9100 } },
+      } } });
+      throw new Error(`Unexpected GET ${url}`);
+    });
+    mocks.post.mockReset().mockImplementation((url: string) => Promise.resolve({ data: { data:
+      url.endsWith("/claim") ? { claimed: true, claim_token: "lease" } : true,
+    } }));
   });
   afterEach(() => { cleanup(); delete (window as any).electronAPI; });
 
-  it("does not claim a KOT in a regular browser", async () => {
+  it("leaves the slip pending in a regular browser", async () => {
     render(<GlobalKotPrinter />);
     await act(async () => dispatchTicket());
-    expect(mocks.post).not.toHaveBeenCalled();
     expect(mocks.get).not.toHaveBeenCalled();
-  });
-
-  it("does not claim a KOT with an incomplete Electron bridge", async () => {
-    (window as any).electronAPI = {};
-    render(<GlobalKotPrinter />);
-    await act(async () => dispatchTicket());
     expect(mocks.post).not.toHaveBeenCalled();
   });
 
-  it("claims before printing when a network print bridge is available", async () => {
+  it("prints the exact cancellation before recording it as sent", async () => {
     const printNetworkRaw = vi.fn().mockResolvedValue({ success: true });
     (window as any).electronAPI = { printNetworkRaw };
     render(<GlobalKotPrinter />);
     await act(async () => dispatchTicket());
-    await waitFor(() => expect(printNetworkRaw).toHaveBeenCalledTimes(1));
-    expect(mocks.post).toHaveBeenCalledWith("/kots/45079/mark-auto-printed");
-    expect(mocks.post.mock.invocationCallOrder[0]).toBeLessThan(printNetworkRaw.mock.invocationCallOrder[0]);
+    await waitFor(() => expect(mocks.post).toHaveBeenCalledWith("/kots/print-events/27/sent", { claim_token: "lease" }));
+    expect(mocks.get).toHaveBeenCalledWith("/kots/45079/print-payload", { params: { print_event_id: 27 } });
+    expect(printNetworkRaw).toHaveBeenCalledWith({ host: "127.0.0.1", port: 9100, payloadBase64: "AAE=" });
+    const claim = mocks.post.mock.invocationCallOrder[0];
+    const send = printNetworkRaw.mock.invocationCallOrder[0];
+    const confirm = mocks.post.mock.invocationCallOrder[1];
+    expect(claim).toBeLessThan(send);
+    expect(send).toBeLessThan(confirm);
   });
 
-  it("claims the print event shared with Flutter before printing", async () => {
-    const printNetworkRaw = vi.fn().mockResolvedValue({ success: true });
+  it("releases the pending slip when Electron reports a failed send", async () => {
+    const printNetworkRaw = vi.fn().mockResolvedValue({ success: false, message: "offline" });
     (window as any).electronAPI = { printNetworkRaw };
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
     render(<GlobalKotPrinter />);
-    await act(async () => window.dispatchEvent(new CustomEvent("yummy:kot-print", {
-      detail: { ...ticket, print_event_id: 27 },
-    })));
-    await waitFor(() => expect(printNetworkRaw).toHaveBeenCalledTimes(1));
-    expect(mocks.post).toHaveBeenCalledWith("/kots/print-events/27/mark-printed");
-    const payloadCall = mocks.get.mock.calls.findIndex(([url]) => url === "/kots/45079/print-payload");
-    expect(payloadCall).toBeGreaterThanOrEqual(0);
-    expect(mocks.get.mock.invocationCallOrder[payloadCall]).toBeLessThan(mocks.post.mock.invocationCallOrder[0]);
+    await act(async () => dispatchTicket());
+    await waitFor(() => expect(mocks.post).toHaveBeenCalledWith("/kots/print-events/27/release", { claim_token: "lease" }));
+    expect(mocks.post).not.toHaveBeenCalledWith("/kots/print-events/27/sent", expect.anything());
+    error.mockRestore();
   });
 
-  it("does not claim a non-network printer without a silent print bridge", async () => {
-    (window as any).electronAPI = { printNetworkRaw: vi.fn() };
-    render(<GlobalKotPrinter />);
-    await act(async () => window.dispatchEvent(new CustomEvent("yummy:kot-print", {
-      detail: { ...ticket, printer_config: { name: "USB printer", address: "USB", printer_type: "usb" } },
-    })));
-    expect(mocks.post).not.toHaveBeenCalled();
-  });
-
-  it("does not print when another terminal already claimed the KOT", async () => {
+  it("does not print a slip claimed by another terminal", async () => {
     const printNetworkRaw = vi.fn();
     (window as any).electronAPI = { printNetworkRaw };
-    mocks.post.mockResolvedValue({ data: { data: false } });
+    mocks.post.mockResolvedValue({ data: { data: { claimed: false } } });
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
     render(<GlobalKotPrinter />);
     await act(async () => dispatchTicket());
-    expect(mocks.post).toHaveBeenCalledTimes(1);
     expect(printNetworkRaw).not.toHaveBeenCalled();
+    error.mockRestore();
+  });
+
+  it("reprints a previously sent cancellation as a copy without claiming it", async () => {
+    const printNetworkRaw = vi.fn().mockResolvedValue({ success: true });
+    (window as any).electronAPI = { printNetworkRaw };
+    await printKotEvent(45079, { ...slip, printed_at: "2026-10-26T02:45:00Z" });
+    expect(mocks.get).toHaveBeenCalledWith("/kots/45079/print-payload", { params: { print_event_id: 27 } });
+    expect(printNetworkRaw).toHaveBeenCalledTimes(1);
+    expect(mocks.post).not.toHaveBeenCalled();
+  });
+
+  it("does not release a lease after bytes were sent but confirmation failed", async () => {
+    (window as any).electronAPI = { printNetworkRaw: vi.fn().mockResolvedValue({ success: true }) };
+    mocks.post.mockImplementation((url: string) => {
+      if (url.endsWith("/claim")) return Promise.resolve({ data: { data: { claimed: true, claim_token: "lease" } } });
+      return Promise.reject(new Error("network unavailable"));
+    });
+    await expect(printKotEvent(45079, slip)).rejects.toThrow("Check the printer before retrying");
+    expect(mocks.post).not.toHaveBeenCalledWith("/kots/print-events/27/release", expect.anything());
   });
 });

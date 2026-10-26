@@ -56,6 +56,7 @@ import {
   KotTicketDetail,
 } from "@/components/kitchen/kot-ticket-card";
 import { KotTicketItems } from "@/components/kitchen/kot-ticket-items";
+import { KotSavedPrintEvents } from "@/components/receipts/kot-saved-print-events";
 
 // ── Types ──────────────────────────────────────────────────────────────
 interface KotItem {
@@ -807,6 +808,7 @@ export default function KitchenPage() {
       >
         {activeKot ? <KotTicketDetail
           ticket={activeKot}
+          printEvents={<KotSavedPrintEvents kotId={activeKot.id} />}
           activity={activityItems}
           activityLoading={activityLoading}
           onClose={() => setDetailOpen(false)}

@@ -88,6 +88,7 @@ import {
   KotTicketDetail,
 } from "@/components/kitchen/kot-ticket-card";
 import { KotTicketItems } from "@/components/kitchen/kot-ticket-items";
+import { KotSavedPrintEvents } from "@/components/receipts/kot-saved-print-events";
 import type { FinanceOrderSettlementSummary } from "@/types/finance-sales";
 
 interface OrdersKotItem {
@@ -1703,6 +1704,7 @@ export default function OrdersPage() {
         {selectedKot ? (
           <KotTicketDetail
             ticket={selectedKot}
+            printEvents={<KotSavedPrintEvents kotId={selectedKot.id} />}
             activity={kotActivity}
             activityLoading={kotActivityLoading}
             activityAction={kotActivityError ? <p role="alert" className="text-xs text-destructive">Could not load activity. Close and reopen to retry.</p> : null}

@@ -158,7 +158,7 @@ export function humanizeKotEvent(event?: string): string {
 
 export function kotItemProgressLabel(item: KitchenTicketItem): string {
   const ordered = Math.abs(Number(item.qty_change || 0));
-  if (Boolean(item.is_deleted)) return "Rejected";
+  if (Boolean(item.is_deleted)) return Number(item.deleted_qty || 0) > 0 ? "Cancelled" : "Rejected";
   if (ordered > 0 && Number(item.qty_served || 0) >= ordered) return "Served";
   if (ordered > 0 && Number(item.qty_ready || 0) >= ordered) return "Ready";
   if (Number(item.qty_ready || 0) > 0 || Number(item.qty_served || 0) > 0)
@@ -170,7 +170,7 @@ export function kotItemProgressLabel(item: KitchenTicketItem): string {
 function itemProgressClass(label: string): string {
   if (label === "Ready") return "text-emerald-700 dark:text-emerald-400";
   if (label === "Served") return "text-muted-foreground";
-  if (label === "Rejected") return "text-destructive";
+  if (label === "Rejected" || label === "Cancelled") return "text-destructive";
   if (label === "Partially ready") return "text-amber-700 dark:text-amber-400";
   return "text-muted-foreground";
 }
@@ -242,6 +242,7 @@ export function KotTicketActivity({ entries, loading }: { entries: KotActivityEn
 export function KotTicketDetail({
   ticket,
   actions,
+  printEvents,
   items,
   activity,
   activityLoading,
@@ -250,6 +251,7 @@ export function KotTicketDetail({
 }: {
   ticket: KitchenTicket;
   actions?: ReactNode;
+  printEvents?: ReactNode;
   items: ReactNode;
   activity: KotActivityEntry[];
   activityLoading: boolean;
@@ -272,6 +274,7 @@ export function KotTicketDetail({
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 sm:p-5">
         <KotTicketMeta ticket={ticket} />
         {actions ? <div className="mt-4 flex flex-wrap items-center gap-2">{actions}</div> : null}
+        {printEvents}
         <div className="mt-5 grid min-w-0 grid-cols-1 items-start gap-5 lg:grid-cols-2">
           <section className="min-w-0 overflow-hidden rounded-xl border border-border/60 bg-card">
             <div className="flex items-center justify-between gap-3 border-b border-border/60 px-4 py-3">
@@ -433,9 +436,15 @@ export function KotTicketItemList({
 }) {
   const visibleItems = items.filter(
     (item) =>
+      Number(item.qty_change || 0) > 0 &&
+      !Boolean(item.is_deleted) &&
       !String(item.item_name || "")
         .toLowerCase()
         .includes("room charge"),
+  );
+  const cancelledItems = items.filter(
+    (item) => Number(item.deleted_qty || 0) > 0 &&
+      !String(item.item_name || "").toLowerCase().includes("room charge"),
   );
   const displayedItems = limit ? visibleItems.slice(0, limit) : visibleItems;
 
@@ -523,6 +532,17 @@ export function KotTicketItemList({
           +{visibleItems.length - displayedItems.length} more items
         </p>
       ) : null}
+      {!compact && cancelledItems.length > 0 ? (
+        <div className="px-4 py-3 text-xs text-destructive sm:px-5">
+          <p className="mb-2 font-semibold">Cancelled from this ticket</p>
+          {cancelledItems.map((item) => (
+            <p key={`cancelled-${item.id}`} className="flex justify-between gap-3 py-0.5">
+              <span className="min-w-0 break-words">{item.item_name}</span>
+              <span className="shrink-0 tabular-nums">-{item.deleted_qty}</span>
+            </p>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -549,6 +569,8 @@ export function KOTTicketCard({
   );
   const itemCount = kot.items.filter(
     (item) =>
+      Number(item.qty_change || 0) > 0 &&
+      !Boolean(item.is_deleted) &&
       !String(item.item_name || "")
         .toLowerCase()
         .includes("room charge"),
