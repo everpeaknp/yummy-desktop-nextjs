@@ -82,7 +82,7 @@ it("keeps the bill chips visible while it refreshes after an approval", async ()
 
   await waitFor(() => expect(mocks.get).toHaveBeenCalledTimes(3));
   expect(screen.queryByText("Loading table bills…")).not.toBeInTheDocument();
-  expect(screen.getByRole("link", { name: /Walk-in guest.*NPR 1\.00/ })).toBeInTheDocument();
+  expect(document.querySelector('a[aria-current="page"]')).toHaveTextContent(/Walk-in guest.*NPR 1\.00/);
   expect(mocks.get).toHaveBeenCalledTimes(3);
   await act(async () => {
     finishRefresh({ data: { status: "success", data: { orders: [currentOrder, { ...request, status: "pending" }] } } });

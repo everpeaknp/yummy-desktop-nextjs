@@ -65,6 +65,9 @@ vi.mock("@/components/layout/mobile-app-bar-title", () => ({ useMobileAppBarTitl
 vi.mock("@/components/orders/table-bill-switcher", () => ({
   TableBillSwitcher: () => <div data-testid="table-bill-switcher">Table bill switcher</div>,
 }));
+vi.mock("@/components/grow/order-grow-offers", () => ({
+  OrderGrowOffers: ({ onClaimed }: { onClaimed: () => Promise<void> }) => <button data-testid="order-reward" onClick={() => void onClaimed()}>Claim reward</button>,
+}));
 vi.mock("@/components/orders/order-checkout-workspace", () => ({
   OrderCheckoutWorkspace: ({ presentation, onEditOrderItem, billRefreshToken }: any) => (
     <aside data-testid="quick-checkout" data-presentation={presentation} data-bill-refresh-token={billRefreshToken}>
@@ -140,6 +143,7 @@ beforeEach(() => {
 it("keeps quick checkout beside order details without navigating or changing the order column width", async () => {
   render(<OrderDetailPage />);
   expect(screen.getByTestId("quick-checkout")).toHaveAttribute("data-presentation", "quick");
+  expect(screen.getByTestId("order-reward")).toBeInTheDocument();
   const orderColumn = screen.getByRole("navigation", { name: "Order detail sections" }).parentElement;
   const orderColumnClass = orderColumn?.className;
   fireEvent.pointerDown(screen.getByRole("button", { name: "More order actions" }), { button: 0 });
@@ -180,6 +184,16 @@ it("changes only the checkout bill refresh token when accepted item totals chang
   rerender(<OrderDetailPage />);
 
   expect(screen.getByTestId("quick-checkout").getAttribute("data-bill-refresh-token")).not.toBe(initialRevision);
+});
+
+it("refreshes the inline bill after a reward is claimed", async () => {
+  render(<OrderDetailPage />);
+  const initialRevision = screen.getByTestId("quick-checkout").getAttribute("data-bill-refresh-token");
+
+  fireEvent.click(screen.getByTestId("order-reward"));
+
+  await waitFor(() => expect(mocks.fetchContextQuiet).toHaveBeenCalled());
+  await waitFor(() => expect(screen.getByTestId("quick-checkout").getAttribute("data-bill-refresh-token")).not.toBe(initialRevision));
 });
 
 it("shows accepted items in a price table and lets staff mark a line NC", async () => {

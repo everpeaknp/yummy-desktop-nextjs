@@ -113,6 +113,7 @@ import type {
 import { toast } from "sonner";
 import { PendingItemRequests } from "@/components/orders/pending-item-requests";
 import { TableBillSwitcher } from "@/components/orders/table-bill-switcher";
+import { OrderGrowOffers } from "@/components/grow/order-grow-offers";
 import { OrderCheckoutWorkspace } from "@/components/orders/order-checkout-workspace";
 import { OrderItemQuantityEditor, type OrderItemQuantityPatch } from "@/components/orders/order-item-quantity-editor";
 import { OrderItemQuantitySheet } from "@/components/orders/order-item-quantity-sheet";
@@ -1064,6 +1065,20 @@ function OrderDetailContent({ orderId }: { orderId: number }) {
 
       <TableBillSwitcher order={order} canApproveRequests={canEditOrder} canRejectRequests={canVoidOrder} />
 
+      {isEditable && String(order.status).toLowerCase() !== "requested" && hasPermission(user, "pos.order.discount.apply") && (
+        <div className="w-full max-w-3xl">
+          <OrderGrowOffers
+            orderId={orderId}
+            customerId={order.customer_id}
+            refreshKey={checkoutBillRefreshToken}
+            onClaimed={async () => {
+              await fetchContextQuiet();
+              setBillRefreshToken((version) => version + 1);
+            }}
+          />
+        </div>
+      )}
+
       <OrderItemQuantitySheet
         item={selectedItemEditor === "sheet" ? selectedItem : null}
         canMarkNc={canMarkNc}
@@ -1529,12 +1544,6 @@ function DetailsTab({
   itemUpdating: boolean;
   summary: ReactNode;
 }) {
-  const router = useRouter();
-  const [selectedItem, setSelectedItem] = useState<OrderItem | null>(null);
-  const [selectedItemQuantity, setSelectedItemQuantity] = useState(1);
-  const [selectedItemNc, setSelectedItemNc] = useState(false);
-  const [isUpdating, setIsUpdating] = useState(false);
-
   const displayItems = order.items.filter((item) => Number(item.qty) > 0);
 
   return (
@@ -1570,25 +1579,17 @@ function DetailsTab({
                   return (
                     <Fragment key={item.id}>
                     <tr
-                      tabIndex={canEdit ? 0 : undefined}
-                      aria-label={canEdit ? `Edit ${item.name_snapshot}` : undefined}
-                      aria-expanded={selectedItem?.id === item.id}
-                      className={cn("transition-colors", canEdit && "cursor-pointer hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/50", selectedItem?.id === item.id && "bg-muted/30")}
-                      onClick={() => canEdit && onEditItem(item)}
-                      onKeyDown={event => {
-                        if (canEdit && (event.key === "Enter" || event.key === " ")) {
-                          event.preventDefault();
-                          onEditItem(item);
-                        }
-                      }}
+                      className={cn("transition-colors", canEdit && "hover:bg-muted/30", selectedItem?.id === item.id && "bg-muted/30")}
                     >
                       <td className="px-4 py-3.5">
                         <div className="min-w-0">
                           <button
                             type="button"
-                            className="flex min-h-8 items-center gap-2 text-left font-semibold text-foreground underline-offset-4 hover:underline disabled:cursor-default disabled:no-underline"
+                            className="flex min-h-9 min-w-0 flex-wrap items-center gap-2 break-words text-left font-semibold text-foreground underline-offset-4 hover:underline focus-visible:rounded-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary disabled:cursor-default disabled:no-underline"
                             disabled={!canEdit}
                             aria-label={`Edit ${item.name_snapshot} quantity`}
+                            aria-expanded={selectedItem?.id === item.id}
+                            aria-controls={selectedItem?.id === item.id ? `order-item-editor-${item.id}` : undefined}
                             onClick={() => onEditItem(item)}
                           >
                             {item.name_snapshot}
@@ -1620,7 +1621,6 @@ function DetailsTab({
                             disabled={itemUpdating}
                             aria-label={`${item.is_nc ? "Remove NC from" : "Mark NC for"} ${item.name_snapshot}`}
                             onClick={event => { event.stopPropagation(); onToggleItemNc(item); }}
-                            onKeyDown={event => event.stopPropagation()}
                           >
                             <Award className="h-4 w-4" />
                             NC
@@ -1628,7 +1628,7 @@ function DetailsTab({
                         )}
                       </td>
                     </tr>
-                    {selectedItem?.id === item.id && <tr key={`${item.id}-editor`}><td colSpan={5} className="border-b border-border/30 bg-muted/10 p-3 sm:p-4"><OrderItemQuantityEditor item={item} canMarkNc={canMarkNc} isUpdating={itemUpdating} onClose={onCloseItemEdit} onSave={onSaveItemEdit} /></td></tr>}
+                    {selectedItem?.id === item.id && <tr id={`order-item-editor-${item.id}`}><td colSpan={5} className="border-b border-border/30 bg-muted/10 p-3 sm:p-4"><OrderItemQuantityEditor item={item} canMarkNc={canMarkNc} isUpdating={itemUpdating} onClose={onCloseItemEdit} onSave={onSaveItemEdit} /></td></tr>}
                     </Fragment>
                   );
                 })}

@@ -3881,7 +3881,7 @@ function CheckoutContent({
           {/* Action Buttons */}
           {showCheckoutControls && (
             <div className="space-y-3">
-              {canApplyDiscount && <OrderGrowOffers orderId={orderId} customerId={checkoutCustomerId} refreshKey={JSON.stringify(bill.items.map((item) => [item.id, item.qty, item.line_total]))} onClaimed={async () => { await Promise.all([fetchBill(), fetchContext()]); }} />}
+              {!isQuickCheckout && canApplyDiscount && <OrderGrowOffers orderId={orderId} customerId={checkoutCustomerId} refreshKey={JSON.stringify(bill.items.map((item) => [item.id, item.qty, item.line_total]))} onClaimed={async () => { await Promise.all([fetchBill(), fetchContext()]); }} />}
               <Card className="border-border/40">
                 <CardContent className="p-4 space-y-3">
                   <div className="flex items-center justify-between">
