@@ -30,6 +30,13 @@ it("disables reorganization after payment and respects staff permissions", () =>
   rerender(<BillManagementActions order={order} session={session} canManage={false} onCreateSplit={vi.fn()} onChanged={vi.fn()} />);
   expect(screen.getByRole("button", { name: "Create split" })).toBeDisabled();
 });
+it("supports a compact icon toolbar for quick checkout", () => {
+  render(<BillManagementActions order={order} session={session} canManage compact onCreateSplit={vi.fn()} onChanged={vi.fn()} />);
+  for (const label of ["Create split", "Transfer items", "Merge bills", "Cancel split"]) {
+    expect(screen.getByRole("button", { name: label })).toBeInTheDocument();
+  }
+  expect(screen.queryByText(/Move or combine accepted items/)).not.toBeInTheDocument();
+});
 it("transfers selected quantities through the scoped API without changing customers", async () => {
   vi.mocked(apiClient.get).mockResolvedValue({ data: { data: { items: [{ id: 8, name_snapshot: "Coke", qty: 2 }] } } });
   render(<BillManagementActions order={order} session={session} canManage onCreateSplit={vi.fn()} onChanged={vi.fn()} />);

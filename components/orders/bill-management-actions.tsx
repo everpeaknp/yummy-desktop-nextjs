@@ -8,14 +8,15 @@ import { GuestBillMergeControl } from "./guest-bill-merge-control";
 import apiClient from "@/lib/api-client";
 import { OrderApis } from "@/lib/api/endpoints";
 import type { Order, OrderItem } from "@/types/order";
+import { ArrowLeftRight, GitFork, GitMerge, X } from "lucide-react";
 
 type Bill = { order_id: number; customer_name?: string | null; split_label?: string; total_paid: number; status: string };
 type Session = { anchor_order_id: number; split_group_id?: string | null; orders: Bill[] };
 const label = (bill: Bill) => `${bill.customer_name?.trim() ? `${bill.customer_name.trim()} · ` : ""}${bill.split_label || `Bill #${bill.order_id}`}`;
 const reason = (error: any) => typeof error.response?.data?.detail === "string" ? error.response.data.detail : "Could not complete the action. Refresh the bills and try again.";
 
-export function BillManagementActions({ order, session, canManage, onCreateSplit, onChanged }: {
-  order: Order; session?: Session | null; canManage: boolean; onCreateSplit: () => void; onChanged: (targetId: number) => Promise<void>;
+export function BillManagementActions({ order, session, canManage, compact = false, onCreateSplit, onChanged }: {
+  order: Order; session?: Session | null; canManage: boolean; compact?: boolean; onCreateSplit: () => void; onChanged: (targetId: number) => Promise<void>;
 }) {
   const [tableBills, setTableBills] = useState<Bill[]>([]);
   const [loading, setLoading] = useState(false);
@@ -74,17 +75,17 @@ export function BillManagementActions({ order, session, canManage, onCreateSplit
     } catch (error) { setError(reason(error)); }
     finally { inFlight.current = false; setBusy(false); }
   };
-  return <section id="bill-actions" aria-label="Bill actions" className="space-y-3 rounded-xl border bg-card p-4 scroll-mt-24">
-    <h2 className="font-semibold">Bill actions</h2>
-    <p className="text-xs text-muted-foreground">Move or combine accepted items without sending another kitchen ticket. Destination customer stays unchanged.</p>
-    <div className="grid grid-cols-2 gap-2">
-      <Button variant="outline" disabled={!canManage || selectedHasPayment} onClick={onCreateSplit}>Create split</Button>
-      <Button variant="outline" disabled={!canCombine} onClick={() => { setError(""); setFrom(""); setTo(""); setAction("transfer"); }}>Transfer items</Button>
-      <Button variant="outline" disabled={!canCombine} onClick={() => { setError(""); setAction("merge"); }}>Merge bills</Button>
-      <Button variant="outline" disabled={!canCancel} onClick={() => { setError(""); setAction("cancel"); }}>Cancel split</Button>
+  return <section id="bill-actions" aria-label="Bill actions" className={compact ? "flex items-center justify-between gap-2 rounded-xl border bg-card px-3 py-2 scroll-mt-24" : "space-y-3 rounded-xl border bg-card p-4 scroll-mt-24"}>
+    <h2 className={compact ? "shrink-0 text-xs font-semibold text-muted-foreground" : "font-semibold"}>Bill actions</h2>
+    {!compact && <p className="text-xs text-muted-foreground">Move or combine accepted items without sending another kitchen ticket. Destination customer stays unchanged.</p>}
+    <div className={compact ? "grid grid-cols-4 gap-1" : "grid grid-cols-2 gap-2"}>
+      <Button variant="outline" size={compact ? "icon" : "default"} className={compact ? "h-9 w-9" : undefined} title="Create split" aria-label="Create split" disabled={!canManage || selectedHasPayment} onClick={onCreateSplit}><GitFork className="h-4 w-4" />{!compact && "Create split"}</Button>
+      <Button variant="outline" size={compact ? "icon" : "default"} className={compact ? "h-9 w-9" : undefined} title="Transfer items" aria-label="Transfer items" disabled={!canCombine} onClick={() => { setError(""); setFrom(""); setTo(""); setAction("transfer"); }}><ArrowLeftRight className="h-4 w-4" />{!compact && "Transfer items"}</Button>
+      <Button variant="outline" size={compact ? "icon" : "default"} className={compact ? "h-9 w-9" : undefined} title="Merge bills" aria-label="Merge bills" disabled={!canCombine} onClick={() => { setError(""); setAction("merge"); }}><GitMerge className="h-4 w-4" />{!compact && "Merge bills"}</Button>
+      <Button variant="outline" size={compact ? "icon" : "default"} className={compact ? "h-9 w-9" : undefined} title="Cancel split" aria-label="Cancel split" disabled={!canCancel} onClick={() => { setError(""); setAction("cancel"); }}><X className="h-4 w-4" />{!compact && "Cancel split"}</Button>
     </div>
-    {!canCombine && <p className="text-xs text-muted-foreground">Transfer and merge require at least two unpaid, accepted bills.</p>}
-    {!canCancel && <p className="text-xs text-muted-foreground">Cancel split requires an existing split with no recorded payments.</p>}
+    {!compact && !canCombine && <p className="text-xs text-muted-foreground">Transfer and merge require at least two unpaid, accepted bills.</p>}
+    {!compact && !canCancel && <p className="text-xs text-muted-foreground">Cancel split requires an existing split with no recorded payments.</p>}
     {loading && <p role="status" className="text-sm text-muted-foreground">Loading bills…</p>}
     {error && !action && <div role="alert" className="text-sm text-destructive">{error} <Button variant="outline" size="sm" onClick={() => setAttempt(value => value + 1)}>Retry</Button></div>}
     <Dialog open={!!action} onOpenChange={open => { if (!open && !busy) setAction(null); }}>
