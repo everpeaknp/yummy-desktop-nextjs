@@ -11,6 +11,7 @@ import {
 import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
 import apiClient from "@/lib/api-client";
+import { OrderGrowOffers } from "@/components/grow/order-grow-offers";
 import { useAuth } from "@/hooks/use-auth";
 import { hasPermission } from "@/lib/role-permissions";
 import { useOrderFull } from "@/hooks/use-order-full";
@@ -989,6 +990,12 @@ function OrderDetailContent({ orderId }: { orderId: number }) {
       </header>
 
       <TableBillSwitcher order={order} />
+
+      {isEditable && String(order.status).toLowerCase() !== "requested" && hasPermission(user, "pos.order.discount.apply") && (
+        <div className="w-full max-w-3xl">
+          <OrderGrowOffers orderId={orderId} customerId={order.customer_id} refreshKey={String(order.updated_at || "")} onClaimed={fetchContext} />
+        </div>
+      )}
 
       {/* ── Tab Bar ── */}
       <nav

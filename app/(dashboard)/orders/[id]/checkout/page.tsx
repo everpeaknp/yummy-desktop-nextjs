@@ -8,6 +8,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import { useOrderFull } from "@/hooks/use-order-full";
 import { TableBillSwitcher } from "@/components/orders/table-bill-switcher";
+import { OrderGrowOffers } from "@/components/grow/order-grow-offers";
 import { useMobileAppBarTitle } from "@/components/layout/mobile-app-bar-title";
 
 function CheckoutAppBarTitle({ title }: { title: string }) {
@@ -3596,6 +3597,7 @@ function CheckoutContent({ orderId }: { orderId: number }) {
           {/* Action Buttons */}
           {showCheckoutControls && (
             <div className="space-y-3">
+              {canApplyDiscount && <OrderGrowOffers orderId={orderId} customerId={orderMeta?.customer_id} refreshKey={JSON.stringify(bill.items.map((item) => [item.id, item.qty, item.line_total]))} onClaimed={async () => { await Promise.all([fetchBill(), fetchContext()]); }} />}
               <Card className="border-border/40">
                 <CardContent className="p-4 space-y-3">
                   <div className="flex items-center justify-between">
@@ -5476,14 +5478,13 @@ function CheckoutContent({ orderId }: { orderId: number }) {
 
       {/* ── Discount Dialog ── */}
       <Dialog open={discountOpen} onOpenChange={setDiscountOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-md">
           <DialogHeader>
             <DialogTitle>
               {hasDiscount ? "Change Discount" : "Apply Discount"}
             </DialogTitle>
             <DialogDescription>
-              Apply a promo code, manual discount, or staff purchase discount to
-              this order.
+              Enter a promo code or choose a manual or staff discount.
             </DialogDescription>
           </DialogHeader>
 
