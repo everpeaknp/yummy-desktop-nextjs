@@ -195,6 +195,7 @@ export interface GrowthSegmentPreview {
 
 export interface GrowthOfferInput {
   type: "fixed" | "percentage";
+  reward_scope?: "order" | "favourite_item" | "one_favourite_item";
   value: number;
   minimum_order_value?: number | null;
   percentage_cap?: number | null;
@@ -507,6 +508,7 @@ export interface GrowthTestEmailInput {
   headline?: string;
   description?: string;
   discount_type?: "percentage" | "flat_amount";
+  reward_scope?: "order" | "favourite_item" | "one_favourite_item";
   value?: number;
   percentage_cap?: number | null;
   minimum_order_value?: number | null;

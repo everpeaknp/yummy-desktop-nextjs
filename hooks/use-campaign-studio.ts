@@ -26,6 +26,7 @@ function localDate(offsetDays = 0): string {
 function defaultOffer(): CampaignOfferDraft {
   return {
     type: "fixed",
+    reward_scope: "order",
     value: 100,
     minimum_order_value: 600,
     percentage_cap: null,

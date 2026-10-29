@@ -138,6 +138,7 @@ export interface EmailPreviewProps {
   primaryColor?: string;  // Primary brand color
   offer?: {
     discountType: "percentage" | "flat_amount";
+    rewardScope?: "order" | "favourite_item" | "one_favourite_item";
     value: number;
     percentageCap?: number | null;
     minimumOrderValue?: number | null;
@@ -235,6 +236,7 @@ export function EmailPreview({
         // active — previously it was silently dropped in that mode.
         description: bodyHtml || undefined,
         discountType: offer.discountType,
+        rewardScope: offer.rewardScope,
         value: offer.value,
         percentageCap: offer.percentageCap,
         minimumOrderValue: offer.minimumOrderValue,
@@ -339,6 +341,7 @@ export function EmailPreview({
         headline: subject,
         description: bodyHtml,
         discount_type: offer.discountType,
+        reward_scope: offer.rewardScope,
         value: offer.value,
         percentage_cap: offer.percentageCap,
         minimum_order_value: offer.minimumOrderValue,

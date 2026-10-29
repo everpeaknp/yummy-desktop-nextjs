@@ -198,6 +198,7 @@ export function CampaignStudioClient() {
   const campaignName = useCampaignStudio((state) => state.campaignName);
   const nameCustomized = useCampaignStudio((state) => state.nameCustomized);
   const offer = useCampaignStudio((state) => state.offer);
+  const usesFavouriteItem = offer.reward_scope === "favourite_item" || offer.reward_scope === "one_favourite_item";
   const language = useCampaignStudio((state) => state.language);
   const headline = useCampaignStudio((state) => state.headline);
   const message = useCampaignStudio((state) => state.message);
@@ -230,6 +231,9 @@ export function CampaignStudioClient() {
       !["second_visit", "win_back", "slow_day", "custom"].includes(requestedGoal)
     ) return;
     appliedGoalRef.current = requestKey;
+    if (isFavouriteItemSuggestion && (offer.reward_scope || "order") === "order") {
+      patchDraft("offer", { ...offer, reward_scope: "favourite_item" });
+    }
     patchDraft("playbookCode", requestedGoal);
     if (requestedGoal === "custom") {
       const selectedCustomers = (searchParams.get("customers") || "")
@@ -347,6 +351,7 @@ export function CampaignStudioClient() {
       discountType: (offer.type === "percentage" ? "percentage" : "flat_amount") as
         | "percentage"
         | "flat_amount",
+      rewardScope: offer.reward_scope || "order",
       value: offer.value,
       percentageCap: offer.percentage_cap,
       minimumOrderValue: offer.minimum_order_value,
@@ -383,7 +388,7 @@ export function CampaignStudioClient() {
         offer,
         channel,
       });
-      if (smartSuggestion && channel === "email") {
+      if (smartSuggestion && channel === "email" && !usesFavouriteItem) {
         return {
           headline: smartSuggestion.emailCopy.headline,
           message: smartSuggestion.emailCopy.message(
@@ -393,13 +398,13 @@ export function CampaignStudioClient() {
           ),
         };
       }
-      if (!isFavouriteItemSuggestion || channel !== "email") return copy;
+      if (!usesFavouriteItem || channel !== "email") return copy;
       return {
         headline: `A favourite is waiting at ${restaurantName}`,
         message: `Hi {{customer_name}}, your favourite, {{favourite_item}}, is waiting at ${restaurantName}. ${copy.message}`,
       };
     },
-    [channel, isFavouriteItemSuggestion, language, offer, playbookCode, restaurantName, smartSuggestion],
+    [channel, usesFavouriteItem, language, offer, playbookCode, restaurantName, smartSuggestion],
   );
 
   useEffect(() => {
@@ -550,16 +555,16 @@ export function CampaignStudioClient() {
 
   useEffect(() => {
     if (channel !== "sms" || smsTemplatesLoading) return;
-    if (isFavouriteItemSuggestion) {
+    if (usesFavouriteItem) {
       const favouriteTemplate = smsTemplates.find((template) => template.code === "favourite_item_offer");
       if (favouriteTemplate && selectedSmsTemplateCode !== favouriteTemplate.code) {
         setSelectedSmsTemplateCode(favouriteTemplate.code);
       }
       return;
     }
-    const valid = smsTemplates.some((template) => template.code === selectedSmsTemplateCode);
-    if (!valid) setSelectedSmsTemplateCode(smsTemplates[0]?.code ?? "");
-  }, [channel, isFavouriteItemSuggestion, selectedSmsTemplateCode, smsTemplates, smsTemplatesLoading]);
+    const valid = selectedSmsTemplateCode !== "favourite_item_offer" && smsTemplates.some((template) => template.code === selectedSmsTemplateCode);
+    if (!valid) setSelectedSmsTemplateCode(smsTemplates.find((template) => template.code !== "favourite_item_offer")?.code ?? "");
+  }, [channel, usesFavouriteItem, selectedSmsTemplateCode, smsTemplates, smsTemplatesLoading]);
 
   useEffect(() => {
     if (channel !== "sms" || message.trim().length === 0) {
@@ -767,14 +772,14 @@ export function CampaignStudioClient() {
           setPageError("Add a clear email subject and body before review.");
           return;
         }
-        if (isFavouriteItemSuggestion && !emailBodyHtml.includes("{{favourite_item}}")) {
+        if (usesFavouriteItem && !emailBodyHtml.includes("{{favourite_item}}")) {
           setPageError("Keep {{favourite_item}} in the email so each customer receives their own favourite-item message.");
           return;
         }
       } else if (!selectedSmsTemplate) {
         setPageError("Choose a Yummy SMS template before review.");
         return;
-      } else if (isFavouriteItemSuggestion && selectedSmsTemplate.code !== "favourite_item_offer") {
+      } else if (usesFavouriteItem && selectedSmsTemplate.code !== "favourite_item_offer") {
         setPageError("Choose the Favourite item offer SMS template so every customer receives their own favourite item.");
         return;
       }
@@ -799,7 +804,7 @@ export function CampaignStudioClient() {
       emailSubject,
       emailBodyHtml,
       emailTemplate: emailPosterTemplate,
-      personalizationKind: isFavouriteItemSuggestion ? "favourite_item" : undefined,
+      personalizationKind: usesFavouriteItem ? "favourite_item" : undefined,
       audienceCustomerIds: customAudienceAll ? [] : audienceCustomerIds,
     });
     return selectedMessageTemplate
@@ -829,7 +834,7 @@ export function CampaignStudioClient() {
              email_subject: channel === "email" ? emailSubject.trim() : undefined,
              email_body_html: channel === "email" ? emailBodyHtml.trim() : undefined,
              email_template: channel === "email" ? emailPosterTemplate : undefined,
-             personalization_kind: isFavouriteItemSuggestion ? "favourite_item" : undefined,
+             personalization_kind: usesFavouriteItem ? "favourite_item" : undefined,
              audience_customer_ids:
                playbookCode === "custom"
                  ? (customAudienceAll ? [] : audienceCustomerIds)
@@ -1466,8 +1471,8 @@ export function CampaignStudioClient() {
               <CardTitle>{smartSuggestion ? `Offer for ${smartSuggestion.title.toLowerCase()}` : "Offer rules"}</CardTitle>
               <CardDescription>
                 {smartSuggestion
-                  ? "Choose the thank-you offer that will accompany this customer reminder."
-                  : "Choose a fixed discount or a percentage with a maximum discount amount."}
+                  ? "Choose the reward that will accompany this customer reminder."
+                  : "Choose what gets rewarded and what the customer receives."}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-5">
@@ -1478,6 +1483,41 @@ export function CampaignStudioClient() {
                   <AlertDescription>{smartSuggestion.offerGuidance}</AlertDescription>
                 </Alert>
               )}
+              <fieldset className="space-y-2" disabled={isReadOnly}>
+                <legend className="text-sm font-semibold">What gets rewarded?</legend>
+                <RadioGroup
+                  value={offer.reward_scope || "order"}
+                  onValueChange={(value) => {
+                    const reward_scope = value as NonNullable<CampaignOfferDraft["reward_scope"]>;
+                    setCopyCustomized(false);
+                    setOffer((current) => ({
+                      ...current,
+                      reward_scope,
+                      ...(reward_scope === "one_favourite_item"
+                        ? { type: "percentage", value: 100, percentage_cap: null }
+                        : current.reward_scope === "one_favourite_item"
+                          ? { type: "fixed", value: 100, percentage_cap: null }
+                          : {}),
+                    }));
+                  }}
+                  className="grid gap-2"
+                >
+                  <Label htmlFor="reward-order" className={cn("flex cursor-pointer items-center gap-3 rounded-xl border border-border p-3 hover:border-primary/50 focus-within:ring-2 focus-within:ring-ring", (offer.reward_scope || "order") === "order" && "border-primary bg-primary/5")}>
+                    <RadioGroupItem id="reward-order" value="order" />
+                    <span>Discount the whole order</span>
+                  </Label>
+                  <Label htmlFor="reward-favourite" className={cn("flex cursor-pointer items-center gap-3 rounded-xl border border-border p-3 hover:border-primary/50 focus-within:ring-2 focus-within:ring-ring", offer.reward_scope === "favourite_item" && "border-primary bg-primary/5")}>
+                    <RadioGroupItem id="reward-favourite" value="favourite_item" />
+                    <span>Discount each customer&apos;s favourite item</span>
+                  </Label>
+                  <Label htmlFor="reward-free-favourite" className={cn("flex cursor-pointer items-center gap-3 rounded-xl border border-border p-3 hover:border-primary/50 focus-within:ring-2 focus-within:ring-ring", offer.reward_scope === "one_favourite_item" && "border-primary bg-primary/5")}>
+                    <RadioGroupItem id="reward-free-favourite" value="one_favourite_item" />
+                    <span>Make one of their favourite items free</span>
+                  </Label>
+                </RadioGroup>
+                {usesFavouriteItem && <p className="text-xs text-muted-foreground">The customer must order their favourite item. Yummy chooses and freezes each recipient&apos;s item when the campaign is approved.</p>}
+              </fieldset>
+              {offer.reward_scope !== "one_favourite_item" && (
               <RadioGroup
                 value={offer.type}
                 onValueChange={(value) => updateOffer("type", value as CampaignOfferDraft["type"])}
@@ -1493,19 +1533,22 @@ export function CampaignStudioClient() {
                   <span><span className="block font-bold">Percentage</span><span className="text-xs font-normal text-muted-foreground">Requires a rupee cap</span></span>
                 </Label>
               </RadioGroup>
+              )}
 
               <div className="grid gap-4 sm:grid-cols-2">
+                {offer.reward_scope !== "one_favourite_item" && (
                 <div className="space-y-2">
                   <Label htmlFor="offer-value">{offer.type === "fixed" ? "Discount amount (Rs.)" : "Discount percentage"}</Label>
                   <Input id="offer-value" name="offer_value" autoComplete="off" type="number" inputMode="decimal" min="1" max={offer.type === "percentage" ? "100" : undefined} value={offer.value} disabled={isReadOnly} onChange={(event) => updateOffer("value", Number(event.target.value))} />
                   {offerValidation.errors.value && <p className="text-xs text-destructive">{offerValidation.errors.value}</p>}
                 </div>
+                )}
                 <div className="space-y-2">
                   <Label htmlFor="offer-minimum">Minimum order value (Rs.)</Label>
                   <Input id="offer-minimum" name="minimum_order_value" autoComplete="off" type="number" inputMode="decimal" min="1" value={offer.minimum_order_value} disabled={isReadOnly} onChange={(event) => updateOffer("minimum_order_value", Number(event.target.value))} />
                   {offerValidation.errors.minimum_order_value && <p className="text-xs text-destructive">{offerValidation.errors.minimum_order_value}</p>}
                 </div>
-                {offer.type === "percentage" && (
+                {offer.type === "percentage" && offer.reward_scope !== "one_favourite_item" && (
                   <div className="space-y-2">
                     <Label htmlFor="offer-cap">Maximum discount per redemption (Rs.)</Label>
                     <Input id="offer-cap" name="maximum_discount" autoComplete="off" type="number" inputMode="decimal" min="1" value={offer.percentage_cap ?? ""} disabled={isReadOnly} onChange={(event) => updateOffer("percentage_cap", event.target.value ? Number(event.target.value) : null)} />
@@ -1534,9 +1577,9 @@ export function CampaignStudioClient() {
 
           <div className="space-y-4">
             <Card>
-              <CardHeader><CardTitle>Maximum Cost</CardTitle><CardDescription>Total cost if all customers use this offer</CardDescription></CardHeader>
+              <CardHeader><CardTitle>{offer.reward_scope === "one_favourite_item" ? "Reward cost" : "Maximum Cost"}</CardTitle><CardDescription>{offer.reward_scope === "one_favourite_item" ? "Depends on each customer's favourite item price" : "Total cost if all customers use this offer"}</CardDescription></CardHeader>
               <CardContent>
-                <p className="text-4xl font-bold">{formatMoney(offerValidation.maximum_exposure)}</p>
+                <p className="text-4xl font-bold">{offer.reward_scope === "one_favourite_item" ? "Varies by item" : formatMoney(offerValidation.maximum_exposure)}</p>
                 <p className="mt-3 text-sm font-semibold">{formatCampaignOffer(offer)}</p>
                 {audience && offer.redemption_limit > audience.included_count && (
                   <Alert className="mt-4 rounded-xl border-amber-500/40 bg-amber-500/5">
@@ -1639,7 +1682,7 @@ export function CampaignStudioClient() {
                       </AlertDescription>
                     </Alert>
                   )}
-                  {isFavouriteItemSuggestion && (
+                  {usesFavouriteItem && (
                     <Alert className="border-primary/30 bg-primary/5">
                       <Sparkles aria-hidden="true" className="h-4 w-4 text-primary" />
                       <AlertTitle>Personalized for each customer</AlertTitle>
@@ -1674,7 +1717,7 @@ export function CampaignStudioClient() {
                       </AlertDescription>
                     </Alert>
                   )}
-                  {isFavouriteItemSuggestion && (
+                  {usesFavouriteItem && (
                     <Alert className="border-amber-500/40 bg-amber-500/5">
                       <Info aria-hidden="true" className="h-4 w-4" />
                       <AlertTitle>Use the approved Favourite item offer template</AlertTitle>
