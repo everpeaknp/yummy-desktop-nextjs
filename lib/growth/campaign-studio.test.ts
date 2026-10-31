@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { GrowthMessageTemplate, GrowthSettings } from "@/lib/api/growth-types";
+import { formatOfferHeadline, formatOfferSummary } from "@/lib/growth/email-poster-html";
 import {
   approvedImageTemplatesForLanguage,
   buildCampaignCreateInput,
@@ -10,6 +11,8 @@ import {
   getSmartCampaignSuggestion,
   recommendedCampaignChannel,
   validateCampaignOffer,
+  formatCampaignOffer,
+  toGrowthOfferInput,
   type CampaignOfferDraft,
 } from "@/lib/growth/campaign-studio";
 
@@ -58,6 +61,34 @@ describe("Campaign Studio playbooks", () => {
 });
 
 describe("Campaign Studio offer validation", () => {
+  it("uses the same rule for each recipient's favourite item", () => {
+    const offer: CampaignOfferDraft = {
+      ...validFixedOffer,
+      reward_scope: "favourite_item",
+    };
+    expect(toGrowthOfferInput(offer).reward_scope).toBe("favourite_item");
+    expect(formatCampaignOffer(offer)).toContain("your favourite item");
+  });
+
+  it("encodes one free favourite item as a scoped full discount", () => {
+    const offer: CampaignOfferDraft = {
+      ...validFixedOffer,
+      reward_scope: "one_favourite_item",
+      type: "percentage",
+      value: 100,
+    };
+    expect(validateCampaignOffer(offer).valid).toBe(true);
+    expect(validateCampaignOffer(offer).maximum_exposure).toBeNull();
+    expect(toGrowthOfferInput(offer)).toMatchObject({
+      type: "percentage", value: 100, reward_scope: "one_favourite_item",
+    });
+    const posterOffer = {
+      restaurantName: "Yummy", discountType: "percentage" as const,
+      value: 100, rewardScope: "one_favourite_item" as const,
+    };
+    expect(formatOfferSummary(posterOffer)).toBe("One favourite item free");
+    expect(formatOfferHeadline(posterOffer)).toBe("FREE");
+  });
   it("calculates bounded exposure for a valid fixed offer", () => {
     expect(validateCampaignOffer(validFixedOffer)).toEqual({
       valid: true,

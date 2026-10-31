@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Megaphone, Settings2, UsersRound } from "lucide-react";
+import { Gift, LayoutDashboard, Megaphone, Settings2, UsersRound } from "lucide-react";
 
 import { useAuth } from "@/hooks/use-auth";
 import { hasPermission } from "@/lib/role-permissions";
@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 const destinations = [
   { label: "Overview", href: "/grow", icon: LayoutDashboard, matches: (path: string) => path === "/grow" },
   { label: "Campaigns", href: "/grow/campaigns", icon: Megaphone, matches: (path: string) => path.startsWith("/grow/campaigns") },
+  { label: "Offers", href: "/grow/offers", icon: Gift, matches: (path: string) => path.startsWith("/grow/offers") },
   { label: "Customers", href: "/grow/subscribers", icon: UsersRound, matches: (path: string) => path.startsWith("/grow/subscribers") },
   { label: "Settings", href: "/grow/settings", icon: Settings2, matches: (path: string) => path.startsWith("/grow/settings"), permission: "grow.settings.manage" },
 ] as const;

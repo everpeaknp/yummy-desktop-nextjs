@@ -195,6 +195,7 @@ export function recommendedCampaignChannel(
 
 export interface CampaignOfferDraft {
   type: "fixed" | "percentage";
+  reward_scope?: "order" | "favourite_item" | "one_favourite_item";
   value: number;
   minimum_order_value: number;
   percentage_cap: number | null;
@@ -231,6 +232,9 @@ export function validateCampaignOffer(
   } else if (offer.type === "percentage" && offer.value > 100) {
     errors.value = "Percentage discount cannot exceed 100%.";
   }
+  if (offer.reward_scope === "one_favourite_item" && (offer.type !== "percentage" || offer.value !== 100 || offer.percentage_cap != null)) {
+    errors.value = "A free favourite item must cover one item in full.";
+  }
 
   if (!finitePositive(offer.minimum_order_value)) {
     errors.minimum_order_value = "A positive minimum order value is required in V1.";
@@ -242,7 +246,7 @@ export function validateCampaignOffer(
     errors.minimum_order_value = "Minimum order value must be higher than the fixed discount.";
   }
 
-  if (offer.type === "percentage") {
+  if (offer.type === "percentage" && offer.reward_scope !== "one_favourite_item") {
     if (offer.percentage_cap == null || !finitePositive(offer.percentage_cap)) {
       errors.percentage_cap = "A positive rupee cap is required for percentage offers.";
     } else if (
@@ -269,7 +273,9 @@ export function validateCampaignOffer(
 
   let maximumExposure: number | null = null;
   if (Number.isInteger(offer.redemption_limit) && offer.redemption_limit > 0) {
-    if (offer.type === "fixed" && finitePositive(offer.value)) {
+    if (offer.reward_scope === "one_favourite_item") {
+      maximumExposure = null;
+    } else if (offer.type === "fixed" && finitePositive(offer.value)) {
       maximumExposure = offer.value * offer.redemption_limit;
     } else if (
       offer.type === "percentage" &&
@@ -290,6 +296,7 @@ export function validateCampaignOffer(
 export function toGrowthOfferInput(offer: CampaignOfferDraft): GrowthOfferInput {
   return {
     type: offer.type,
+    reward_scope: offer.reward_scope || "order",
     value: offer.value,
     minimum_order_value: offer.minimum_order_value,
     percentage_cap: offer.type === "percentage" ? offer.percentage_cap : null,
@@ -300,13 +307,17 @@ export function toGrowthOfferInput(offer: CampaignOfferDraft): GrowthOfferInput 
 }
 
 export function formatCampaignOffer(offer: CampaignOfferDraft): string {
+  if (offer.reward_scope === "one_favourite_item") {
+    return `One favourite item free on orders above Rs. ${offer.minimum_order_value.toLocaleString("en-NP")}`;
+  }
+  const itemText = offer.reward_scope === "favourite_item" ? " your favourite item" : "";
   if (offer.type === "fixed") {
-    return `Rs. ${offer.value.toLocaleString("en-NP")} off above Rs. ${offer.minimum_order_value.toLocaleString("en-NP")}`;
+    return `Rs. ${offer.value.toLocaleString("en-NP")} off${itemText} above Rs. ${offer.minimum_order_value.toLocaleString("en-NP")}`;
   }
   const cap = offer.percentage_cap
     ? `, up to Rs. ${offer.percentage_cap.toLocaleString("en-NP")}`
     : "";
-  return `${offer.value}% off above Rs. ${offer.minimum_order_value.toLocaleString("en-NP")}${cap}`;
+  return `${offer.value}% off${itemText} above Rs. ${offer.minimum_order_value.toLocaleString("en-NP")}${cap}`;
 }
 
 // Real offer codes are generated per-recipient only when a campaign is

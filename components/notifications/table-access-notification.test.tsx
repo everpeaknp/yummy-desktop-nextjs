@@ -29,6 +29,39 @@ describe('notification table access actions', () => {
     expect(await screen.findByText('Request approved.')).toBeInTheDocument();
     expect(screen.queryByText('Request rejected.')).not.toBeInTheDocument();
   });
+  it('shows the backend reason when approval is rejected', async () => {
+    vi.mocked(apiClient.patch).mockRejectedValueOnce({
+      response: { status: 409, data: { detail: 'Settle or cancel the existing table orders before starting a new visit.' } },
+    });
+    render(<TableAccessNotification requestId={7} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Approve host' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm approval' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Settle or cancel the existing table orders before starting a new visit.',
+    );
+  });
+  it('shows message-shaped proxy errors and their HTTP status when detail is absent', async () => {
+    vi.mocked(apiClient.patch).mockRejectedValueOnce({
+      response: { status: 409, data: { message: 'The table is currently occupied.' } },
+    });
+    render(<TableAccessNotification requestId={7} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Approve host' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm approval' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('The table is currently occupied.');
+    expect(screen.getByRole('alert')).toHaveTextContent('409');
+  });
+  it('distinguishes a saved approval from a failed status refresh', async () => {
+    vi.mocked(apiClient.get)
+      .mockResolvedValueOnce({ data: { id: 7, table_name: 'g5', customer_name: 'Niraj', status: 'pending', expires_at: new Date(Date.now() + 600000).toISOString() } } as any)
+      .mockRejectedValueOnce({ response: { status: 502, data: { message: 'Gateway unavailable.' } } });
+    render(<TableAccessNotification requestId={7} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Approve host' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm approval' }));
+    expect(await screen.findByText('Request approved.')).toBeInTheDocument();
+    expect(await screen.findByRole('alert')).toHaveTextContent('Decision saved, but the request status could not be refreshed');
+    expect(screen.getByRole('alert')).toHaveTextContent('Gateway unavailable. (HTTP 502)');
+    expect(screen.queryByRole('button', { name: 'Approve host' })).not.toBeInTheDocument();
+  });
   it('does not offer actions on an expired notification', async () => {
     status = 'expired';
     render(<TableAccessNotification requestId={7} />);

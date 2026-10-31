@@ -53,6 +53,7 @@ export interface EmailPosterOptions {
   // field. Optional; templates that use it render it as plain text.
   description?: string;
   discountType: "percentage" | "flat_amount";
+  rewardScope?: "order" | "favourite_item" | "one_favourite_item";
   value: number;
   percentageCap?: number | null;
   minimumOrderValue?: number | null;
@@ -132,11 +133,15 @@ export function formatAmount(amount: number): string {
 }
 
 export function formatOfferSummary(options: EmailPosterOptions): string {
+  if (options.rewardScope === "one_favourite_item") {
+    return `One favourite item free${options.minimumOrderValue ? ` on orders above ${formatAmount(options.minimumOrderValue)}` : ""}`;
+  }
   const { discountType, value, percentageCap, minimumOrderValue } = options;
   let summary = discountType === "percentage" ? `${value}% off` : `${formatAmount(value)} off`;
   if (discountType === "percentage" && percentageCap) {
     summary += ` (max ${formatAmount(percentageCap)})`;
   }
+  if (options.rewardScope === "favourite_item") summary += " your favourite item";
   if (minimumOrderValue) {
     summary += ` on orders above ${formatAmount(minimumOrderValue)}`;
   }
@@ -145,6 +150,7 @@ export function formatOfferSummary(options: EmailPosterOptions): string {
 
 /** Just the numeral/percentage part, for templates that want it huge and standalone. */
 export function formatOfferHeadline(options: EmailPosterOptions): string {
+  if (options.rewardScope === "one_favourite_item") return "FREE";
   return options.discountType === "percentage" ? `${options.value}%` : formatAmount(options.value);
 }
 

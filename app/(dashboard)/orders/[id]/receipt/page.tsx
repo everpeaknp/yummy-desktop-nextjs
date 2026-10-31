@@ -3,6 +3,8 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { useRouter, useParams } from "next/navigation";
 import apiClient from "@/lib/api-client";
+import { getApiErrorMessage } from "@/lib/api-error-message";
+import { resolveAuthorizedReceiptTerminalId } from "@/lib/receipt-print-terminal";
 import { useAuth } from "@/hooks/use-auth";
 import { hasPermission } from "@/lib/role-permissions";
 import { toast } from "sonner";
@@ -462,14 +464,23 @@ export default function ReceiptPage() {
         mode,
         device_identifier: "yummy-web-receipt-route",
         printer_name: receipt?.printer_config?.name || "Browser print dialog",
-        receipt_terminal_id: selectedTerminalId,
+        receipt_terminal_id:
+          selectedTerminalId ??
+          (receiptTerminals.length === 1 ? receiptTerminals[0].id : null),
       },
     );
     return response.data.data as {
       authorization_id: number;
       designation: string;
+      receipt_terminal_id?: number | null;
     };
-  }, [isPreBill, orderId, receipt?.printer_config?.name, selectedTerminalId]);
+  }, [
+    isPreBill,
+    orderId,
+    receipt?.printer_config?.name,
+    receiptTerminals,
+    selectedTerminalId,
+  ]);
 
   const completeOrdinaryPrint = useCallback(
     async (
@@ -501,7 +512,11 @@ export default function ReceiptPage() {
           isPreBill ? "bill" : "receipt",
           authorization.authorization_id,
           paymentQr?.config_id,
-          selectedTerminalId,
+          resolveAuthorizedReceiptTerminalId(
+            authorization.receipt_terminal_id,
+            selectedTerminalId,
+            receiptTerminals.length === 1 ? receiptTerminals[0].id : null,
+          ),
         );
         await printRawToReceiptPrinter(
           selectedTerminal?.printer
@@ -742,7 +757,9 @@ export default function ReceiptPage() {
     }
 
     autoPrintedOrderRef.current = orderId;
-    void runAutoPrint();
+    void runAutoPrint().catch((printError) => {
+      toast.error(getApiErrorMessage(printError, printError instanceof Error ? printError.message : "Printing failed."));
+    });
   }, [
     fiscalDocument,
     fiscalDocumentError,
