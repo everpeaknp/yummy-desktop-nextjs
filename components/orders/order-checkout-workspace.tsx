@@ -409,6 +409,7 @@ function CustomerSearchSelect({
   onValueChange,
   onQuickAdd,
   helperText,
+  disabled = false,
 }: {
   label: string;
   placeholder: string;
@@ -418,6 +419,7 @@ function CustomerSearchSelect({
   onValueChange: (value: string) => void;
   onQuickAdd: () => void;
   helperText?: string;
+  disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -467,9 +469,12 @@ function CustomerSearchSelect({
             type="button"
             variant="outline"
             className="w-full justify-between gap-3 h-11 pr-3 font-normal"
+            disabled={disabled}
+            aria-label={`${label}: ${selectedLabel}`}
+            aria-busy={disabled}
           >
             <span className="min-w-0 flex-1 truncate text-left">
-              {selectedLabel}
+              {disabled ? "Saving customer…" : selectedLabel}
             </span>
             <ChevronDown className="h-4 w-4 shrink-0 opacity-60" />
           </Button>
@@ -482,6 +487,7 @@ function CustomerSearchSelect({
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search customers..."
+                aria-label="Search customers"
                 autoFocus
                 className="pl-9"
               />
@@ -966,6 +972,8 @@ function CheckoutContent({
   const customerPaginationRestaurantRef = useRef<number | null>(null);
   const requestedOrderCustomerRef = useRef<number | null>(null);
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>("");
+  const [customerSaving, setCustomerSaving] = useState(false);
+  const customerSavingRef = useRef(false);
   const [quickAddOpen, setQuickAddOpen] = useState(false);
   const [quickAddSubmitting, setQuickAddSubmitting] = useState(false);
   const [quickAddError, setQuickAddError] = useState<string | null>(null);
@@ -1338,6 +1346,41 @@ function CheckoutContent({
     );
     return customerId;
   }, [orderId, orderMeta?.customer_id, selectedCustomerId]);
+
+  const handleSelectCustomer = async (value: string) => {
+    if (customerSavingRef.current) return false;
+    if (Number(orderMeta?.customer_id) === Number(value)) {
+      setSelectedCustomerId(value);
+      return true;
+    }
+    customerSavingRef.current = true;
+    setCustomerSaving(true);
+    try {
+      const { data } = await apiClient.patch(OrderApis.updateOrder(orderId), {
+        customer_id: Number(value),
+      });
+      if (data?.status !== "success") {
+        throw new Error(data?.message || "Failed to attach customer to order");
+      }
+      setOrderMeta(data.data);
+      setSelectedCustomerId(value);
+      void fetchContextQuiet().catch((refreshError) => {
+        console.warn("Could not refresh order customer details:", refreshError);
+      });
+      return true;
+    } catch (err: any) {
+      toast.error(
+        err?.response?.data?.detail ||
+          err?.response?.data?.message ||
+          err?.message ||
+          "Could not attach customer to this order. Select them again.",
+      );
+      return false;
+    } finally {
+      customerSavingRef.current = false;
+      setCustomerSaving(false);
+    }
+  };
 
   const handleApplyItemUpdate = useCallback(
     async (
@@ -1824,7 +1867,7 @@ function CheckoutContent({
 
       const created = res.data?.data;
       await fetchCustomers();
-      if (created?.id) setSelectedCustomerId(String(created.id));
+      if (created?.id) await handleSelectCustomer(String(created.id));
       if (
         created?.id &&
         (quickAddMarketingConsent.email || quickAddMarketingConsent.sms)
@@ -1881,7 +1924,7 @@ function CheckoutContent({
           );
         });
         if (existing?.id) {
-          setSelectedCustomerId(String(existing.id));
+          const attached = await handleSelectCustomer(String(existing.id));
           setQuickAddForm({
             name: "",
             phone: "",
@@ -1891,7 +1934,7 @@ function CheckoutContent({
             billing_address: "",
           });
           setQuickAddOpen(false);
-          toast.info("Customer already exists, selected them instead.");
+          if (attached) toast.info("Customer already exists, selected them instead.");
           return;
         }
       }
@@ -3907,7 +3950,8 @@ function CheckoutContent({
                         checkoutCustomerId ? String(checkoutCustomerId) : ""
                       }
                       currency={curr}
-                      onValueChange={setSelectedCustomerId}
+                      onValueChange={(value) => { void handleSelectCustomer(value); }}
+                      disabled={customerSaving}
                       onQuickAdd={() => setQuickAddOpen(true)}
                     />
                   </div>
@@ -4207,7 +4251,7 @@ function CheckoutContent({
                 <Button
                   className="w-full h-12 text-base font-bold rounded-xl bg-emerald-600 hover:bg-emerald-700 shadow-emerald-500/20 shadow-lg gap-2"
                   onClick={handleComplete}
-                  disabled={completing || ncNeedsCustomer}
+                  disabled={completing || ncNeedsCustomer || customerSaving}
                 >
                   {completing ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -4394,7 +4438,8 @@ function CheckoutContent({
                       customers={customers}
                       value={selectedCustomerId}
                       currency={curr}
-                      onValueChange={setSelectedCustomerId}
+                      onValueChange={(value) => { void handleSelectCustomer(value); }}
+                      disabled={customerSaving}
                       onQuickAdd={() => setQuickAddOpen(true)}
                     />
                   </div>
@@ -4839,7 +4884,8 @@ function CheckoutContent({
                           customers={customers}
                           value={selectedCustomerId}
                           currency={curr}
-                          onValueChange={setSelectedCustomerId}
+                          onValueChange={(value) => { void handleSelectCustomer(value); }}
+                          disabled={customerSaving}
                           onQuickAdd={() => setQuickAddOpen(true)}
                         />
                       ) : (
@@ -4898,7 +4944,7 @@ function CheckoutContent({
             </Button>
             <Button
               onClick={handleAddPayment}
-              disabled={paySubmitting}
+              disabled={paySubmitting || customerSaving}
               className="gap-2"
             >
               {paySubmitting ? (
