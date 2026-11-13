@@ -270,29 +270,37 @@ export default function InventoryPage() {
 
   // 2. Fetch Data
   const fetchInventory = async () => {
-    if (!user?.restaurant_id) return;
+    const restaurantId = user?.restaurant_id;
+    if (!restaurantId) return;
     setLoading(true);
     setInventoryError(false);
 
     try {
-      const url = InventoryApis.listInventoryWithQuery({
-        restaurantId: user.restaurant_id,
-        lowStockOnly: activeTab === "low_stock",
-      });
+      const loadAllItems = async () => {
+        const pageSize = 500;
+        const allItems: any[] = [];
+        while (true) {
+          const url = InventoryApis.listInventoryWithQuery({
+            restaurantId,
+            lowStockOnly: activeTab === "low_stock",
+            skip: allItems.length,
+            limit: pageSize,
+          });
+          const response = await apiClient.get(url);
+          if (response.data.status !== "success") throw new Error("Could not load inventory items");
+          const data = response.data.data;
+          const page = Array.isArray(data) ? data : data?.items || [];
+          allItems.push(...page);
+          if (page.length < pageSize) return allItems;
+        }
+      };
 
       const [inventoryResult, valuationResult] = await Promise.allSettled([
-        apiClient.get(url),
-        apiClient.get(InventoryApis.valuation(user.restaurant_id)),
+        loadAllItems(),
+        apiClient.get(InventoryApis.valuation(restaurantId)),
       ]);
-      if (
-        inventoryResult.status === "fulfilled" &&
-        inventoryResult.value.data.status === "success"
-      ) {
-        setItems(
-          inventoryResult.value.data.data.items ||
-            inventoryResult.value.data.data ||
-            [],
-        );
+      if (inventoryResult.status === "fulfilled") {
+        setItems(inventoryResult.value);
       } else if (inventoryResult.status === "rejected") {
         throw inventoryResult.reason;
       }
