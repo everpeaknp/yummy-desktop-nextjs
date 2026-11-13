@@ -1866,16 +1866,19 @@ export const DayCloseApis = {
     restaurantId,
     businessLine,
     businessDate,
+    dayCloseId,
   }: {
     restaurantId: number;
     businessLine?: string;
     businessDate?: string;
+    dayCloseId?: number;
   }) => {
     const params = new URLSearchParams({
       restaurant_id: restaurantId.toString(),
     });
     if (businessLine) params.append("business_line", businessLine);
     if (businessDate) params.append("business_date", businessDate);
+    if (dayCloseId) params.append("day_close_id", String(dayCloseId));
     return `/day-closes/validate-close?${params.toString()}`;
   },
   initiate: "/day-closes/initiate",
@@ -1883,16 +1886,19 @@ export const DayCloseApis = {
     restaurantId,
     businessLine,
     businessDate,
+    dayCloseId,
   }: {
     restaurantId: number;
     businessLine?: string;
     businessDate?: string;
+    dayCloseId?: number;
   }) => {
     const params = new URLSearchParams({
       restaurant_id: restaurantId.toString(),
     });
     if (businessLine) params.append("business_line", businessLine);
     if (businessDate) params.append("business_date", businessDate);
+    if (dayCloseId) params.append("day_close_id", String(dayCloseId));
     return `/day-closes/generate-snapshot?${params.toString()}`;
   },
   confirm: (id: number) => `/day-closes/${id}/confirm`,

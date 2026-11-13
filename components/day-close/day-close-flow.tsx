@@ -329,6 +329,8 @@ export function DayCloseFlow({
   const [controlsEnabled, setControlsEnabled] = useState<boolean | null>(null);
   const [manualCount, setManualCount] = useState("");
   const [closingNote, setClosingNote] = useState("");
+  const [closeName, setCloseName] = useState("");
+  const [currentCloseId, setCurrentCloseId] = useState<number | undefined>();
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [pageError, setPageError] = useState<string | null>(null);
@@ -353,20 +355,24 @@ export function DayCloseFlow({
     setLoading(true);
     setPageError(null);
     try {
+      const currentResponse = await apiClient.get(
+        DayCloseApis.current({ restaurantId, businessLine, businessDate }),
+      );
+      const nextCurrent = unwrapApiData(
+        currentResponse.data,
+        parseDayCloseCurrent,
+      );
       const [
-        currentResponse,
         validationResponse,
         snapshotResponse,
         controlsResponse,
       ] = await Promise.all([
         apiClient.get(
-          DayCloseApis.current({ restaurantId, businessLine, businessDate }),
-        ),
-        apiClient.get(
           DayCloseApis.validateClose({
             restaurantId,
             businessLine,
             businessDate,
+            dayCloseId: targetDayCloseId ?? nextCurrent?.id,
           }),
         ),
         apiClient.get(
@@ -374,16 +380,21 @@ export function DayCloseFlow({
             restaurantId,
             businessLine,
             businessDate,
+            dayCloseId: targetDayCloseId ?? nextCurrent?.id,
           }),
         ),
         apiClient
           .get(DrawerSessionApis.controls({ restaurantId }))
           .catch(() => null),
       ]);
-      const nextCurrent = unwrapApiData(
-        currentResponse.data,
-        parseDayCloseCurrent,
-      );
+      setCurrentCloseId(nextCurrent?.id);
+      if (targetDayCloseId) {
+        const response = await apiClient.get(DayCloseApis.detail(targetDayCloseId));
+        const target = unwrapApiData(response.data, parseDayCloseDetail);
+        setCloseName((previous) => previous || target?.name || "");
+      } else {
+        setCloseName((previous) => previous || nextCurrent?.name || "");
+      }
       // Day Close owns a persisted operational date. A browser can still be
       // open on the just-closed calendar date, so reconcile to the server's
       // active close before displaying or submitting any further work.
@@ -457,6 +468,7 @@ export function DayCloseFlow({
     setStep("review");
     setManualCount("");
     setClosingNote("");
+    setCloseName("");
     void load();
   }, [load]);
 
@@ -528,12 +540,14 @@ export function DayCloseFlow({
     if (!capabilities.canConfirm || !snapshot || !validation) return;
     setSubmitting(true);
     setPageError(null);
+    let attemptedCloseId = targetDayCloseId ?? currentCloseId;
     try {
       const initiateResponse = await apiClient.post(DayCloseApis.initiate, {
         restaurant_id: restaurantId,
         business_line: businessLine,
         business_date: businessDate,
-        day_close_id: targetDayCloseId ?? undefined,
+        day_close_id: attemptedCloseId,
+        name: closeName.trim() || undefined,
       });
       const initiated = unwrapApiData(
         initiateResponse.data,
@@ -541,17 +555,18 @@ export function DayCloseFlow({
       );
       if (!initiated?.id)
         throw new Error("The server did not return a day-close record.");
+      attemptedCloseId = initiated.id;
 
       const latestResponse = await apiClient.get(
-        DayCloseApis.generateSnapshot({
-          restaurantId,
-          businessLine,
-          businessDate,
-        }),
+        DayCloseApis.snapshot(initiated.id),
       );
       const latest =
-        unwrapApiData(latestResponse.data, parseDayCloseSnapshotData) ??
-        snapshot;
+        parseDayCloseSnapshotData(
+          unwrapApiData(latestResponse.data, parseDayCloseSnapshotResponse)?.snapshot_data,
+        );
+      if (!latest) {
+        throw new Error("The saved dayclose snapshot is unavailable. Try closing again.");
+      }
       const drawerCount = latest.drawer_control?.counted_cash;
       const entered =
         manualCount.trim() === "" ? undefined : Number(manualCount);
@@ -566,6 +581,7 @@ export function DayCloseFlow({
           : pickBackendAmount(
               latest.expected_cash,
               latest.drawer_control?.expected_cash,
+              initiated.expected_cash,
             );
       if (actualCash == null)
         throw new Error("Cash information is unavailable.");
@@ -608,7 +624,9 @@ export function DayCloseFlow({
       const errorCode = apiErrorCode(error);
       try {
         const currentResponse = await apiClient.get(
-          DayCloseApis.current({ restaurantId, businessLine, businessDate }),
+          attemptedCloseId
+            ? DayCloseApis.detail(attemptedCloseId)
+            : DayCloseApis.current({ restaurantId, businessLine, businessDate }),
         );
         const authoritative = unwrapApiData(
           currentResponse.data,
@@ -1021,6 +1039,19 @@ export function DayCloseFlow({
             title="Warnings retained"
             issues={presentation.warnings}
           />
+          <section className="space-y-2">
+            <Label htmlFor="day-close-name">Dayclose name</Label>
+            <Input
+              id="day-close-name"
+              name="dayclose_name"
+              autoComplete="off"
+              maxLength={120}
+              className="h-11 focus-visible:ring-2 focus-visible:ring-ring"
+              value={closeName}
+              disabled={submitting}
+              onChange={(event) => setCloseName(event.target.value)}
+            />
+          </section>
           <section className="space-y-2">
             <Label htmlFor="day-close-note">
               Closing note{" "}

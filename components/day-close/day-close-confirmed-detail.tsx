@@ -104,12 +104,12 @@ export function DayCloseConfirmedDetail({
         <main className="space-y-8">
           <section>
             <div className="flex items-start justify-between gap-4">
-              <div>
+              <div className="min-w-0">
                 <p className="text-sm text-muted-foreground">
                   {formatDayCloseCloseName(detail.business_line)}
                 </p>
-                <h2 className="mt-1 text-2xl font-semibold">
-                  {formatDayCloseBusinessDate(detail.business_date, timezone)}
+                <h2 className="mt-1 break-words text-2xl font-semibold">
+                  {detail.name?.trim() || formatDayCloseBusinessDate(detail.business_date, timezone)}
                 </h2>
               </div>
               <span

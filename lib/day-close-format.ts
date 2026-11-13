@@ -114,13 +114,14 @@ export function formatDayCloseBusinessDate(
 /** Prefer exact close window; never use business_date as the financial boundary label. */
 export function formatDayCloseListHeading(input: {
   id: number;
+  name?: string | null;
   business_date?: string | null;
   business_line?: string | null;
   period_start_at?: string | null;
   period_end_at?: string | null;
   timezone?: string | null;
 }): string {
-  const closeName = formatDayCloseCloseName(input.business_line);
+  const closeName = input.name?.trim() || formatDayCloseCloseName(input.business_line);
   const period = formatDayClosePeriod(
     input.period_start_at,
     input.period_end_at,
@@ -153,6 +154,7 @@ export function pickBackendAmount(
 export function formatDayCloseSessionLabel(session: DayCloseSession): string {
   const heading = formatDayCloseListHeading({
     id: session.id,
+    name: session.name,
     business_line: session.business_line,
     period_start_at: session.period_start_at,
     period_end_at: session.period_end_at,
@@ -199,6 +201,7 @@ export function dayCloseSessionToListItem(
 ): DayCloseListItem {
   return {
     id: session.id,
+    name: session.name,
     business_date: session.business_date,
     business_line: session.business_line,
     status: "confirmed",

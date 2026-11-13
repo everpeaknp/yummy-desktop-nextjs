@@ -44,8 +44,8 @@ export function DayCloseHistoryListCard({
         className="grid min-h-[92px] w-full gap-3 py-4 text-left transition-colors hover:bg-muted/40 sm:grid-cols-[minmax(190px,1fr)_minmax(130px,.65fr)_minmax(150px,.75fr)_auto] sm:items-center sm:px-3"
       >
         <div className="min-w-0">
-          <p className="font-semibold">
-            {formatDayCloseBusinessDate(
+          <p className="break-words font-semibold">
+            {item.name?.trim() || formatDayCloseBusinessDate(
               item.business_date,
               timezone ?? item.timezone,
             )}

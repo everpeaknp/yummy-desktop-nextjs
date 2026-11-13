@@ -27,7 +27,7 @@ export async function fetchDayCloseSnapshotForDetail(
   detail: DayCloseDetail | null,
   options?: { restaurantId?: number; businessLine?: string },
 ): Promise<DayCloseSnapshotResponse | null> {
-  const useLiveSnapshot = usesLiveSnapshot(detail?.status);
+  const useLiveSnapshot = usesLiveSnapshot(detail?.status) && !detail?.period_end_at;
   const restaurantId = detail?.restaurant_id ?? options?.restaurantId;
   const businessLine = detail?.business_line ?? options?.businessLine ?? "restaurant";
 
@@ -37,6 +37,7 @@ export async function fetchDayCloseSnapshotForDetail(
         restaurantId,
         businessLine,
         businessDate: detail?.business_date,
+        dayCloseId: id,
       }),
     );
     if (res.data?.status === "success") {

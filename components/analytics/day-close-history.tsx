@@ -64,6 +64,7 @@ import {
   Minimize2,
 } from "lucide-react";
 import { DayCloseHistoryListCard } from "@/components/analytics/day-close-history-list-card";
+import { DayCloseNameEditor } from "@/components/day-close/day-close-name-editor";
 import {
   resizableDialogContentClass,
   useResizableDialogStyle,
@@ -1331,6 +1332,12 @@ export const DayCloseHistory = forwardRef<
               </div>
             ) : (
               <>
+                {(canInitiate || canConfirm) && (
+                  <DayCloseNameEditor key={detail.id} id={detail.id} name={detail.name} onSaved={(name) => {
+                    setDetail((current) => current ? { ...current, name } : current);
+                    void refreshAfterMutation();
+                  }} />
+                )}
                 {isVersionedClose ? (
                   <DayCloseConfirmedDetail
                     detail={detail}

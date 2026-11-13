@@ -691,6 +691,7 @@ export interface DayCloseSnapshotResponse {
 
 export interface DayCloseDetail {
   id: number;
+  name?: string;
   restaurant_id: number;
   business_date?: string;
   business_line?: BusinessLine | string;
@@ -735,6 +736,7 @@ export interface DayCloseDetail {
 
 export interface DayCloseListItem {
   id: number;
+  name?: string;
   business_date?: string;
   business_line?: BusinessLine | string;
   status: DayCloseStatus;
@@ -755,6 +757,7 @@ export interface DayCloseListItem {
 /** Confirmed close window from GET /day-closes/sessions (analytics/history filters). */
 export interface DayCloseSession {
   id: number;
+  name?: string;
   business_date?: string;
   business_line?: BusinessLine | string;
   confirmed_at?: string;
@@ -765,6 +768,7 @@ export interface DayCloseSession {
 
 export interface DayCloseCurrent {
   id?: number;
+  name?: string;
   business_date?: string;
   business_line?: BusinessLine | string;
   status?: DayCloseStatus;
@@ -1139,6 +1143,7 @@ export function parseDayCloseDetail(payload: unknown): DayCloseDetail | null {
 
   const detail: DayCloseDetail = {
     id,
+    name: typeof row.name === "string" ? row.name : undefined,
     restaurant_id,
     status: String(row.status ?? "open"),
     business_date:
@@ -1198,6 +1203,7 @@ export function parseDayCloseListItem(
 
   const item: DayCloseListItem = {
     id,
+    name: typeof row.name === "string" ? row.name : undefined,
     status: String(row.status ?? "open"),
     business_date:
       row.business_date != null ? String(row.business_date) : undefined,
@@ -1248,6 +1254,7 @@ export function parseDayCloseSession(payload: unknown): DayCloseSession | null {
   if (!Number.isFinite(id)) return null;
   return {
     id,
+    name: typeof row.name === "string" ? row.name : undefined,
     business_date:
       row.business_date != null ? String(row.business_date) : undefined,
     business_line:
@@ -1301,6 +1308,7 @@ export function parseDayCloseCurrent(payload: unknown): DayCloseCurrent | null {
   if (!row) return null;
   return {
     id: typeof row.id === "number" ? row.id : undefined,
+    name: typeof row.name === "string" ? row.name : undefined,
     business_date:
       row.business_date != null ? String(row.business_date) : undefined,
     business_line:
