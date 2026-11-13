@@ -35,6 +35,7 @@ import {
   Ruler,
   Save,
   Scale,
+  ShoppingCart,
   StickyNote,
   Trash2,
   Truck,
@@ -56,9 +57,11 @@ interface InventoryItemDetailsSheetProps {
   onAddStock: (item: any) => void;
   onReduceStock: (item: any) => void;
   onCountStock: (item: any) => void;
+  onPurchase: (item: any) => void;
   canAddStock: boolean;
   canReduceStock: boolean;
   canCountStock: boolean;
+  canPurchase: boolean;
   onViewLedger: (item: any) => void;
   onRecipeLinksChanged?: () => void;
 }
@@ -123,9 +126,11 @@ export function InventoryItemDetailsSheet({
   onAddStock,
   onReduceStock,
   onCountStock,
+  onPurchase,
   canAddStock,
   canReduceStock,
   canCountStock,
+  canPurchase,
   onViewLedger,
   onRecipeLinksChanged,
 }: InventoryItemDetailsSheetProps) {
@@ -168,6 +173,7 @@ export function InventoryItemDetailsSheet({
 
   const restaurantId = Number(user?.restaurant_id || 0);
   const canManageRecipes = hasPermission(user, "inventory.recipes.manage");
+  const stockActionCount = [canPurchase, canAddStock, canReduceStock, canCountStock].filter(Boolean).length;
 
   const availableMenuItems = useMemo(() => {
     const linkedIds = new Set(
@@ -523,10 +529,24 @@ export function InventoryItemDetailsSheet({
             </div>
           </div>
 
-          {(canAddStock || canReduceStock || canCountStock) ? <div className="grid grid-cols-3 gap-2">
+          {(canPurchase || canAddStock || canReduceStock || canCountStock) ? <div className={cn(
+            "grid gap-2",
+            stockActionCount === 4
+              ? "grid-cols-2 sm:grid-cols-4"
+              : stockActionCount === 3
+                ? "grid-cols-3"
+                : stockActionCount === 2
+                  ? "grid-cols-2"
+                  : "grid-cols-1",
+          )}>
+            {canPurchase ? <Button size="sm" title="Record a supplier purchase" onClick={() => onPurchase(item)}>
+              <ShoppingCart className="mr-1.5 h-4 w-4" /> Purchase
+            </Button> : null}
             {canAddStock ? <Button
               size="sm"
-              className="bg-emerald-600 text-white hover:bg-emerald-700"
+              variant="outline"
+              title="Add stock without a supplier bill"
+              className="border-emerald-300 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800 dark:border-emerald-900 dark:text-emerald-400 dark:hover:bg-emerald-950/30"
               onClick={() => onAddStock(item)}
             >
               <PlusCircle className="mr-1.5 h-4 w-4" /> Add

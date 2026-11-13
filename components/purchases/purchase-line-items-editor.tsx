@@ -35,6 +35,7 @@ export interface PurchaseLineDraft {
   purchaseUnit: string;
   unitConversionFactor: string;
   unitCost: string;
+  totalAmount: string;
   taxRate: string;
 }
 
@@ -56,6 +57,7 @@ export function newPurchaseLineDraft(): PurchaseLineDraft {
     purchaseUnit: "",
     unitConversionFactor: "1",
     unitCost: "",
+    totalAmount: "",
     taxRate: "",
   };
 }
@@ -64,8 +66,8 @@ function lineTotal(line: PurchaseLineDraft): number {
   const qty = Number(line.orderedQuantity) || 0;
   const cost = Number(line.unitCost) || 0;
   const taxRate = Number(line.taxRate) || 0;
-  const subtotal = qty * cost;
-  return subtotal + (subtotal * taxRate) / 100;
+  const subtotal = qty * Number(cost.toFixed(2));
+  return subtotal + Number(((subtotal * taxRate) / 100).toFixed(2));
 }
 
 function DuplicateItemWarning({
@@ -144,11 +146,13 @@ export function PurchaseLineItemsEditor({
   lines,
   onChange,
   disabled = false,
+  initialItem,
 }: {
   restaurantId: number;
   lines: PurchaseLineDraft[];
   onChange: (lines: PurchaseLineDraft[]) => void;
   disabled?: boolean;
+  initialItem?: InventoryItemOption | null;
 }) {
   const usedItemIds = lines
     .filter((l) => l.mode === "existing" && l.inventoryItemId != null)
@@ -156,7 +160,17 @@ export function PurchaseLineItemsEditor({
 
   const updateLine = (index: number, patch: Partial<PurchaseLineDraft>) => {
     const updated = [...lines];
-    updated[index] = { ...updated[index], ...patch };
+    const next = { ...updated[index], ...patch };
+    if (patch.unitCost !== undefined) next.totalAmount = "";
+    if (patch.totalAmount !== undefined ||
+      (next.totalAmount !== "" && (patch.orderedQuantity !== undefined || patch.taxRate !== undefined))) {
+      const quantity = Number(next.orderedQuantity);
+      const taxFactor = 1 + Number(next.taxRate || 0) / 100;
+      next.unitCost = next.totalAmount !== "" && quantity > 0 && taxFactor > 0
+        ? String(Number((Number(next.totalAmount) / (quantity * taxFactor)).toFixed(2)))
+        : "";
+    }
+    updated[index] = next;
     onChange(updated);
   };
 
@@ -241,6 +255,7 @@ export function PurchaseLineItemsEditor({
                   excludeIds={usedItemIds}
                   disabled={disabled}
                   label="Item"
+                  selectedItem={line.inventoryItemId === initialItem?.id ? initialItem : null}
                 />
               ) : (
                 <div className="space-y-2">
@@ -319,10 +334,12 @@ export function PurchaseLineItemsEditor({
                 </div>
               )}
 
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                <div className="space-y-1">
-                  <Label className="text-xs">Quantity *</Label>
+              <div className="grid grid-cols-2 items-end gap-2 sm:grid-cols-5">
+                <div className="flex flex-col justify-end space-y-1">
+                  <Label htmlFor={`purchase-quantity-${line.key}`} className="text-xs">Quantity *</Label>
                   <Input
+                    id={`purchase-quantity-${line.key}`}
+                    name={`quantity_${index}`}
                     type="number"
                     step="0.001"
                     min="0.001"
@@ -333,9 +350,11 @@ export function PurchaseLineItemsEditor({
                     disabled={disabled}
                   />
                 </div>
-                <div className="space-y-1">
-                  <Label className="text-xs">Purchase unit</Label>
+                <div className="flex flex-col justify-end space-y-1">
+                  <Label htmlFor={`purchase-unit-${line.key}`} className="text-xs">Purchase unit</Label>
                   <Input
+                    id={`purchase-unit-${line.key}`}
+                    name={`purchase_unit_${index}`}
                     value={line.purchaseUnit}
                     onChange={(e) =>
                       updateLine(index, { purchaseUnit: e.target.value })
@@ -344,9 +363,11 @@ export function PurchaseLineItemsEditor({
                     placeholder="e.g. box"
                   />
                 </div>
-                <div className="space-y-1">
-                  <Label className="text-xs">Unit cost *</Label>
+                <div className="flex flex-col justify-end space-y-1">
+                  <Label htmlFor={`purchase-unit-cost-${line.key}`} className="text-xs">Unit cost *</Label>
                   <Input
+                    id={`purchase-unit-cost-${line.key}`}
+                    name={`unit_cost_${index}`}
                     type="number"
                     step="0.01"
                     min="0"
@@ -357,9 +378,11 @@ export function PurchaseLineItemsEditor({
                     disabled={disabled}
                   />
                 </div>
-                <div className="space-y-1">
-                  <Label className="text-xs">Tax rate %</Label>
+                <div className="flex flex-col justify-end space-y-1">
+                  <Label htmlFor={`purchase-tax-rate-${line.key}`} className="text-xs">Tax rate %</Label>
                   <Input
+                    id={`purchase-tax-rate-${line.key}`}
+                    name={`tax_rate_${index}`}
                     type="number"
                     step="0.01"
                     min="0"
@@ -371,10 +394,29 @@ export function PurchaseLineItemsEditor({
                     disabled={disabled}
                   />
                 </div>
+                <div className="col-span-2 flex flex-col justify-end space-y-1 sm:col-span-1">
+                  <Label htmlFor={`purchase-total-${line.key}`} className="whitespace-nowrap text-xs">
+                    Total incl. tax
+                  </Label>
+                  <Input
+                    id={`purchase-total-${line.key}`}
+                    aria-label="Total incl. tax (NPR)"
+                    name={`total_amount_${index}`}
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={line.totalAmount || (line.orderedQuantity && line.unitCost !== "" ? String(Number(lineTotal(line).toFixed(2))) : "")}
+                    onChange={(event) => updateLine(index, { totalAmount: event.target.value })}
+                    disabled={disabled || Number(line.orderedQuantity) <= 0}
+                    placeholder={Number(line.orderedQuantity) <= 0 ? "Enter quantity first" : "0.00"}
+                  />
+                </div>
               </div>
-              <p className="text-xs text-muted-foreground text-right">
-                Line total: {formatCurrency(lineTotal(line))}
-              </p>
+              {line.totalAmount !== "" && Math.abs(lineTotal(line) - Number(line.totalAmount)) >= 0.005 && (
+                <p role="status" className="text-xs text-amber-700 dark:text-amber-400">
+                  Recorded total will be {formatCurrency(lineTotal(line))} because unit cost uses two decimal places.
+                </p>
+              )}
             </div>
           ))}
         </div>

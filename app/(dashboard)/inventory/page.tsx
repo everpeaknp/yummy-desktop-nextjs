@@ -65,6 +65,7 @@ import {
 } from "@/components/finance/cash-bank-account-select";
 import { ReasonCodeSelect } from "@/components/inventory/reason-code-select";
 import { InventoryItemDetailsSheet } from "@/components/inventory/inventory-item-details-sheet";
+import { RecordPurchaseDialog } from "@/components/purchases/record-purchase-dialog";
 import { hasPermission } from "@/lib/role-permissions";
 import { StationPicker } from "@/components/stations/station-picker";
 
@@ -142,6 +143,7 @@ export default function InventoryPage() {
   // shortcuts into Add/Reduce/Count Stock and the full ledger.
   const [detailsItem, setDetailsItem] = useState<any | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [purchaseItem, setPurchaseItem] = useState<any | null>(null);
 
   // Advanced ops: ledger history
   const [opsOpen, setOpsOpen] = useState(false);
@@ -220,6 +222,7 @@ export default function InventoryPage() {
   const me = useAuth((state) => state.me);
   const router = useRouter();
   const canManageItems = hasPermission(user, "inventory.items.manage");
+  const canPostPurchase = hasPermission(user, "inventory.purchases.post");
   const canAddStock = hasPermission(user, "inventory.stock.add");
   const canReduceStock = hasPermission(user, "inventory.stock.reduce");
   const canCountStock = canAddStock || canReduceStock;
@@ -1863,6 +1866,11 @@ export default function InventoryPage() {
         canAddStock={canAddStock}
         canReduceStock={canReduceStock}
         canCountStock={canCountStock}
+        canPurchase={canPostPurchase}
+        onPurchase={(target) => {
+          setDetailsOpen(false);
+          setPurchaseItem(target);
+        }}
         onAddStock={(target) => {
           setDetailsOpen(false);
           openAddStock(target);
@@ -1883,6 +1891,20 @@ export default function InventoryPage() {
           void fetchInventory();
         }}
       />
+
+      {canPostPurchase && <RecordPurchaseDialog
+        open={purchaseItem != null}
+        onOpenChange={(open) => { if (!open) setPurchaseItem(null); }}
+        restaurantId={user?.restaurant_id || 0}
+        initialItem={purchaseItem ? {
+          id: purchaseItem.id,
+          name: purchaseItem.name,
+          unit: purchaseItem.unit,
+          current_stock: purchaseItem.current_stock,
+        } : null}
+        initialSupplierId={purchaseItem?.supplier_id}
+        onRecorded={fetchInventory}
+      />}
 
       {/* Inventory Advanced Ops: Ledger */}
       <Dialog

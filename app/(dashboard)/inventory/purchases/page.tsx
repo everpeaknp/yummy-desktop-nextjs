@@ -40,21 +40,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  CashBankAccountSelect,
-  type CashBankAccountOption,
-} from "@/components/finance/cash-bank-account-select";
-import {
-  PurchaseLineItemsEditor,
-  newPurchaseLineDraft,
-  type PurchaseLineDraft,
-} from "@/components/purchases/purchase-line-items-editor";
+import { RecordPurchaseDialog } from "@/components/purchases/record-purchase-dialog";
 import apiClient from "@/lib/api-client";
 import {
   PartyLedgerApis,
   PurchaseApis,
   PurchaseReturnApis,
-  SupplierApis,
 } from "@/lib/api/endpoints";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import {
@@ -102,24 +93,7 @@ export default function InventoryPurchasesPage() {
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
-  const [suppliers, setSuppliers] = useState<any[]>([]);
-
   const [createOpen, setCreateOpen] = useState(false);
-  const [createForm, setCreateForm] = useState({
-    supplier_id: "",
-    purchase_date: new Date().toISOString().split("T")[0],
-    expected_delivery_date: "",
-    reference_number: "",
-    notes: "",
-  });
-  const [createLines, setCreateLines] = useState<PurchaseLineDraft[]>([
-    newPurchaseLineDraft(),
-  ]);
-  const [createPaymentStatus, setCreatePaymentStatus] = useState("pending");
-  const [createPaidAmount, setCreatePaidAmount] = useState("");
-  const [createAccount, setCreateAccount] =
-    useState<CashBankAccountOption | null>(null);
-  const [createSubmitting, setCreateSubmitting] = useState(false);
 
   const [detailPurchase, setDetailPurchase] = useState<any | null>(null);
   const [detailStatement, setDetailStatement] = useState<any | null>(null);
@@ -149,20 +123,6 @@ export default function InventoryPurchasesPage() {
       setLoading(false);
     }
   }, [statusFilter, user?.restaurant_id]);
-
-  const fetchSuppliers = useCallback(async () => {
-    if (!user?.restaurant_id) return;
-    try {
-      const response = await apiClient.get(
-        SupplierApis.listSuppliers(user.restaurant_id, true),
-      );
-      if (response.data.status === "success") {
-        setSuppliers(response.data.data?.suppliers || []);
-      }
-    } catch (err) {
-      console.error("Failed to fetch suppliers:", err);
-    }
-  }, [user?.restaurant_id]);
 
   const openPurchaseDetail = useCallback(
     async (purchase: any) => {
@@ -204,117 +164,8 @@ export default function InventoryPurchasesPage() {
   );
 
   useEffect(() => {
-    fetchSuppliers();
-  }, [fetchSuppliers]);
-
-  useEffect(() => {
     fetchPurchases();
   }, [fetchPurchases]);
-
-  const openCreate = () => {
-    const supplierFromUrl = searchParams.get("supplier_id") || "";
-    setCreateForm({
-      supplier_id: supplierFromUrl,
-      purchase_date: new Date().toISOString().split("T")[0],
-      expected_delivery_date: "",
-      reference_number: "",
-      notes: "",
-    });
-    setCreateLines([newPurchaseLineDraft()]);
-    setCreatePaymentStatus("pending");
-    setCreatePaidAmount("");
-    setCreateAccount(null);
-    setCreateOpen(true);
-  };
-
-  const handleCreate = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!user?.restaurant_id || !createForm.supplier_id) {
-      toast.error("Select a supplier before saving.");
-      return;
-    }
-    const lines = createLines.filter((l) =>
-      l.mode === "existing"
-        ? l.inventoryItemId != null
-        : l.newItem.name.trim() && l.newItem.unit.trim(),
-    );
-    if (lines.length === 0) {
-      toast.error("Add at least one purchase line.");
-      return;
-    }
-    for (const line of lines) {
-      if (
-        !line.orderedQuantity ||
-        Number(line.orderedQuantity) <= 0 ||
-        line.unitCost === ""
-      ) {
-        toast.error("Every line needs a quantity and a unit cost.");
-        return;
-      }
-    }
-    if (["paid", "partial"].includes(createPaymentStatus) && !createAccount) {
-      toast.error("Select the cash or bank account used to pay.");
-      return;
-    }
-    if (createPaymentStatus === "partial" && Number(createPaidAmount) <= 0) {
-      toast.error("Enter the amount paid now.");
-      return;
-    }
-
-    setCreateSubmitting(true);
-    try {
-      const payload = {
-        restaurant_id: user.restaurant_id,
-        supplier_id: Number(createForm.supplier_id),
-        purchase_date: createForm.purchase_date,
-        expected_delivery_date: createForm.expected_delivery_date || undefined,
-        reference_number: createForm.reference_number.trim() || undefined,
-        notes: createForm.notes.trim() || undefined,
-        payment_status: createPaymentStatus,
-        paid_amount:
-          createPaymentStatus === "partial"
-            ? Number(createPaidAmount)
-            : undefined,
-        account_type: ["paid", "partial"].includes(createPaymentStatus)
-          ? createAccount?.account_type
-          : undefined,
-        account_id: ["paid", "partial"].includes(createPaymentStatus)
-          ? createAccount?.id
-          : undefined,
-        idempotency_key: crypto.randomUUID(),
-        lines: lines.map((line) => ({
-          inventory_item_id:
-            line.mode === "existing" ? line.inventoryItemId : undefined,
-          station_id: line.mode === "existing" ? line.stationId : undefined,
-          new_item:
-            line.mode === "new"
-              ? {
-                  name: line.newItem.name.trim(),
-                  unit: line.newItem.unit.trim(),
-                  min_stock_level: Number(line.newItem.min_stock_level || 0),
-                  station: line.newItem.station || "general",
-                  station_id: line.newItem.stationId,
-                  storage_location:
-                    line.newItem.storage_location.trim() || undefined,
-                }
-              : undefined,
-          ordered_quantity: Number(line.orderedQuantity),
-          purchase_unit: line.purchaseUnit.trim() || undefined,
-          unit_conversion_factor: Number(line.unitConversionFactor || 1),
-          unit_cost: Number(line.unitCost),
-          tax_rate: line.taxRate ? Number(line.taxRate) : undefined,
-        })),
-      };
-      await apiClient.post(PurchaseApis.create, payload);
-      toast.success("Purchase recorded and stock updated.");
-      setCreateOpen(false);
-      await fetchPurchases();
-    } catch (err: any) {
-      toast.error(err.response?.data?.detail || "Failed to save purchase.");
-    } finally {
-      setCreateSubmitting(false);
-    }
-  };
 
   const handleVoid = async () => {
     if (!voidPurchase || !user?.restaurant_id) return;
@@ -366,7 +217,7 @@ export default function InventoryPurchasesPage() {
             >
               <Undo2 className="mr-2 h-4 w-4" /> Returns
             </Button> : null}
-            {canPostPurchase ? <Button className="h-11 rounded-xl" onClick={openCreate}>
+            {canPostPurchase ? <Button className="h-11 rounded-xl" onClick={() => setCreateOpen(true)}>
               <Plus className="mr-2 h-4 w-4" /> Record purchase
             </Button> : null}
           </div>
@@ -603,164 +454,7 @@ export default function InventoryPurchasesPage() {
         </div>
       </PageSection>
 
-      {/* Create Purchase Dialog */}
-      {canPostPurchase ? <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="flex h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] max-w-[720px] flex-col gap-0 overflow-hidden p-0 sm:h-auto sm:max-h-[92vh] sm:w-full">
-          <form
-            onSubmit={handleCreate}
-            className="flex min-h-0 flex-1 flex-col overflow-hidden"
-          >
-            <DialogHeader className="shrink-0 border-b px-5 py-4 text-left sm:px-6">
-              <DialogTitle>Record Purchase</DialogTitle>
-              <DialogDescription>
-                Add the supplier bill and items once. Saving immediately updates
-                stock, supplier balance, and accounting.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="grid flex-1 gap-4 overflow-y-auto px-5 py-4 sm:px-6">
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label>Supplier *</Label>
-                  <Select
-                    value={createForm.supplier_id}
-                    onValueChange={(v) =>
-                      setCreateForm({ ...createForm, supplier_id: v })
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select supplier" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {suppliers.map((s) => (
-                        <SelectItem key={s.id} value={String(s.id)}>
-                          {s.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>Purchase date</Label>
-                  <Input
-                    type="date"
-                    value={createForm.purchase_date}
-                    onChange={(e) =>
-                      setCreateForm({
-                        ...createForm,
-                        purchase_date: e.target.value,
-                      })
-                    }
-                  />
-                </div>
-              </div>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label>Reference number</Label>
-                  <Input
-                    placeholder="Supplier invoice/bill #"
-                    value={createForm.reference_number}
-                    onChange={(e) =>
-                      setCreateForm({
-                        ...createForm,
-                        reference_number: e.target.value,
-                      })
-                    }
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Payment</Label>
-                  <Select
-                    value={createPaymentStatus}
-                    onValueChange={(value) => {
-                      setCreatePaymentStatus(value);
-                      if (value !== "paid" && value !== "partial")
-                        setCreateAccount(null);
-                      if (value !== "partial") setCreatePaidAmount("");
-                    }}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="paid">Paid now</SelectItem>
-                      <SelectItem value="partial">Pay part now</SelectItem>
-                      <SelectItem value="pending">
-                        Pay later / supplier due
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-
-              {["paid", "partial"].includes(createPaymentStatus) ? (
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <CashBankAccountSelect
-                    label="Paid from account"
-                    value={createAccount}
-                    onChange={setCreateAccount}
-                  />
-                  {createPaymentStatus === "partial" ? (
-                    <div className="space-y-2">
-                      <Label>Amount paid now</Label>
-                      <Input
-                        type="number"
-                        min="0.01"
-                        step="0.01"
-                        value={createPaidAmount}
-                        onChange={(e) => setCreatePaidAmount(e.target.value)}
-                        placeholder="0.00"
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        The remaining amount stays as a supplier bill.
-                      </p>
-                    </div>
-                  ) : null}
-                </div>
-              ) : null}
-
-              {user?.restaurant_id && (
-                <PurchaseLineItemsEditor
-                  restaurantId={user.restaurant_id}
-                  lines={createLines}
-                  onChange={setCreateLines}
-                  disabled={createSubmitting}
-                />
-              )}
-
-              <div className="space-y-2">
-                <Label>Notes</Label>
-                <Textarea
-                  value={createForm.notes}
-                  onChange={(e) =>
-                    setCreateForm({ ...createForm, notes: e.target.value })
-                  }
-                />
-              </div>
-            </div>
-            <DialogFooter className="shrink-0 border-t px-5 py-3 sm:px-6">
-              <Button
-                className="h-11 flex-1 sm:flex-none"
-                variant="outline"
-                type="button"
-                onClick={() => setCreateOpen(false)}
-                disabled={createSubmitting}
-              >
-                Cancel
-              </Button>
-              <Button
-                className="h-11 flex-[1.3] sm:flex-none"
-                type="submit"
-                disabled={createSubmitting}
-              >
-                {createSubmitting ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : null}
-                Record purchase
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog> : null}
+      {canPostPurchase && <RecordPurchaseDialog open={createOpen} onOpenChange={setCreateOpen} restaurantId={user?.restaurant_id || 0} initialSupplierId={searchParams.get("supplier_id")} onRecorded={fetchPurchases} />}
 
       <TransactionDetailSheet
         open={detailPurchase != null}

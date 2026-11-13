@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { toast } from "sonner";
 
 import { Label } from "@/components/ui/label";
@@ -29,6 +29,7 @@ export function InventoryItemSelect({
   disabled = false,
   label = "Inventory item",
   placeholder = "Select item",
+  selectedItem = null,
 }: {
   restaurantId: number;
   value: number | null;
@@ -37,9 +38,11 @@ export function InventoryItemSelect({
   disabled?: boolean;
   label?: string;
   placeholder?: string;
+  selectedItem?: InventoryItemOption | null;
 }) {
   const [items, setItems] = useState<InventoryItemOption[]>([]);
   const [loading, setLoading] = useState(false);
+  const selectId = useId();
 
   useEffect(() => {
     let cancelled = false;
@@ -47,18 +50,23 @@ export function InventoryItemSelect({
       if (!restaurantId) return;
       setLoading(true);
       try {
-        const response = await apiClient.get(
-          InventoryApis.listInventoryWithQuery({
-            restaurantId,
-            isActive: true,
-            limit: 500,
-          }),
-        );
-        if (cancelled) return;
-        if (response.data.status === "success") {
+        const allItems: InventoryItemOption[] = [];
+        while (!cancelled) {
+          const response = await apiClient.get(
+            InventoryApis.listInventoryWithQuery({
+              restaurantId,
+              isActive: true,
+              skip: allItems.length,
+              limit: 500,
+            }),
+          );
+          if (response.data.status !== "success") throw new Error("Could not load inventory items.");
           const rows = response.data.data?.items || response.data.data || [];
-          setItems(Array.isArray(rows) ? rows : []);
+          if (!Array.isArray(rows)) throw new Error("Could not load inventory items.");
+          allItems.push(...rows);
+          if (rows.length < 500) break;
         }
+        if (!cancelled) setItems(allItems);
       } catch (error: any) {
         if (cancelled) return;
         setItems([]);
@@ -76,22 +84,25 @@ export function InventoryItemSelect({
   }, [restaurantId]);
 
   const excludeSet = new Set(excludeIds);
-  const selectableItems = items.filter(
+  const selectableItems = [
+    ...(selectedItem && !items.some((item) => item.id === selectedItem.id) ? [selectedItem] : []),
+    ...items,
+  ].filter(
     (item) => item.id === value || !excludeSet.has(item.id),
   );
 
   return (
     <div className="space-y-2">
-      <Label>{label}</Label>
+      <Label htmlFor={selectId}>{label}</Label>
       <Select
         value={value != null ? String(value) : ""}
         disabled={disabled || loading}
         onValueChange={(key) => {
-          const item = items.find((i) => String(i.id) === key) || null;
+          const item = selectableItems.find((i) => String(i.id) === key) || null;
           onChange(item ? item.id : null, item);
         }}
       >
-        <SelectTrigger>
+        <SelectTrigger id={selectId}>
           <SelectValue placeholder={loading ? "Loading items..." : placeholder} />
         </SelectTrigger>
         <SelectContent>
