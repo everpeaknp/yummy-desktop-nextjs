@@ -78,9 +78,9 @@ export type AnalyticsPreset =
 
 export function getAnalyticsPresetRange(
   preset: AnalyticsPreset,
-  customRange?: DateRange
+  customRange?: DateRange,
+  now = new Date()
 ): DateRange | undefined {
-  const now = new Date();
   switch (preset) {
     case "today":
       return { from: startOfDay(now), to: endOfDay(now) };

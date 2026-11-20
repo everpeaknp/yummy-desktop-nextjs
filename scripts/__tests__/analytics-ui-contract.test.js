@@ -60,3 +60,12 @@ test("analytics charts use the configured product currency presentation", () => 
   assert.match(revenueChart, /formatCurrency\(value\)/);
   assert.match(categoryPie, /formatCurrency\(value\)/);
 });
+
+test("analytics never silently substitutes current Day Close for Today", () => {
+  assert.match(analytics, /getActiveDates = useCallback\(\(\) => analyticsDateRange/);
+  assert.match(analytics, /const dates = getActiveDates\(\)/);
+  assert.doesNotMatch(analytics, /DayCloseApis\.(current|generateSnapshot)\(/);
+  assert.doesNotMatch(analytics, /dayCloseAlignedToday|dayCloseNetSalesOverride/);
+  assert.match(analytics, /selectedSession: selectedDayCloseSession/);
+  assert.match(analytics, /analyticsTimezone = restaurant\?\.timezone/);
+});
