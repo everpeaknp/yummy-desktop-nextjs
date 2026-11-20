@@ -407,33 +407,6 @@ export default function StaffPage() {
     }
   };
 
-  const handleRemoveStaff = async (id: number) => {
-    if (!canManageStaff) {
-      toast.error("You do not have permission to manage staff");
-      return;
-    }
-    if (
-      !confirm(
-        "Remove this person from the restaurant? Their account stays active, and attendance and payroll history will be preserved.",
-      )
-    )
-      return;
-    try {
-      await apiClient.delete(StaffApis.delete(id));
-      toast.success(
-        "Staff membership removed; account and history were preserved",
-      );
-      fetchStaff();
-    } catch (err: any) {
-      console.error("Failed to remove staff membership:", err);
-      const errMsg =
-        err.response?.data?.message ||
-        err.response?.data?.detail ||
-        "Failed to remove staff member";
-      toast.error(errMsg);
-    }
-  };
-
   const handleResendInvitation = async (invitation: StaffInvitation) => {
     setBusyInvitationId(invitation.id);
     try {
@@ -497,13 +470,9 @@ export default function StaffPage() {
         canManageStaff={canManageStaff}
         onAddStaff={handleOpenDialog}
         onOpenMember={(member) => router.push(`/staff/${member.id}`)}
-        onEditMember={(member) =>
-          router.push(`/staff/${member.id}?edit=profile`)
-        }
         onSetupProfile={(member) =>
           router.push(`/staff/${member.id}?edit=employment`)
         }
-        onRemoveMember={(member) => handleRemoveStaff(member.id)}
         onResendInvitation={handleResendInvitation}
         onRevokeInvitation={handleRevokeInvitation}
         onRetryStaff={fetchStaff}

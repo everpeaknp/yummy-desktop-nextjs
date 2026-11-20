@@ -35,10 +35,11 @@ export const reportGroups: FinanceReportGroup[] = [
     ],
   },
   {
-    label: "Sales returns & tax",
+    label: "Returns & VAT",
     reports: [
       { href: "/finance/reports/refunds", label: "Refund Register", description: "Sales refunds and reversals." },
       { href: "/finance/reports/vat-sales", label: "VAT Sales", description: "Taxable sales and VAT amounts." },
+      { href: "/finance/reports/vat-summary", label: "VAT Summary", description: "VAT on sales, input VAT claimed, and the net VAT balance." },
     ],
   },
 ];

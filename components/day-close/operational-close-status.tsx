@@ -92,7 +92,10 @@ export function OperationalCloseStatus({
               {formatDayCloseCurrency(presentation.summary.paymentsCollected)}
             </dd>
           </div>
-          <div>
+          {presentation.cash.periodActivity ? <div>
+            <dt className="text-muted-foreground">Net cash this period</dt>
+            <dd className="font-medium tabular-nums">{presentation.cash.expected == null ? "Unavailable" : formatDayCloseCurrency(presentation.cash.expected)}</dd>
+          </div> : <><div>
             <dt className="text-muted-foreground">Cash counted</dt>
             <dd className="font-medium tabular-nums">
               {presentation.cash.counted == null
@@ -108,7 +111,7 @@ export function OperationalCloseStatus({
             <dd className="font-medium tabular-nums">
               {formatDayCloseCurrency(presentation.cash.difference)}
             </dd>
-          </div>
+          </div></>}
         </dl>
       ) : null}
 

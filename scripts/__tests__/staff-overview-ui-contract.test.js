@@ -67,7 +67,7 @@ test("Staff identity is compact and avoids technical metadata", () => {
 
   assert.match(detail, /reference=\{staff\.email \|\| null\}/);
   assert.match(shell, /<PageHeader/);
-  assert.match(shell, />Edit staff</);
+  assert.match(shell, /aria-label=\{`Edit \$\{name\}`\}/);
   assert.doesNotMatch(shell, /Staff ID|access roles/);
 });
 

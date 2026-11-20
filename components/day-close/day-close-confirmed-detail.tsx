@@ -89,6 +89,7 @@ export function DayCloseConfirmedDetail({
     snapshot?.evidence?.financial ?? snapshot?.financial_summary;
   const drawer = snapshot?.evidence?.drawers ?? snapshot?.drawer_control;
   const counted = drawer?.counted_cash ?? detail.counted_cash;
+  const periodCash = snapshot?.cash_basis === "period_activity" || detail.cash_basis === "period_activity";
   const expected = drawer?.expected_cash ?? detail.expected_cash;
   const variance = drawer?.cash_variance ?? detail.cash_discrepancy;
   const status = String(detail.status || "confirmed");
@@ -171,9 +172,13 @@ export function DayCloseConfirmedDetail({
           </section>
 
           <section>
-            <h3 className="text-lg font-semibold">Cash reconciliation</h3>
+            <h3 className="text-lg font-semibold">{periodCash ? "Period cash activity" : "Cash reconciliation"}</h3>
             <dl className="mt-2 divide-y border-y border-border">
-              <Row label="Cash the system expects" value={value(expected)} />
+              <Row label={periodCash ? "Net cash this period" : "Cash the system expects"} value={value(expected)} />
+              {periodCash ? <>
+                <Row label="Cash received this period" value={value(snapshot?.cash_activity?.receipts)} />
+                <Row label="Cash paid this period" value={value(snapshot?.cash_activity?.payments)} />
+              </> : <>
               <Row
                 label="Cash counted"
                 value={counted == null ? "Not counted" : value(counted)}
@@ -183,9 +188,10 @@ export function DayCloseConfirmedDetail({
                 value={difference(variance)}
                 exception={variance != null && Math.abs(variance) > 0.005}
               />
+              </>}
             </dl>
             <p className="mt-2 text-xs text-muted-foreground">
-              {detail.cash_count_source === "drawer_evidence"
+              {periodCash ? "Activity within this close period. No physical cash count is required." : detail.cash_count_source === "drawer_evidence"
                 ? "Counted from cash drawers"
                 : detail.cash_count_source === "manual_count"
                   ? "Manually counted"

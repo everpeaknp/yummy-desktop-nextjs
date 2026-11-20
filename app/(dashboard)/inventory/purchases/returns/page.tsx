@@ -228,6 +228,10 @@ export default function InventoryPurchaseReturnsPage() {
   const [postedPurchases, setPostedPurchases] = useState<any[]>([]);
 
   const [createOpen, setCreateOpen] = useState(false);
+  const recordRequested = searchParams.get("record") === "1";
+  useEffect(() => {
+    if (recordRequested && canCreateReturn) setCreateOpen(true);
+  }, [recordRequested, canCreateReturn]);
   const [createForm, setCreateForm] = useState({
     supplier_id: "",
     purchase_id: "",

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import Link from "next/link";
 import {
   ArrowRight,
   Banknote,
@@ -47,7 +48,7 @@ import {
 import { hasPermission } from "@/lib/role-permissions";
 import { cn, formatCurrency, formatDateTime } from "@/lib/utils";
 
-type AccountType = "bank" | "drawer";
+type AccountType = "bank" | "drawer" | "cash" | "till";
 
 interface CashBankAccount {
   account_type: AccountType;
@@ -57,6 +58,14 @@ interface CashBankAccount {
   current_balance: number | string;
   status?: string | null;
   drawer_session_id?: number | null;
+  reporting_head_id?: number | null;
+  balance_source?: string | null;
+  opening_reconciliation_required?: boolean;
+  drawer_expected_balance?: number | string | null;
+  drawer_balance_mismatch?: boolean;
+  can_transfer_out?: boolean;
+  can_transfer_in?: boolean;
+  transfer_unavailable_reason?: string | null;
 }
 
 interface ManagedBankAccount {
@@ -162,7 +171,7 @@ export default function FinanceOperationsPage() {
     try {
       const [accountResponse, bankResponse, transferResponse] =
         await Promise.all([
-          apiClient.get(CashAndBanksApis.list(restaurantId, businessLine)),
+          apiClient.get(CashAndBanksApis.list(restaurantId, businessLine, true)),
           apiClient.get(AccountingApis.paymentBanks(restaurantId)),
           apiClient.get(BalanceTransferApis.list(restaurantId, businessLine)),
         ]);
@@ -187,7 +196,7 @@ export default function FinanceOperationsPage() {
   const totals = useMemo(
     () => ({
       cash: accounts
-        .filter((account) => account.account_type === "drawer")
+        .filter((account) => account.account_type !== "bank")
         .reduce(
           (sum, account) => sum + Number(account.current_balance || 0),
           0,
@@ -213,6 +222,10 @@ export default function FinanceOperationsPage() {
     }
     if (accountKey(from) === accountKey(to)) {
       toast.error("Source and destination must be different.");
+      return;
+    }
+    if (from.can_transfer_out === false || to.can_transfer_in === false) {
+      toast.error(from.can_transfer_out === false ? from.transfer_unavailable_reason || "Source account is unavailable." : to.transfer_unavailable_reason || "Destination account is unavailable.");
       return;
     }
     if (!Number.isFinite(amount) || amount <= 0) {
@@ -405,7 +418,7 @@ export default function FinanceOperationsPage() {
         className="grid overflow-hidden rounded-xl border border-border bg-background sm:grid-cols-2"
       >
         <div className="flex min-w-0 items-center justify-between gap-4 border-b border-border px-4 py-3 sm:border-b-0 sm:border-r">
-          <dt className="text-sm text-muted-foreground">Cash on hand</dt>
+          <dt className="text-sm text-muted-foreground">{accounts.some((account) => account.balance_source === "ledger") ? "Recorded cash" : "Cash on hand"}</dt>
           <dd className="truncate text-base font-semibold tabular-nums">
             {money(totals.cash, currency)}
           </dd>
@@ -526,35 +539,43 @@ export default function FinanceOperationsPage() {
                 </div>
               ))}
               {accounts
-                .filter((account) => account.account_type === "drawer")
+                .filter((account) => account.account_type !== "bank")
                 .map((account) => (
                   <div
                     key={accountKey(account)}
                     className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 p-4 lg:grid-cols-[minmax(0,1fr)_180px_auto]"
                   >
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
+                    <div className="flex min-w-0 items-start justify-between gap-3">
+                      <div className="min-w-0 break-words">
                         <p className="font-semibold">{account.name}</p>
                         <p className="mt-1 text-xs text-muted-foreground">
-                          {account.account_type === "drawer"
-                            ? `Till · ${account.status || "closed"}`
+                          {account.bank_type === "cash" ? "Main cash account" : account.account_type !== "bank"
+                            ? `Drawer · ${titleCase(account.status || "closed")}`
                             : titleCase(account.bank_type)}
                         </p>
+                        {account.opening_reconciliation_required ? <p className="mt-1 text-xs text-destructive">Opening cash balance needs reconciliation.</p> : null}
+                        {account.drawer_balance_mismatch ? <p className="mt-1 text-xs text-destructive">Drawer expects {money(account.drawer_expected_balance ?? 0, currency)}. Reconcile its recorded balance and opening or movements.</p> : null}
+                        {account.transfer_unavailable_reason ? <p className="mt-1 text-xs text-muted-foreground">{account.transfer_unavailable_reason}</p> : null}
                       </div>
-                      {account.account_type === "drawer" ? (
-                        <WalletCards className="h-4 w-4 text-muted-foreground" />
+                      {account.account_type !== "bank" ? (
+                        <WalletCards aria-hidden="true" className="h-4 w-4 shrink-0 text-muted-foreground" />
                       ) : (
-                        <Banknote className="h-4 w-4 text-muted-foreground" />
+                        <Banknote aria-hidden="true" className="h-4 w-4 shrink-0 text-muted-foreground" />
                       )}
                     </div>
                     <p className="text-right text-base font-semibold tabular-nums">
                       {money(account.current_balance, currency)}
                     </p>
+                    {account.reporting_head_id ? <Link
+                      href={`/finance/reports/account-ledger?head_id=${account.reporting_head_id}`}
+                      aria-label={`View entries for ${account.name}`}
+                      className="col-span-2 inline-flex min-h-11 items-center justify-end text-sm text-primary underline-offset-4 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring lg:col-span-1"
+                    >View entries<span className="sr-only"> for {account.name}</span></Link> : null}
                   </div>
                 ))}
             </div>
             {moneyAccounts.length === 0 &&
-            accounts.every((account) => account.account_type !== "drawer") ? (
+            accounts.every((account) => account.account_type === "bank") ? (
               <Empty text="No cash locations are configured. Add a bank or safe here, or configure a cash drawer." />
             ) : null}
             {ownerAccounts.length > 0 ? (
@@ -873,15 +894,15 @@ function AccountSelect({
 }) {
   return (
     <div className="space-y-2">
-      <Label>{label}</Label>
+      <Label htmlFor={label === "From account" ? "transfer-from" : "transfer-to"}>{label}</Label>
       <Select value={value} onValueChange={onChange}>
-        <SelectTrigger>
+        <SelectTrigger id={label === "From account" ? "transfer-from" : "transfer-to"}>
           <SelectValue placeholder="Select account" />
         </SelectTrigger>
         <SelectContent>
           {accounts.map((account) => (
-            <SelectItem key={accountKey(account)} value={accountKey(account)}>
-              {account.name} · {titleCase(account.account_type)}
+            <SelectItem key={accountKey(account)} value={accountKey(account)} disabled={label === "From account" ? account.can_transfer_out === false : account.can_transfer_in === false}>
+              {account.name} · {account.bank_type === "cash" ? "Main cash" : account.account_type === "bank" ? titleCase(account.bank_type) : "Drawer"}
             </SelectItem>
           ))}
         </SelectContent>

@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Label } from "@/components/ui/label";
@@ -65,6 +65,13 @@ export function CashBankAccountSelect({
   label?: string;
   accountFilter?: (account: CashBankAccountOption) => boolean;
 }) {
+  const triggerId = useId();
+  const onChangeRef = useRef(onChange);
+  const accountFilterRef = useRef(accountFilter);
+  useEffect(() => {
+    onChangeRef.current = onChange;
+    accountFilterRef.current = accountFilter;
+  }, [onChange, accountFilter]);
   const restaurantId = useAuth((state) => state.user?.restaurant_id);
   const [accounts, setAccounts] = useState<CashBankAccountOption[]>([]);
   const [loading, setLoading] = useState(false);
@@ -74,7 +81,7 @@ export function CashBankAccountSelect({
     const load = async () => {
       if (!restaurantId) return;
       setLoading(true);
-      onChange(null);
+      onChangeRef.current(null);
       try {
         const response = await apiClient.get(
           CashAndBanksApis.list(Number(restaurantId), businessLine),
@@ -89,14 +96,14 @@ export function CashBankAccountSelect({
         const available = rows.filter(
           (account) =>
             (account.account_type === "bank" || account.status === "open") &&
-            (!accountFilter || accountFilter(account)),
+            (!accountFilterRef.current || accountFilterRef.current(account)),
         );
         setAccounts(available);
-        onChange(available[0] || null);
+        onChangeRef.current(available[0] || null);
       } catch (error: any) {
         if (cancelled) return;
         setAccounts([]);
-        onChange(null);
+        onChangeRef.current(null);
         toast.error(
           error.response?.data?.detail ||
             "Could not load Cash & Banks accounts.",
@@ -128,7 +135,7 @@ export function CashBankAccountSelect({
 
   return (
     <div className="space-y-2">
-      <Label>{label}</Label>
+      <Label htmlFor={triggerId}>{label}</Label>
       <Select
         value={selectedKey}
         disabled={disabled || loading || accounts.length === 0}
@@ -140,7 +147,7 @@ export function CashBankAccountSelect({
           )
         }
       >
-        <SelectTrigger>
+        <SelectTrigger id={triggerId}>
           <SelectValue
             placeholder={loading ? "Loading accounts..." : "Select account"}
           />

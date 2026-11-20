@@ -8,8 +8,10 @@ import {
   History,
   LayoutDashboard,
   Loader2,
+  Pencil,
   RefreshCw,
   ShieldCheck,
+  UserX,
   WalletCards,
   type LucideIcon,
 } from "lucide-react";
@@ -97,8 +99,10 @@ export function StaffIdentityHeader({
   role,
   reference,
   canEdit,
+  canRemove,
   refreshing,
   onEdit,
+  onRemove,
   onRefresh,
 }: {
   name: string;
@@ -106,8 +110,10 @@ export function StaffIdentityHeader({
   role: string;
   reference?: string | null;
   canEdit: boolean;
+  canRemove: boolean;
   refreshing: boolean;
   onEdit: () => void;
+  onRemove: () => void;
   onRefresh: () => void;
 }) {
   const avatar = (
@@ -123,7 +129,7 @@ export function StaffIdentityHeader({
           {avatar}
           <div className="min-w-0 flex-1">
             <div className="flex min-w-0 flex-wrap items-center gap-2">
-              <h1 className="truncate text-xl font-semibold tracking-tight">
+              <h1 className="min-w-0 max-w-full truncate text-xl font-semibold tracking-tight">
                 {name}
               </h1>
               <Badge variant={active ? "default" : "secondary"}>
@@ -137,12 +143,35 @@ export function StaffIdentityHeader({
               </p>
             ) : null}
           </div>
+          {canEdit ? (
+            <div className="flex shrink-0 items-center gap-1">
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-11 w-11"
+                onClick={onEdit}
+                aria-label={`Edit ${name}`}
+                title="Edit staff"
+              >
+                <Pencil className="h-4 w-4" aria-hidden="true" />
+              </Button>
+              {canRemove ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-11 w-11 text-destructive hover:text-destructive"
+                  onClick={onRemove}
+                  aria-label={`Remove ${name} from restaurant`}
+                  title="Remove from restaurant"
+                >
+                  <UserX className="h-4 w-4" aria-hidden="true" />
+                </Button>
+              ) : null}
+            </div>
+          ) : null}
         </div>
-        {canEdit ? (
-          <Button variant="outline" className="mt-2 h-11" onClick={onEdit}>
-            Edit staff
-          </Button>
-        ) : null}
       </div>
 
       <PageHeader
@@ -162,7 +191,32 @@ export function StaffIdentityHeader({
         }
         actions={
           <>
-            {canEdit ? <Button onClick={onEdit}>Edit staff</Button> : null}
+            {canEdit ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="h-11 w-11"
+                onClick={onEdit}
+                aria-label={`Edit ${name}`}
+                title="Edit staff"
+              >
+                <Pencil className="h-4 w-4" aria-hidden="true" />
+              </Button>
+            ) : null}
+            {canRemove ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-11 w-11 text-destructive hover:text-destructive"
+                onClick={onRemove}
+                aria-label={`Remove ${name} from restaurant`}
+                title="Remove from restaurant"
+              >
+                <UserX className="h-4 w-4" aria-hidden="true" />
+              </Button>
+            ) : null}
             <Button
               type="button"
               variant="outline"

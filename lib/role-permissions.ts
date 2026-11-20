@@ -778,8 +778,8 @@ export const SIDEBAR_ROLE_MAP: SidebarItemDef[] = [
     requiredPermission: "finance.income.view",
   },
   {
-    title: "Accounting",
-    href: "/finance/accounting",
+    title: "Reports",
+    href: "/finance/reports",
     allowedRoles: ALL_DASHBOARD_ROLES,
     requiredPermission: "finance.accounting.view",
   },
@@ -1364,7 +1364,7 @@ export function getHomeRouteForUser(
         : roles.length ? ["/dashboard"] : ["/orders/active", "/orders/new"];
     const candidates = [
       ...preferred, "/dashboard", "/orders/active", "/orders/new", "/kitchen",
-      "/hotel", "/finance", "/finance/operations", "/finance/reports", "/finance/accounting",
+      "/hotel", "/finance", "/finance/operations", "/finance/reports",
       "/manage", "/workforce", "/staff", "/attendance", "/analytics",
       "/customers", "/tables", "/reservations", "/inventory", "/menu/items",
     ];

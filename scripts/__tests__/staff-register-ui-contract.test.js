@@ -66,7 +66,9 @@ test("mobile Staff and invitation rows use ListRow anatomy", () => {
     register,
     /<DataList className="lg:hidden">[\s\S]*filteredMembers\.map[\s\S]*<ListRow/,
   );
-  assert.match(register, /title=\{member\.name \|\| "Staff member"\}/);
+  assert.match(register, /href=\{`\/staff\/\$\{member\.id\}`\}/);
+  assert.match(register, /\{member\.name \|\| "Staff member"\}/);
+  assert.doesNotMatch(register, /onRemoveMember|>Remove</);
   assert.match(
     register,
     /const description = \[\s*staffRoleLabel\(staffRole\(member\)\),\s*member\.email \|\| "No email",\s*\]/,

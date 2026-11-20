@@ -106,7 +106,7 @@ describe("effective permission screen access", () => {
     const visibleLinks = getSidebarItemsForRoles([], hybridStaff).map((item) => item.href);
     expect(visibleLinks).toContain("/orders");
     expect(visibleLinks).toContain("/orders/new");
-    expect(visibleLinks).toContain("/finance/accounting");
+    expect(visibleLinks).toContain("/finance/reports");
     expect(visibleLinks).not.toContain("/finance/income");
     expect(visibleLinks).not.toContain("/cash-drawers");
     expect(visibleLinks).not.toContain("/manage/roles");

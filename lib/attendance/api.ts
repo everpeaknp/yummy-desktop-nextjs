@@ -119,7 +119,7 @@ export const attendanceApi = {
   async createWeeklySchedules(payload: {
     staff_ids: number[];
     effective_from: string;
-    assignments: Array<{ weekday: number; shift_template_id: number | null; is_day_off: boolean }>;
+    assignments: Array<{ weekday: number; shift_template_id: number | null; shift_template_ids?: number[]; is_day_off: boolean }>;
   }) {
     return unwrap<AttendanceSchedule[]>(await apiClient.post(AttendanceApis.createWeeklySchedules, payload));
   },

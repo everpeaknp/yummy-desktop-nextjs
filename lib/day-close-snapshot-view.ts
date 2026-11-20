@@ -159,8 +159,11 @@ export function snapshotMetricRows(snapshot: DayCloseSnapshotData): SnapshotMetr
     { label: "Gross Sales", value: snapshot.gross_sales },
     { label: "Net Sales", value: snapshot.net_sales },
     { label: "Total Income", value: snapshot.total_income },
-    { label: "Opening Balance", value: snapshot.opening_balance },
-    { label: "Expected Cash", value: snapshot.expected_cash },
+    ...(snapshot.cash_basis === "period_activity" ? [
+      { label: "Cash received this period", value: snapshot.cash_activity?.receipts },
+      { label: "Cash paid this period", value: snapshot.cash_activity?.payments },
+    ] : [{ label: "Opening Balance", value: snapshot.opening_balance }]),
+    { label: snapshot.cash_basis === "period_activity" ? "Net cash this period" : "Expected Cash", value: snapshot.expected_cash },
     { label: "Cash Collected", value: snapshot.cash_collected },
     { label: "Manual Income", value: snapshot.manual_income_total },
     {
@@ -214,6 +217,7 @@ export function snapshotFinancialSummaryRows(
     ];
   }
   const netSales = summaryAmount(snapshot.net_sales, detail?.net_sales);
+  const periodActivity = snapshot.cash_basis === "period_activity" || detail?.cash_basis === "period_activity";
   const totalIncome = summaryAmount(snapshot.total_income, detail?.total_income);
   const openingDrawer = summaryAmount(
     drawerControlAmount(snapshot, "opening_cash"),
@@ -236,10 +240,13 @@ export function snapshotFinancialSummaryRows(
     { label: "Total Income", value: totalIncome },
     { label: "Refunds", value: summaryAmount(snapshot.refunds?.total, detail?.refund_total) },
     { label: "Expenses", value: summaryAmount(snapshot.expense_total, detail?.expense_total) },
-    {
+    ...(periodActivity ? [
+      { label: "Cash received this period", value: snapshot.cash_activity?.receipts },
+      { label: "Cash paid this period", value: snapshot.cash_activity?.payments },
+    ] : [{
       label: "Opening Balance",
       value: openingDrawer,
-    },
+    }]),
     {
       label: "Credit Sales",
       value: summaryAmount(snapshot.receivables?.credit_sales, detail?.credit_sales),
@@ -256,7 +263,7 @@ export function snapshotFinancialSummaryRows(
       ),
     },
     {
-      label: isConfirmed ? "Drawer (Actual)" : "Expected Drawer",
+      label: periodActivity ? "Net cash this period" : isConfirmed ? "Drawer (Actual)" : "Expected Drawer",
       value: summaryAmount(
         isConfirmed ? detail?.actual_cash : undefined,
         expectedDrawer,

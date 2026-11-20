@@ -26,7 +26,6 @@ import {
   Search,
   ShieldCheck,
   Shield,
-  UserX,
   UserRound,
   WalletCards,
   X,
@@ -756,9 +755,9 @@ export default function StaffWorkspacePage() {
     });
   }, [canManageStaff, router, searchParams, staff, userId]);
 
-  const saveStaffEditor = async (values: StaffEditValues) => {
+  const saveStaffEditor = async (values: StaffEditValues, section: StaffEditSection) => {
     const name = values.name.trim();
-    if (!name) {
+    if (section === "profile" && !name) {
       toast.error("Name is required");
       return;
     }
@@ -766,23 +765,19 @@ export default function StaffWorkspacePage() {
     const selectedRole = availableRoles.find(
       (role) => role.name === values.roleName,
     );
-    if (!selectedRole) {
+    if (section === "access" && !selectedRole) {
       toast.error("Choose a role for this staff member");
       return;
     }
 
-    const profileWasEdited = Boolean(
-      profile ||
-      values.accountNumber.trim() ||
-      values.salaryAmount ||
-      values.phone.trim() ||
-      values.address.trim() ||
-      values.weeklyHours ||
-      values.dailyHours,
+    const profileWasEdited = section === "employment" || Boolean(
+      section === "profile" && profile &&
+      (values.phone.trim() !== (profile.phone || "") ||
+        values.address.trim() !== (profile.address || "")),
     );
     const amount = Number(values.salaryAmount);
     if (
-      profileWasEdited &&
+      section === "employment" &&
       (!values.accountNumber.trim() ||
         !values.salaryAmount ||
         !Number.isFinite(amount) ||
@@ -793,7 +788,7 @@ export default function StaffWorkspacePage() {
     }
 
     const salaryChanged =
-      profileWasEdited &&
+      section === "employment" &&
       (!profile ||
         profile.salary_type !== values.salaryType ||
         Number(profile.salary_amount) !== amount ||
@@ -813,10 +808,10 @@ export default function StaffWorkspacePage() {
     setStaffEditSaving(true);
     try {
       const accountPayload: Record<string, unknown> = {};
-      if (name !== staff?.name) accountPayload.name = name;
+      if (section === "profile" && name !== staff?.name) accountPayload.name = name;
 
       const currentRoleName = staff?.primary_role || staff?.role || "staff";
-      if (values.roleName !== currentRoleName) {
+      if (section === "access" && values.roleName !== currentRoleName && selectedRole) {
         const customRoleId = Number(selectedRole.id);
         const isCustomRole =
           selectedRole.is_system_role === false &&
@@ -829,7 +824,7 @@ export default function StaffWorkspacePage() {
         });
       }
       if (
-        canChangeGlobalStatus &&
+        section === "profile" && canChangeGlobalStatus &&
         values.isActive !== (staff?.is_active !== false)
       ) {
         accountPayload.is_active = values.isActive;
@@ -1208,8 +1203,10 @@ export default function StaffWorkspacePage() {
         role={primaryRole}
         reference={staff.email || null}
         canEdit={canManageStaff}
+        canRemove={canManageStaff && !activeRoles.some((role) => role.toLowerCase() === "admin")}
         refreshing={refreshing}
         onEdit={() => openStaffEditor("profile")}
+        onRemove={removeStaffMembership}
         onRefresh={() => void loadWorkspace(true)}
       />
 
@@ -1351,6 +1348,7 @@ export default function StaffWorkspacePage() {
                           size="sm"
                           variant="outline"
                           onClick={() => openStaffEditor("employment")}
+                          aria-label="Edit compensation"
                         >
                           <Edit3 className="mr-2 h-4 w-4" />
                           Edit
@@ -1632,29 +1630,6 @@ export default function StaffWorkspacePage() {
                   )}
                 </CardContent>
               </Card>
-              {canManageStaff &&
-              !activeRoles.some((role) => role.toLowerCase() === "admin") ? (
-                <details className="group border-t pt-1">
-                  <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between py-2 text-sm font-semibold">
-                    Restaurant membership
-                    <ChevronRight className="h-4 w-4 text-muted-foreground transition-transform group-open:rotate-90" />
-                  </summary>
-                  <div className="border-l-2 border-destructive/60 py-2 pl-4">
-                    <p className="max-w-2xl text-sm text-muted-foreground">
-                      Remove restaurant access without disabling the account or
-                      deleting attendance, payroll, or audit history.
-                    </p>
-                    <Button
-                      className="mt-3"
-                      variant="destructive"
-                      onClick={removeStaffMembership}
-                    >
-                      <UserX className="mr-2 h-4 w-4" />
-                      Remove from restaurant
-                    </Button>
-                  </div>
-                </details>
-              ) : null}
             </section>
           ) : null}
 
@@ -1662,12 +1637,14 @@ export default function StaffWorkspacePage() {
             <section className="space-y-5" aria-label="Access">
               <WorkforceSection
                 title="Assigned role"
+                className="[&>div:first-child]:flex-row [&>div:first-child]:items-center [&>div:first-child]:justify-between"
                 actions={
                   canManageStaff ? (
                     <Button
                       size="sm"
                       variant="outline"
                       onClick={() => openStaffEditor("access")}
+                      aria-label="Edit assigned role"
                     >
                       Edit
                     </Button>

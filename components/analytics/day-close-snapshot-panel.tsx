@@ -611,7 +611,7 @@ function AccountingChecksCard({ bridge }: { bridge: Record<string, unknown> }) {
             {status.replace(/_/g, " ")}
           </p>
         </div>
-        <Link href="/finance/accounting/day-closes" className="text-sm font-semibold text-primary hover:underline">
+        <Link href="/day-close" className="text-sm font-semibold text-primary hover:underline">
           Open accounting review
         </Link>
       </div>

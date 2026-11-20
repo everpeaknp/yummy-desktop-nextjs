@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState, useCallback, useMemo, useRef, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import apiClient from "@/lib/api-client";
+import { getApiErrorMessage } from "@/lib/api-error-message";
 import { useAuth } from "@/hooks/use-auth";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import { useOrderFull } from "@/hooks/use-order-full";
@@ -2937,7 +2938,7 @@ function CheckoutContent({
               });
             } catch (legacyErr: any) {
               setDiscountError(
-                extractApiErrorMessage(legacyErr, "Invalid discount code"),
+                getApiErrorMessage(legacyErr, "Invalid discount code"),
               );
               setDiscountSubmitting(false);
               return;
@@ -2993,9 +2994,7 @@ function CheckoutContent({
       setSelectedStaffId("");
       await fetchBill();
     } catch (err: any) {
-      setDiscountError(
-        err?.response?.data?.detail || "Failed to apply discount",
-      );
+      setDiscountError(getApiErrorMessage(err, "Failed to apply discount"));
     } finally {
       setDiscountSubmitting(false);
     }
@@ -5815,7 +5814,7 @@ function CheckoutContent({
 
           <div className="space-y-4 py-2">
             {discountError && (
-              <div className="p-3 rounded-lg bg-destructive/10 text-destructive text-sm font-medium">
+              <div aria-live="polite" className="p-3 rounded-lg bg-destructive/10 text-destructive text-sm font-medium">
                 {discountError}
               </div>
             )}

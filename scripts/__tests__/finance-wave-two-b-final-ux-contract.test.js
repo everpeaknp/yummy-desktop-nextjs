@@ -190,8 +190,8 @@ test("trial balance has disclosure rows on mobile and a full desktop table", () 
 });
 
 test("daybook removes empty breakdown and default transaction metadata", () => {
-  const report = read("components/finance/accounting/daybook-report.tsx");
-  const client = read("components/finance/accounting/daybook-client.tsx");
+  const report = read("components/finance/reports/daybook-report.tsx");
+  const client = read("components/finance/reports/daybook-client.tsx");
 
   assert.match(report, /Math\.abs\(Number\(value\)\) >= 0\.005/);
   assert.match(report, /\.filter\(\(\[, value\]\)/);

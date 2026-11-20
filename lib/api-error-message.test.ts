@@ -3,6 +3,28 @@ import { describe, expect, it } from "vitest";
 import { getApiErrorMessage } from "./api-error-message";
 
 describe("getApiErrorMessage", () => {
+  it("shows the staff discount limit instruction", () => {
+    expect(
+      getApiErrorMessage(
+        {
+          response: {
+            data: {
+              detail: {
+                code: "STAFF_DISCOUNT_LIMIT_EXCEEDED",
+                message:
+                  "This discount is above your Rs 50.00 authorization limit. Ask your manager to apply it to this order.",
+                limit: 50,
+              },
+            },
+          },
+        },
+        "Failed to apply discount",
+      ),
+    ).toBe(
+      "This discount is above your Rs 50.00 authorization limit. Ask your manager to apply it to this order.",
+    );
+  });
+
   it("formats channel-specific consent errors", () => {
     expect(
       getApiErrorMessage(

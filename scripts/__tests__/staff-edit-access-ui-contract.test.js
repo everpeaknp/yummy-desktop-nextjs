@@ -6,7 +6,7 @@ const test = require("node:test");
 const root = path.resolve(__dirname, "..", "..");
 const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
 
-test("Staff uses one responsive profile, employment, and access editor", () => {
+test("Staff actions open focused profile, employment, and role editors", () => {
   const page = read("app/(dashboard)/staff/[id]/page.tsx");
   const editor = read("components/staff/staff-edit-dialog.tsx");
 
@@ -16,9 +16,11 @@ test("Staff uses one responsive profile, employment, and access editor", () => {
   assert.doesNotMatch(page, /<DialogTitle>Change role<\/DialogTitle>/);
   assert.match(editor, /h-\[100dvh\]/);
   assert.match(editor, /lg:max-w-3xl/);
-  assert.match(editor, /<TabsTrigger value="profile">Profile/);
-  assert.match(editor, /<TabsTrigger value="employment">Employment/);
-  assert.match(editor, /<TabsTrigger value="access">Access/);
+  assert.match(editor, /initialSection === "profile"\s*\? profileFields/);
+  assert.match(editor, /initialSection === "employment" \? employmentFields : accessFields/);
+  assert.doesNotMatch(editor, /<TabsTrigger/);
+  assert.match(page, /section === "employment" &&/);
+  assert.match(page, /section === "access" && values\.roleName/);
   assert.match(editor, /title="Access"[\s\S]*\{roleField\}/);
   assert.match(editor, /border-t bg-background/);
   assert.match(editor, /"Save changes"/);
@@ -28,7 +30,7 @@ test("register edit and setup actions enter the canonical Staff editor", () => {
   const registerPage = read("app/(dashboard)/staff/page.tsx");
   const detailPage = read("app/(dashboard)/staff/[id]/page.tsx");
 
-  assert.match(registerPage, /`\/staff\/\$\{member\.id\}\?edit=profile`/);
+  assert.doesNotMatch(registerPage, /onEditMember=/);
   assert.match(registerPage, /`\/staff\/\$\{member\.id\}\?edit=employment`/);
   assert.match(detailPage, /searchParams\.get\("edit"\)/);
   assert.doesNotMatch(registerPage, /Set up staff profile<\/DialogTitle>/);
@@ -73,7 +75,8 @@ test("history restrictions share presets and membership danger stays separate", 
   }
   assert.match(page, /UserAccessScopeApis\.upsert/);
   assert.match(page, /UserAccessScopeApis\.remove/);
-  assert.match(page, /Remove from restaurant/);
+  assert.match(page, /onRemove=\{removeStaffMembership\}/);
+  assert.match(read("components/staff/staff-detail-shell.tsx"), /aria-label=\{`Remove \$\{name\} from restaurant`\}/);
   assert.match(page, /removeStaffMembership/);
   assert.doesNotMatch(
     read("components/staff/staff-edit-dialog.tsx"),
