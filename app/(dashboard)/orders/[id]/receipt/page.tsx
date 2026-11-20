@@ -62,6 +62,7 @@ import { useFiscalPrint } from "@/hooks/use-fiscal-print";
 import {
   isElectronDesktop,
   printRawToReceiptPrinter,
+  type ReceiptNetworkTarget,
 } from "@/lib/receipt-network-print";
 import { resolveAuthorizedReceiptTerminalId } from "@/lib/receipt-print-terminal";
 
@@ -500,12 +501,13 @@ export default function ReceiptPage() {
   );
 
   const runAutoPrint = useCallback(async () => {
-    if (!receipt || !template) return;
+    if (!receipt || !template) return null;
 
     const authorization = await authorizeOrdinaryPrint();
     setOrdinaryPrintDesignation(authorization.designation);
 
     try {
+      let printTarget: ReceiptNetworkTarget | null = null;
       if (isElectronDesktop()) {
         const payloadBase64 = await getCanonicalReceiptPayload(
           orderId,
@@ -518,7 +520,7 @@ export default function ReceiptPage() {
             receiptTerminals.length === 1 ? receiptTerminals[0].id : null,
           ),
         );
-        await printRawToReceiptPrinter(
+        printTarget = await printRawToReceiptPrinter(
           selectedTerminal?.printer
             ? { ...receipt, printer_config: selectedTerminal.printer }
             : receipt,
@@ -533,6 +535,7 @@ export default function ReceiptPage() {
       setPrinted(true);
       await completeOrdinaryPrint(authorization.authorization_id, true);
       await fetchData();
+      return printTarget;
     } catch (printError) {
       await completeOrdinaryPrint(
         authorization.authorization_id,
@@ -810,8 +813,17 @@ export default function ReceiptPage() {
       }
       try {
         autoPrintedOrderRef.current = orderId;
-        await runAutoPrint();
-        toast.success("Receipt sent to the configured printer.");
+        const printTarget = await runAutoPrint();
+        if (printTarget) {
+          toast.success(`Receipt sent to ${printTarget.printerName}.`, {
+            description: `${printTarget.host}:${printTarget.port}`,
+          });
+        } else {
+          toast.success("Browser print dialog opened.", {
+            description:
+              "This print goes through the browser and will not appear in the local printer simulator.",
+          });
+        }
       } catch (printError) {
         toast.error(
           getDisplayErrorMessage(printError, "Printing failed."),

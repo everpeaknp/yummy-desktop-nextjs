@@ -74,7 +74,7 @@ export function DashboardPromoCarousel({ variant = "mobile" }: { variant?: "mobi
         alt={activeBanner.alt_text}
         fill
         sizes={variant === "desktop" ? "(min-width: 1280px) 66vw, 100vw" : "100vw"}
-        className={variant === "desktop" ? "object-fill" : "object-contain p-1 drop-shadow-md"}
+        className={variant === "desktop" ? "object-cover object-center" : "object-contain p-1 drop-shadow-md"}
         priority={activeIndex === 0}
       />
     </>
