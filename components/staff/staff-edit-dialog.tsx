@@ -21,7 +21,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 
 export type StaffEditSection = "profile" | "employment" | "access";
@@ -115,17 +114,14 @@ export function StaffEditDialog({
   canChangeGlobalStatus: boolean;
   effectivePermissionCount: number;
   saving: boolean;
-  onSave: (values: StaffEditValues) => Promise<void> | void;
+  onSave: (values: StaffEditValues, section: StaffEditSection) => Promise<void> | void;
   onOpenPermissions: () => void;
 }) {
   const [values, setValues] = useState(initialValues);
-  const [desktopSection, setDesktopSection] =
-    useState<StaffEditSection>(initialSection);
 
   useEffect(() => {
     if (!open) return;
     setValues(initialValues);
-    setDesktopSection(initialSection);
   }, [initialSection, initialValues, open]);
 
   const selectedRole = useMemo(
@@ -168,7 +164,8 @@ export function StaffEditDialog({
   );
 
   const profileFields = (
-    <Section title="Profile" description="Identity and contact information.">
+    <>
+      <Section title="Profile" description="Identity and contact information.">
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Full name">
           <Input
@@ -184,16 +181,24 @@ export function StaffEditDialog({
         >
           <Input value={values.email} type="email" disabled />
         </Field>
-        <Field label="Phone">
+        <Field
+          label="Phone"
+          hint={!hasEmploymentProfile ? "Available after a compensation profile is created." : undefined}
+        >
           <Input
+            disabled={!hasEmploymentProfile}
             value={values.phone}
             onChange={(event) => update("phone", event.target.value)}
             autoComplete="tel"
           />
         </Field>
         <div className="sm:col-span-2">
-          <Field label="Address">
+          <Field
+            label="Address"
+            hint={!hasEmploymentProfile ? "Available after a compensation profile is created." : undefined}
+          >
             <Textarea
+              disabled={!hasEmploymentProfile}
               value={values.address}
               onChange={(event) => update("address", event.target.value)}
               className="min-h-20 resize-y"
@@ -201,7 +206,24 @@ export function StaffEditDialog({
           </Field>
         </div>
       </div>
-    </Section>
+      </Section>
+      {canChangeGlobalStatus ? (
+        <Section title="Account status">
+          <Field label="Account status" hint="Inactive accounts cannot sign in.">
+            <Select
+              value={values.isActive ? "active" : "inactive"}
+              onValueChange={(value) => update("isActive", value === "active")}
+            >
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="active">Active</SelectItem>
+                <SelectItem value="inactive">Inactive</SelectItem>
+              </SelectContent>
+            </Select>
+          </Field>
+        </Section>
+      ) : null}
+    </>
   );
 
   const employmentFields = (
@@ -321,79 +343,40 @@ export function StaffEditDialog({
           </span>
         </button>
       </Section>
-      <Section title="Status">
-        <Field
-          label="Account status"
-          hint={
-            canChangeGlobalStatus
-              ? "Inactive accounts cannot sign in."
-              : "Restaurant managers remove membership from the Employment section instead of disabling the person's global account."
-          }
-        >
-          <Select
-            value={values.isActive ? "active" : "inactive"}
-            disabled={!canChangeGlobalStatus}
-            onValueChange={(value) => update("isActive", value === "active")}
-          >
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="active">Active</SelectItem>
-              <SelectItem value="inactive">Inactive</SelectItem>
-            </SelectContent>
-          </Select>
-        </Field>
-      </Section>
     </>
   );
+
+  const title = initialSection === "profile"
+    ? "Edit profile"
+    : initialSection === "employment"
+      ? hasEmploymentProfile ? "Edit compensation" : "Create compensation profile"
+      : "Edit assigned role";
+  const description = initialSection === "profile"
+    ? "Update identity and contact information."
+    : initialSection === "employment"
+      ? "Update compensation and expected working hours."
+      : "Choose the staff member's role.";
+  const fields = initialSection === "profile"
+    ? profileFields
+    : initialSection === "employment" ? employmentFields : accessFields;
 
   return (
     <Dialog open={open} onOpenChange={(next) => !saving && onOpenChange(next)}>
       <DialogContent className="flex h-[100dvh] max-h-[100dvh] w-screen max-w-none flex-col gap-0 overflow-hidden border-0 p-0 sm:rounded-none lg:h-auto lg:max-h-[min(90vh,820px)] lg:max-w-3xl lg:rounded-xl lg:border">
         <DialogHeader className="shrink-0 border-b px-5 py-4 text-left sm:px-6">
-          <DialogTitle>Edit staff</DialogTitle>
-          <DialogDescription>
-            Update profile, employment, and access details.
-          </DialogDescription>
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
 
         <form
           className="flex min-h-0 flex-1 flex-col"
           onSubmit={(event) => {
             event.preventDefault();
-            void onSave(values);
+            void onSave(values, initialSection);
           }}
         >
           <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-6">
-            <div className="space-y-6 lg:hidden">
-              {profileFields}
-              {employmentFields}
-              {accessFields}
-            </div>
-
-            <Tabs
-              value={desktopSection}
-              onValueChange={(value) =>
-                setDesktopSection(value as StaffEditSection)
-              }
-              className="hidden lg:block"
-            >
-              <TabsList className="grid w-full grid-cols-3">
-                <TabsTrigger value="profile">Profile</TabsTrigger>
-                <TabsTrigger value="employment">Employment</TabsTrigger>
-                <TabsTrigger value="access">Access</TabsTrigger>
-              </TabsList>
-              <TabsContent value="profile" className="mt-6">
-                {profileFields}
-              </TabsContent>
-              <TabsContent value="employment" className="mt-6">
-                {employmentFields}
-              </TabsContent>
-              <TabsContent value="access" className="mt-6">
-                {accessFields}
-              </TabsContent>
-            </Tabs>
+            {fields}
           </div>
 
           <DialogFooter className="shrink-0 gap-2 border-t bg-background px-5 py-4 sm:flex-row sm:px-6">

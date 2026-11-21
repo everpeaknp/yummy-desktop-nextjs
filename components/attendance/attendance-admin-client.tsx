@@ -32,6 +32,7 @@ import { toast } from "sonner";
 import apiClient from "@/lib/api-client";
 import { StaffApis, StaffProfileApis } from "@/lib/api/endpoints";
 import { attendanceApi } from "@/lib/attendance/api";
+import { isActiveAttendanceEntry } from "@/lib/attendance/entry-state";
 import { useAuth } from "@/hooks/use-auth";
 import { getAttendanceUiAccess, hasPermission } from "@/lib/role-permissions";
 import { EntitlementGate } from "@/components/subscription/entitlement-gate";
@@ -217,7 +218,7 @@ function firstApplicableDate(effectiveFrom: string, weekday: number) {
 }
 
 function isOpenEntry(entry: AttendanceEntry) {
-  return entry.status === "open" || !entry.clock_out_at;
+  return isActiveAttendanceEntry(entry);
 }
 
 function mergeEntriesWithOpenCarryover(
@@ -1143,6 +1144,10 @@ export function AttendanceAdminClient() {
   }
 
   function editSchedule(schedule: AttendanceSchedule) {
+    if ((schedule.shift_template_ids?.length || 0) > 1) {
+      toast.error("Edit multiple shifts in Team schedule to preserve every shift.");
+      return;
+    }
     setEditingScheduleId(schedule.id);
     setScheduleForm({
       staff_id: schedule.staff_id ? String(schedule.staff_id) : "default",
@@ -1426,6 +1431,18 @@ export function AttendanceAdminClient() {
       );
       toast.error(errorMessage(error, "Failed to update device"));
     }
+  }
+
+  async function setDeviceAutomatic(device: AttendanceDevice, checked: boolean) {
+    if (!canManageDevices || busy) return;
+    setBusy(true);
+    try {
+      const updated = await attendanceApi.updateDevice(device.id, { automatic_in_out: checked });
+      setDevices(current => current.map(item => item.id === device.id ? updated : item));
+      toast.success(checked ? "Automatic in/out enabled" : "Device IN/OUT mode enabled");
+    } catch (error) {
+      toast.error(errorMessage(error, "Failed to update punch mode"));
+    } finally { setBusy(false); }
   }
 
   async function saveMapping() {
@@ -2926,6 +2943,8 @@ export function AttendanceAdminClient() {
                     staffProfiles={staffProfiles}
                     usersById={usersById}
                     onToggle={toggleDevice}
+                    onAutomatic={setDeviceAutomatic}
+                    busy={busy}
                   />
                 </div>
               </div>
@@ -3725,6 +3744,8 @@ function DeviceTable({
   staffProfiles,
   usersById,
   onToggle,
+  onAutomatic,
+  busy,
 }: {
   devices: AttendanceDevice[];
   mappings: StaffDeviceMapping[];
@@ -3732,6 +3753,8 @@ function DeviceTable({
   staffProfiles: StaffProfile[];
   usersById: Map<number, StaffUser>;
   onToggle: (device: AttendanceDevice, checked: boolean) => void;
+  onAutomatic: (device: AttendanceDevice, checked: boolean) => void;
+  busy: boolean;
 }) {
   return (
     <Card>
@@ -3749,6 +3772,7 @@ function DeviceTable({
                 <TableHead>Device</TableHead>
                 <TableHead>Connection</TableHead>
                 <TableHead>Last sync</TableHead>
+                <TableHead>Automatic in/out</TableHead>
                 <TableHead>Active</TableHead>
               </TableRow>
             </TableHeader>
@@ -3756,7 +3780,7 @@ function DeviceTable({
               {devices.length === 0 ? (
                 <TableRow>
                   <TableCell
-                    colSpan={4}
+                    colSpan={5}
                     className="h-24 text-center text-muted-foreground"
                   >
                     No attendance devices registered.
@@ -3778,6 +3802,10 @@ function DeviceTable({
                         : `${device.ip_address || "No IP"}:${device.port || 4370}`}
                     </TableCell>
                     <TableCell>{formatDateTime(device.last_sync_at)}</TableCell>
+                    <TableCell className="min-w-[200px]">
+                      <Switch aria-label={`Automatic in/out for ${device.name}`} checked={device.automatic_in_out === true} disabled={busy} onCheckedChange={checked => onAutomatic(device, checked)} />
+                      <p className="mt-1 text-xs text-muted-foreground">{device.automatic_in_out ? "Scan to clock in or out. Repeat scans are ignored briefly." : "Uses the IN/OUT status selected on the terminal."}</p>
+                    </TableCell>
                     <TableCell>
                       <Switch
                         checked={device.is_active}

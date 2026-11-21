@@ -587,11 +587,12 @@ export const PurchaseReturnApis = {
 };
 
 export const CashAndBanksApis = {
-  list: (restaurantId: number, businessLine = "restaurant") => {
+  list: (restaurantId: number, businessLine = "restaurant", includeAllCash = false) => {
     const params = new URLSearchParams({
       restaurant_id: restaurantId.toString(),
       business_line: businessLine,
     });
+    if (includeAllCash) params.set("include_all_cash", "true");
     return `/cash-and-banks?${params.toString()}`;
   },
 };
@@ -1678,7 +1679,7 @@ export const AccountingReportApis = {
   generalLedger: (params: AccountingCoreParams) =>
     `/accounting/general-ledger?${buildAccountingQuery(params).toString()}`,
   vatSummary: (params: AccountingCoreParams) =>
-    `/accounting/vat-summary?${buildAccountingQuery(params).toString()}`,
+    `/accounting/posted-vat-summary?${buildAccountingQuery(params).toString()}`,
   customerLedger: (params: AccountingLedgerParams) =>
     `/accounting/customer-ledger?${buildAccountingQuery(params).toString()}`,
   supplierLedger: (params: AccountingLedgerParams) =>

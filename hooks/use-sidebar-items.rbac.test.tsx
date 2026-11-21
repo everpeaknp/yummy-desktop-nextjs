@@ -46,7 +46,7 @@ describe("custom-role sidebar journey", () => {
 
     expect(hrefs).toContain("/orders");
     expect(hrefs).toContain("/orders/new");
-    expect(hrefs).toContain("/finance/accounting");
+    expect(hrefs).toContain("/finance/reports");
     expect(hrefs).not.toContain("/finance/income");
     expect(hrefs).not.toContain("/cash-drawers");
     expect(hrefs).not.toContain("/manage/roles");
@@ -63,7 +63,7 @@ describe("custom-role sidebar journey", () => {
     const { result } = renderHook(() => useSidebarItems());
     const hrefs = result.current.flatMap((item) => [item.href, ...(item.subItems?.map((child) => child.href) ?? [])]);
 
-    expect(hrefs).toContain("/finance/accounting");
+    expect(hrefs).toContain("/finance/reports");
     expect(hrefs).not.toContain("/orders");
     expect(hrefs).not.toContain("/orders/new");
     expect(hrefs).not.toContain("/cash-drawers");

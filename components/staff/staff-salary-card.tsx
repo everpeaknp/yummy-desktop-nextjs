@@ -300,7 +300,40 @@ export function StaffSalaryCard({
 
   return (
     <>
-      <section className="space-y-4">
+      <section className="space-y-3 rounded-xl border p-4" aria-labelledby="salary-settings-heading">
+        <div className="border-b pb-3">
+          <h3 id="salary-settings-heading" className="text-base font-semibold">Salary settings</h3>
+          <p className="mt-1 text-sm text-muted-foreground">Attendance adjustments and staff purchase discount</p>
+        </div>
+        <div className="flex items-center justify-between gap-4 py-2">
+          <div className="min-w-0">
+            <p className="font-medium">Attendance-based salary</p>
+            <p className="text-xs text-muted-foreground">Adjust daily pay for late arrivals, early departures, and absences</p>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <span className="text-sm font-medium">{attendanceBasedSalary ? "On" : "Off"}</span>
+            <Switch
+              aria-label="Attendance-based salary"
+              checked={attendanceBasedSalary}
+              disabled={!canManage}
+              onCheckedChange={toggleAttendanceBasedSalary}
+            />
+          </div>
+        </div>
+        <div className="flex items-center justify-between gap-4 border-t py-3">
+          <div className="min-w-0">
+            <p className="font-medium">Staff purchase discount</p>
+            <p className="text-xs text-muted-foreground">Applied automatically to this staff member&apos;s own food orders</p>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <span className="font-semibold">{selfDiscountPercent == null ? "None" : `${selfDiscountPercent}%`}</span>
+            {canManage ? (
+              <Button size="sm" variant="outline" onClick={openDiscountEditor} aria-label="Edit staff purchase discount">Edit</Button>
+            ) : null}
+          </div>
+        </div>
+      </section>
+      <section className="mt-6 space-y-4">
         <div className="flex items-start justify-between gap-3 border-b pb-3">
           <div>
             <h3 className="text-base font-semibold">Salary account · all dates</h3>
@@ -443,54 +476,6 @@ export function StaffSalaryCard({
             </div>
           </DialogContent></Dialog>
 
-          <details className="group border-t pt-1">
-            <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between py-2 text-sm font-semibold">
-              Salary settings
-              <span className="text-xs font-normal text-muted-foreground">
-                Attendance and discount
-              </span>
-            </summary>
-            <div className="flex items-center justify-between gap-4 border-t py-4">
-              <div>
-                <p className="font-medium">Attendance-based salary</p>
-                <p className="text-xs text-muted-foreground">
-                  Adjust daily pay for late arrivals, early departures, and
-                  absences
-                </p>
-              </div>
-              <Switch
-                aria-label="Attendance-based salary"
-                checked={attendanceBasedSalary}
-                disabled={!canManage}
-                onCheckedChange={toggleAttendanceBasedSalary}
-              />
-            </div>
-            <div className="flex items-center justify-between gap-4 border-t py-4">
-              <div>
-                <p className="font-medium">Staff purchase discount</p>
-                <p className="text-xs text-muted-foreground">
-                  Applied automatically to this staff member&apos;s own food
-                  orders
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="font-semibold">
-                  {selfDiscountPercent == null
-                    ? "None"
-                    : `${selfDiscountPercent}%`}
-                </span>
-                {canManage ? (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={openDiscountEditor}
-                  >
-                    Edit
-                  </Button>
-                ) : null}
-              </div>
-            </div>
-          </details>
         </div>
       </section>
 

@@ -42,7 +42,7 @@ test("report directory owns discovery while individual reports retain only data 
   const departments = read(
     "components/finance/reports/department-breakdown-report-client.tsx",
   );
-  const daybook = read("components/finance/accounting/daybook-client.tsx");
+  const daybook = read("components/finance/reports/daybook-client.tsx");
   const pageHeader = read("components/patterns/page/page-header.tsx");
   const mobileNavigation = read("lib/mobile-module-navigation.ts");
   const header = read("components/layout/header.tsx");
@@ -86,7 +86,7 @@ test("report tables keep analytical rows below the desktop breakpoint", () => {
   const departments = read(
     "components/finance/reports/department-breakdown-report-client.tsx",
   );
-  const daybook = read("components/finance/accounting/daybook-client.tsx");
+  const daybook = read("components/finance/reports/daybook-client.tsx");
 
   for (const source of [
     statements,
@@ -221,7 +221,7 @@ test("Wave 2B reports use statement, register, and operational archetypes", () =
     "components/finance/reports/reporting-ledger-report-client.tsx",
   );
   const statementPresentation = read("lib/finance-statement-presentation.ts");
-  const daybook = read("components/finance/accounting/daybook-report.tsx");
+  const daybook = read("components/finance/reports/daybook-report.tsx");
 
   assert.match(statements, /function ReportSummary/);
   assert.match(statements, /function StatementSection/);

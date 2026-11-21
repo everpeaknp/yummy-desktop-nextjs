@@ -11,7 +11,6 @@ import {
   Shield,
   User as UserIcon,
   UserPlus,
-  UserX,
   Wallet,
 } from "lucide-react";
 
@@ -96,9 +95,7 @@ type StaffRegisterProps = {
   canManageStaff: boolean;
   onAddStaff: () => void;
   onOpenMember: (member: StaffDirectoryMember) => void;
-  onEditMember: (member: StaffDirectoryMember) => void;
   onSetupProfile: (member: StaffDirectoryMember) => void;
-  onRemoveMember: (member: StaffDirectoryMember) => void;
   onResendInvitation: (invitation: StaffInvitation) => void;
   onRevokeInvitation: (invitation: StaffInvitation) => void;
   onRetryStaff: () => void;
@@ -289,9 +286,7 @@ export function StaffRegister({
   canManageStaff,
   onAddStaff,
   onOpenMember,
-  onEditMember,
   onSetupProfile,
-  onRemoveMember,
   onResendInvitation,
   onRevokeInvitation,
   onRetryStaff,
@@ -502,24 +497,21 @@ export function StaffRegister({
               return (
                 <ListRow
                   key={member.id}
-                  role="button"
-                  tabIndex={0}
-                  interactive
                   leading={
                     <span className="font-semibold">
                       {member.name?.trim().charAt(0).toUpperCase() || "S"}
                     </span>
                   }
-                  title={member.name || "Staff member"}
+                  title={
+                    <Link
+                      href={`/staff/${member.id}`}
+                      className="hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+                    >
+                      {member.name || "Staff member"}
+                    </Link>
+                  }
                   description={description}
                   meta={staffDirectoryStateLabel(member, setupState)}
-                  onClick={() => onOpenMember(member)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") {
-                      event.preventDefault();
-                      onOpenMember(member);
-                    }
-                  }}
                 />
               );
             })}
@@ -534,9 +526,7 @@ export function StaffRegister({
                   <TableHead>Status</TableHead>
                   <TableHead>Setup</TableHead>
                   <TableHead className="w-[25%]">Contact</TableHead>
-                  <TableHead className="w-14 text-right">
-                    <span className="sr-only">Actions</span>
-                  </TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -549,25 +539,18 @@ export function StaffRegister({
                   return (
                     <TableRow
                       key={member.id}
-                      tabIndex={0}
-                      role="link"
-                      className="cursor-pointer"
-                      onClick={() => onOpenMember(member)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter" || event.key === " ") {
-                          event.preventDefault();
-                          onOpenMember(member);
-                        }
-                      }}
                     >
                       <TableCell>
                         <div className="flex min-w-0 items-center gap-3">
                           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-muted text-sm font-semibold text-muted-foreground">
                             {member.name?.trim().charAt(0).toUpperCase() || "S"}
                           </div>
-                          <span className="min-w-0 truncate font-semibold">
+                          <Link
+                            href={`/staff/${member.id}`}
+                            className="min-w-0 truncate font-semibold hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+                          >
                             {member.name || "Staff member"}
-                          </span>
+                          </Link>
                         </div>
                       </TableCell>
                       <TableCell>{staffRoleLabel(staffRole(member))}</TableCell>
@@ -580,8 +563,6 @@ export function StaffRegister({
                       </TableCell>
                       <TableCell
                         className="text-right"
-                        onClick={(event) => event.stopPropagation()}
-                        onKeyDown={(event) => event.stopPropagation()}
                       >
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
@@ -610,23 +591,6 @@ export function StaffRegister({
                                   >
                                     <Wallet className="mr-2 h-4 w-4" />
                                     Set up staff profile
-                                  </DropdownMenuItem>
-                                ) : null}
-                                <DropdownMenuItem
-                                  onClick={() => onEditMember(member)}
-                                >
-                                  <UserPlus className="mr-2 h-4 w-4" />
-                                  Edit staff
-                                </DropdownMenuItem>
-                                {!staffRole(member)
-                                  .toLowerCase()
-                                  .includes("admin") ? (
-                                  <DropdownMenuItem
-                                    className="text-destructive focus:text-destructive"
-                                    onClick={() => onRemoveMember(member)}
-                                  >
-                                    <UserX className="mr-2 h-4 w-4" />
-                                    Remove from restaurant
                                   </DropdownMenuItem>
                                 ) : null}
                               </>

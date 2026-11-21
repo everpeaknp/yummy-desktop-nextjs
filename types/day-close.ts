@@ -634,6 +634,8 @@ export interface DayCloseEvidenceSnapshot {
 }
 
 export interface DayCloseSnapshotData {
+  cash_basis?: string;
+  cash_activity?: { basis?: string; receipts?: number; payments?: number; net?: number };
   period_start_at?: string | null;
   period_end_at?: string | null;
   business_date?: string;
@@ -690,6 +692,7 @@ export interface DayCloseSnapshotResponse {
 }
 
 export interface DayCloseDetail {
+  cash_basis?: string;
   id: number;
   name?: string;
   restaurant_id: number;
@@ -735,6 +738,7 @@ export interface DayCloseDetail {
 }
 
 export interface DayCloseListItem {
+  cash_basis?: string;
   id: number;
   name?: string;
   business_date?: string;
@@ -1048,6 +1052,13 @@ export function parseDayCloseSnapshotData(
       data.business_date != null ? String(data.business_date) : undefined,
     business_line:
       data.business_line != null ? String(data.business_line) : undefined,
+    cash_basis: typeof data.cash_basis === "string" ? data.cash_basis : undefined,
+    cash_activity: asRecord(data.cash_activity) ? {
+      basis: String(asRecord(data.cash_activity)?.basis ?? ""),
+      receipts: readAmount(asRecord(data.cash_activity)?.receipts),
+      payments: readAmount(asRecord(data.cash_activity)?.payments),
+      net: readAmount(asRecord(data.cash_activity)?.net),
+    } : undefined,
     financial_summary,
     evidence,
     opening_balance: readAmount(data.opening_balance),
@@ -1142,6 +1153,7 @@ export function parseDayCloseDetail(payload: unknown): DayCloseDetail | null {
   ] as const;
 
   const detail: DayCloseDetail = {
+    cash_basis: typeof row.cash_basis === "string" ? row.cash_basis : undefined,
     id,
     name: typeof row.name === "string" ? row.name : undefined,
     restaurant_id,
@@ -1202,6 +1214,7 @@ export function parseDayCloseListItem(
   if (!Number.isFinite(id)) return null;
 
   const item: DayCloseListItem = {
+    cash_basis: typeof row.cash_basis === "string" ? row.cash_basis : undefined,
     id,
     name: typeof row.name === "string" ? row.name : undefined,
     status: String(row.status ?? "open"),

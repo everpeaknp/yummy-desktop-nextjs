@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
@@ -33,6 +34,8 @@ import {
 } from "@/components/purchases/purchase-line-items-editor";
 import apiClient from "@/lib/api-client";
 import { PurchaseApis, SupplierApis } from "@/lib/api/endpoints";
+import { useAuth } from "@/hooks/use-auth";
+import { hasPermission } from "@/lib/role-permissions";
 
 function todayForDateInput() {
   const date = new Date();
@@ -59,6 +62,8 @@ export function RecordPurchaseDialog({
   initialSupplierId?: number | string | null;
   onRecorded?: () => void | Promise<void>;
 }) {
+  const user = useAuth((state) => state.user);
+  const canReviewVat = hasPermission(user, "finance.coa.manage");
   const [suppliers, setSuppliers] = useState<any[]>([]);
   const [form, setForm] = useState({
     supplier_id: "",
@@ -73,6 +78,9 @@ export function RecordPurchaseDialog({
   const [paidAmount, setPaidAmount] = useState("");
   const [account, setAccount] = useState<CashBankAccountOption | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [claimInputVat, setClaimInputVat] = useState(false);
+  const [taxInvoiceNumber, setTaxInvoiceNumber] = useState("");
+  const [supplierVatNumber, setSupplierVatNumber] = useState("");
 
   useEffect(() => {
     if (!open) return;
@@ -92,6 +100,9 @@ export function RecordPurchaseDialog({
     setPaymentStatus("pending");
     setPaidAmount("");
     setAccount(null);
+    setClaimInputVat(false);
+    setTaxInvoiceNumber("");
+    setSupplierVatNumber("");
     let cancelled = false;
     apiClient
       .get(SupplierApis.listSuppliers(restaurantId, true))
@@ -130,6 +141,7 @@ export function RecordPurchaseDialog({
         (line) =>
           !Number.isFinite(Number(line.orderedQuantity)) ||
           Number(line.orderedQuantity) <= 0 ||
+          !/^(?:\d+(?:\.\d{0,3})?|\.\d{1,3})$/.test(line.orderedQuantity) ||
           line.unitCost === "" ||
           !Number.isFinite(Number(line.unitCost)) ||
           Number(line.unitCost) < 0,
@@ -145,6 +157,11 @@ export function RecordPurchaseDialog({
     if (paymentStatus === "partial" && Number(paidAmount) <= 0) {
       return toast.error("Enter the amount paid now.");
     }
+    const claimVat = canReviewVat && claimInputVat && validLines.some((line) => Number(line.taxAmount) > 0);
+    if (claimVat && (!taxInvoiceNumber.trim() || !supplierVatNumber.trim())) {
+      document.getElementById(!taxInvoiceNumber.trim() ? "purchase-tax-invoice" : "purchase-supplier-vat")?.focus();
+      return toast.error("Enter the tax invoice and supplier VAT/PAN numbers before claiming VAT.");
+    }
     setSubmitting(true);
     try {
       await apiClient.post(PurchaseApis.create, {
@@ -152,6 +169,9 @@ export function RecordPurchaseDialog({
         supplier_id: Number(form.supplier_id),
         purchase_date: form.purchase_date,
         reference_number: form.reference_number.trim() || undefined,
+        claim_input_vat: claimVat,
+        tax_invoice_number: taxInvoiceNumber.trim() || undefined,
+        supplier_vat_number: supplierVatNumber.trim() || undefined,
         notes: form.notes.trim() || undefined,
         payment_status: paymentStatus,
         paid_amount:
@@ -184,6 +204,8 @@ export function RecordPurchaseDialog({
           unit_conversion_factor: Number(line.unitConversionFactor || 1),
           unit_cost: Number(line.unitCost),
           tax_rate: line.taxRate ? Number(line.taxRate) : undefined,
+          subtotal_amount: line.subtotalAmount !== "" ? Number(line.subtotalAmount) : undefined,
+          tax_amount: line.taxAmount !== "" ? Number(line.taxAmount) : undefined,
         })),
       });
       toast.success("Purchase recorded and stock updated.");
@@ -316,6 +338,35 @@ export function RecordPurchaseDialog({
               disabled={submitting}
               initialItem={initialItem}
             />
+            {lines.some((line) => Number(line.taxRate) > 0 || Number(line.taxAmount) > 0) && (
+              <div className="space-y-3 border-t pt-4">
+                <div>
+                  <h3 className="text-sm font-medium">VAT on this supplier bill</h3>
+                  <p className="text-xs text-muted-foreground">Line VAT is calculated from the rates above. Copy the invoice details so the claim can be checked.</p>
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="purchase-tax-invoice">Tax invoice number</Label>
+                    <Input id="purchase-tax-invoice" name="tax_invoice_number" autoComplete="off" value={taxInvoiceNumber} onChange={(event) => setTaxInvoiceNumber(event.target.value)} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="purchase-supplier-vat">Supplier VAT/PAN number</Label>
+                    <Input id="purchase-supplier-vat" name="supplier_vat_number" autoComplete="off" value={supplierVatNumber} onChange={(event) => setSupplierVatNumber(event.target.value)} />
+                  </div>
+                </div>
+                {canReviewVat ? (
+                  <div className="flex items-start gap-3 rounded-md border p-3">
+                    <Checkbox id="purchase-claim-vat" checked={claimInputVat} onCheckedChange={(checked) => setClaimInputVat(checked === true)} />
+                    <div className="space-y-1">
+                      <Label htmlFor="purchase-claim-vat">Claim input VAT</Label>
+                      <p className="text-xs text-muted-foreground">Select only after confirming the invoice and eligibility. Unclaimed VAT remains in stock cost.</p>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">No input VAT claim will be recorded. Ask finance to review before saving if this VAT should be claimed.</p>
+                )}
+              </div>
+            )}
             <div className="space-y-2">
               <Label htmlFor="purchase-notes">Notes</Label>
               <Textarea

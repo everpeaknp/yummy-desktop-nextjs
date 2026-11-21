@@ -15,6 +15,8 @@ import { StationPicker } from "@/components/stations/station-picker";
 import apiClient from "@/lib/api-client";
 import { InventoryApis } from "@/lib/api/endpoints";
 import { formatCurrency } from "@/lib/utils";
+import { PurchaseAmountFields } from "@/components/manage/purchases/purchase-amount-fields";
+import { purchaseUnitCost } from "@/lib/purchase-amounts";
 
 export interface PurchaseLineDraft {
   key: string;
@@ -37,6 +39,8 @@ export interface PurchaseLineDraft {
   unitCost: string;
   totalAmount: string;
   taxRate: string;
+  subtotalAmount: string;
+  taxAmount: string;
 }
 
 export function newPurchaseLineDraft(): PurchaseLineDraft {
@@ -59,15 +63,13 @@ export function newPurchaseLineDraft(): PurchaseLineDraft {
     unitCost: "",
     totalAmount: "",
     taxRate: "",
+    subtotalAmount: "",
+    taxAmount: "",
   };
 }
 
 function lineTotal(line: PurchaseLineDraft): number {
-  const qty = Number(line.orderedQuantity) || 0;
-  const cost = Number(line.unitCost) || 0;
-  const taxRate = Number(line.taxRate) || 0;
-  const subtotal = qty * Number(cost.toFixed(2));
-  return subtotal + Number(((subtotal * taxRate) / 100).toFixed(2));
+  return Number(line.totalAmount) || 0;
 }
 
 function DuplicateItemWarning({
@@ -161,15 +163,7 @@ export function PurchaseLineItemsEditor({
   const updateLine = (index: number, patch: Partial<PurchaseLineDraft>) => {
     const updated = [...lines];
     const next = { ...updated[index], ...patch };
-    if (patch.unitCost !== undefined) next.totalAmount = "";
-    if (patch.totalAmount !== undefined ||
-      (next.totalAmount !== "" && (patch.orderedQuantity !== undefined || patch.taxRate !== undefined))) {
-      const quantity = Number(next.orderedQuantity);
-      const taxFactor = 1 + Number(next.taxRate || 0) / 100;
-      next.unitCost = next.totalAmount !== "" && quantity > 0 && taxFactor > 0
-        ? String(Number((Number(next.totalAmount) / (quantity * taxFactor)).toFixed(2)))
-        : "";
-    }
+    next.unitCost = purchaseUnitCost(next.subtotalAmount, next.orderedQuantity) || "";
     updated[index] = next;
     onChange(updated);
   };
@@ -232,13 +226,14 @@ export function PurchaseLineItemsEditor({
                   type="button"
                   variant="ghost"
                   size="icon"
+                  aria-label={`Remove purchase line ${index + 1}`}
                   disabled={disabled || lines.length === 1}
                   onClick={() =>
                     onChange(lines.filter((l) => l.key !== line.key))
                   }
                   className="h-7 w-7 text-muted-foreground hover:text-red-600"
                 >
-                  <Trash2 className="h-4 w-4" />
+                  <Trash2 aria-hidden="true" className="h-4 w-4" />
                 </Button>
               </div>
 
@@ -261,8 +256,11 @@ export function PurchaseLineItemsEditor({
                 <div className="space-y-2">
                   <div className="grid grid-cols-2 gap-2">
                     <div className="space-y-1">
-                      <Label className="text-xs">Item name *</Label>
+                      <Label htmlFor={`purchase-new-name-${line.key}`} className="text-xs">Item name *</Label>
                       <Input
+                        id={`purchase-new-name-${line.key}`}
+                        name={`new_name_${index}`}
+                        autoComplete="off"
                         value={line.newItem.name}
                         onChange={(e) =>
                           updateNewItem(index, { name: e.target.value })
@@ -272,8 +270,11 @@ export function PurchaseLineItemsEditor({
                       />
                     </div>
                     <div className="space-y-1">
-                      <Label className="text-xs">Unit *</Label>
+                      <Label htmlFor={`purchase-new-unit-${line.key}`} className="text-xs">Unit *</Label>
                       <Input
+                        id={`purchase-new-unit-${line.key}`}
+                        name={`new_unit_${index}`}
+                        autoComplete="off"
                         value={line.newItem.unit}
                         onChange={(e) =>
                           updateNewItem(index, { unit: e.target.value })
@@ -285,10 +286,13 @@ export function PurchaseLineItemsEditor({
                   </div>
                   <div className="grid grid-cols-2 gap-2">
                     <div className="space-y-1">
-                      <Label className="text-xs">Min stock level</Label>
+                      <Label htmlFor={`purchase-new-min_stock_level-${line.key}`} className="text-xs">Min stock level</Label>
                       <Input
                         type="number"
                         step="0.01"
+                        id={`purchase-new-min_stock_level-${line.key}`}
+                        name={`new_min_stock_level_${index}`}
+                        autoComplete="off"
                         value={line.newItem.min_stock_level}
                         onChange={(e) =>
                           updateNewItem(index, {
@@ -299,8 +303,11 @@ export function PurchaseLineItemsEditor({
                       />
                     </div>
                     <div className="space-y-1">
-                      <Label className="text-xs">Storage location</Label>
+                      <Label htmlFor={`purchase-new-storage_location-${line.key}`} className="text-xs">Storage location</Label>
                       <Input
+                        id={`purchase-new-storage_location-${line.key}`}
+                        name={`new_storage_location_${index}`}
+                        autoComplete="off"
                         value={line.newItem.storage_location}
                         onChange={(e) =>
                           updateNewItem(index, {
@@ -334,12 +341,14 @@ export function PurchaseLineItemsEditor({
                 </div>
               )}
 
-              <div className="grid grid-cols-2 items-end gap-2 sm:grid-cols-5">
+              <div className="grid grid-cols-2 items-end gap-2">
                 <div className="flex flex-col justify-end space-y-1">
                   <Label htmlFor={`purchase-quantity-${line.key}`} className="text-xs">Quantity *</Label>
                   <Input
                     id={`purchase-quantity-${line.key}`}
                     name={`quantity_${index}`}
+                    autoComplete="off"
+                    inputMode="decimal"
                     type="number"
                     step="0.001"
                     min="0.001"
@@ -355,6 +364,7 @@ export function PurchaseLineItemsEditor({
                   <Input
                     id={`purchase-unit-${line.key}`}
                     name={`purchase_unit_${index}`}
+                    autoComplete="off"
                     value={line.purchaseUnit}
                     onChange={(e) =>
                       updateLine(index, { purchaseUnit: e.target.value })
@@ -363,60 +373,11 @@ export function PurchaseLineItemsEditor({
                     placeholder="e.g. box"
                   />
                 </div>
-                <div className="flex flex-col justify-end space-y-1">
-                  <Label htmlFor={`purchase-unit-cost-${line.key}`} className="text-xs">Unit cost *</Label>
-                  <Input
-                    id={`purchase-unit-cost-${line.key}`}
-                    name={`unit_cost_${index}`}
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={line.unitCost}
-                    onChange={(e) =>
-                      updateLine(index, { unitCost: e.target.value })
-                    }
-                    disabled={disabled}
-                  />
-                </div>
-                <div className="flex flex-col justify-end space-y-1">
-                  <Label htmlFor={`purchase-tax-rate-${line.key}`} className="text-xs">Tax rate %</Label>
-                  <Input
-                    id={`purchase-tax-rate-${line.key}`}
-                    name={`tax_rate_${index}`}
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    max="100"
-                    value={line.taxRate}
-                    onChange={(e) =>
-                      updateLine(index, { taxRate: e.target.value })
-                    }
-                    disabled={disabled}
-                  />
-                </div>
-                <div className="col-span-2 flex flex-col justify-end space-y-1 sm:col-span-1">
-                  <Label htmlFor={`purchase-total-${line.key}`} className="whitespace-nowrap text-xs">
-                    Total incl. tax
-                  </Label>
-                  <Input
-                    id={`purchase-total-${line.key}`}
-                    aria-label="Total incl. tax (NPR)"
-                    name={`total_amount_${index}`}
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={line.totalAmount || (line.orderedQuantity && line.unitCost !== "" ? String(Number(lineTotal(line).toFixed(2))) : "")}
-                    onChange={(event) => updateLine(index, { totalAmount: event.target.value })}
-                    disabled={disabled || Number(line.orderedQuantity) <= 0}
-                    placeholder={Number(line.orderedQuantity) <= 0 ? "Enter quantity first" : "0.00"}
-                  />
-                </div>
               </div>
-              {line.totalAmount !== "" && Math.abs(lineTotal(line) - Number(line.totalAmount)) >= 0.005 && (
-                <p role="status" className="text-xs text-amber-700 dark:text-amber-400">
-                  Recorded total will be {formatCurrency(lineTotal(line))} because unit cost uses two decimal places.
-                </p>
-              )}
+              <PurchaseAmountFields idPrefix={`stock-line-${line.key}`} quantity={line.orderedQuantity} initialTotal={line.totalAmount} initialVat={line.taxAmount} disabled={disabled} maxRateDecimals={2} allowZero
+                onChange={(amounts, rate) => updateLine(index, {
+                  subtotalAmount: amounts?.net || "", taxAmount: amounts?.vat || "", totalAmount: amounts?.total || "", taxRate: rate || "",
+                })} />
             </div>
           ))}
         </div>

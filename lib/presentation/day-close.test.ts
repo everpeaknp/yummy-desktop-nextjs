@@ -56,6 +56,16 @@ function presentation(
 }
 
 describe("day close presentation", () => {
+  it("presents negative period cash without treating it as a drawer shortage", () => {
+    const result = presentation(readyValidation, { snapshot: {
+      cash_basis: "period_activity", expected_cash: -90,
+      cash_activity: { basis: "period_activity", receipts: 120, payments: 210, net: -90 },
+    } });
+    expect(result.cash).toMatchObject({ periodActivity: true, receipts: 120, payments: 210, expected: -90 });
+    expect(result.cash.counted).toBeUndefined();
+    expect(result.cash.difference).toBeUndefined();
+    expect(result.readiness.cash.label).toBe("Cash activity");
+  });
   it("presents a ready close using backend totals only", () => {
     const result = presentation();
 
@@ -100,7 +110,7 @@ describe("day close presentation", () => {
       "ACCOUNTING_REVIEW_REQUIRED",
       "Finance review required",
       "accounting",
-      "The accounting check found an issue that an authorized finance user must review.",
+      "The system could not finish preparing the financial records for this close period.",
     ],
   ])("maps %s to manager copy", (code, title, area, description) => {
     const result = presentation({

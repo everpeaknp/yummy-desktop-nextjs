@@ -41,7 +41,7 @@ export function DayCloseHistoryListCard({
       <button
         type="button"
         onClick={onOpen}
-        className="grid min-h-[92px] w-full gap-3 py-4 text-left transition-colors hover:bg-muted/40 sm:grid-cols-[minmax(190px,1fr)_minmax(130px,.65fr)_minmax(150px,.75fr)_auto] sm:items-center sm:px-3"
+        className="grid min-h-[92px] w-full gap-3 py-4 text-left transition-colors hover:bg-muted/40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring sm:grid-cols-[minmax(190px,1fr)_minmax(130px,.65fr)_minmax(150px,.75fr)_auto] sm:items-center sm:px-3"
       >
         <div className="min-w-0">
           <p className="break-words font-semibold">
@@ -61,9 +61,9 @@ export function DayCloseHistoryListCard({
           </p>
         </div>
         <div>
-          <p className="text-xs text-muted-foreground">Cash difference</p>
+          <p className="text-xs text-muted-foreground">{item.cash_basis === "period_activity" ? "Net cash this period" : "Cash difference"}</p>
           <p className="mt-0.5 font-medium tabular-nums">
-            {cashDifference(item.cash_discrepancy)}
+            {item.cash_basis === "period_activity" ? item.expected_cash == null ? "Unavailable" : formatDayCloseCurrency(item.expected_cash) : cashDifference(item.cash_discrepancy)}
           </p>
         </div>
         <div className="flex items-center justify-between gap-3 sm:justify-end">

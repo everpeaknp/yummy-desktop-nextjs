@@ -4,7 +4,19 @@ import {
   snapshotDayOrderRows,
   snapshotOrdersForTable,
   snapshotSalesByTableRows,
+  snapshotFinancialSummaryRows,
 } from "./day-close-snapshot-view";
+
+it("shows period cash instead of opening and physical drawer balances", () => {
+  const rows = snapshotFinancialSummaryRows({
+    cash_basis: "period_activity", expected_cash: -90, opening_balance: 999,
+    cash_activity: { basis: "period_activity", receipts: 120, payments: 210, net: -90 },
+  });
+  expect(rows).toContainEqual({ label: "Cash received this period", value: 120 });
+  expect(rows).toContainEqual({ label: "Cash paid this period", value: 210 });
+  expect(rows).toContainEqual({ label: "Net cash this period", value: -90 });
+  expect(rows.some((row) => /Opening|Drawer/.test(row.label))).toBe(false);
+});
 
 describe("day close order snapshot rows", () => {
   it("reads table, time, total payment, and amount-aware split payments", () => {

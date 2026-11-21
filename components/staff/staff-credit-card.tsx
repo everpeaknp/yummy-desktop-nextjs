@@ -322,7 +322,7 @@ export function StaffCreditCard({
                 </summary>
                 <div className="flex items-center justify-between gap-4 border-t py-4">
                   <p className="max-w-xl text-sm text-muted-foreground">
-                    Discounts above this amount require a manager override.
+                    For larger discounts, ask a manager to apply them to the order.
                   </p>
                   {canManage ? (
                     <Button
@@ -465,14 +465,18 @@ export function StaffCreditCard({
           <DialogHeader>
             <DialogTitle>Discount authorization limit</DialogTitle>
             <DialogDescription>
-              The most this staff member can discount on a single bill without a
-              manager override. Leave empty for no limit.
+              The most this staff member can discount on a single bill. A
+              manager must apply larger discounts. Leave empty for no limit.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
-            <Label>Limit</Label>
+            <Label htmlFor="staff-discount-limit">Limit</Label>
             <Input
+              id="staff-discount-limit"
+              name="staff-discount-limit"
+              autoComplete="off"
               type="number"
+              inputMode="decimal"
               min="0"
               step="0.01"
               value={limitValue}

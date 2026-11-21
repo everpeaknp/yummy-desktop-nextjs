@@ -95,7 +95,6 @@ import {
 } from "@/components/analytics/analytics-access-states";
 import { HistoryScopeNotice } from "@/components/shared/history-scope-notice";
 import {
-  getAnalyticsPresetRange,
   resolvePrimaryRole,
   validateAnalyticsDateRange,
   validationToScopeError,
@@ -137,12 +136,8 @@ import {
   topItemQuantitySold,
   type BreakdownTab,
 } from "@/lib/analytics-dashboard-mapper";
-import {
-  parseDayCloseCurrent,
-  parseDayCloseSnapshotData,
-  unwrapApiData,
-  type BusinessLine,
-} from "@/types/day-close";
+import type { BusinessLine } from "@/types/day-close";
+import { analyticsDateRange } from "@/lib/analytics-date-range";
 import type { DrawerCashControlSummary } from "@/types/accounting";
 import type { FinanceOverviewResponse } from "@/types/finance";
 import {
@@ -187,12 +182,6 @@ export default function AnalyticsPage() {
   >(null);
   const [sessions, setSessions] = useState<any[]>([]);
   const [loadingSessions, setLoadingSessions] = useState(false);
-  const [dayCloseAlignedToday, setDayCloseAlignedToday] = useState(false);
-  const [dayCloseAlignedTodaySession, setDayCloseAlignedTodaySession] =
-    useState<any | null>(null);
-  const [dayCloseNetSalesOverride, setDayCloseNetSalesOverride] = useState<
-    number | undefined
-  >(undefined);
   const user = useAuth((state) => state.user);
   const { ready, canViewAnalytics } = useAnalyticsViewAccess();
   const restaurant = useRestaurant((s) => s.restaurant);
@@ -282,83 +271,11 @@ export default function AnalyticsPage() {
   const [ncOrdersPage, setNcOrdersPage] = useState(1);
   const [ncOrdersPageSize] = useState(20);
 
-  const formatDateStr = (d: Date) => {
-    const year = d.getFullYear();
-    const month = String(d.getMonth() + 1).padStart(2, "0");
-    const day = String(d.getDate()).padStart(2, "0");
-    return `${year}-${month}-${day}`;
-  };
-
-  const getActiveDates = useCallback(() => {
-    const now = new Date();
-    let dateFrom = formatDateStr(now);
-    let dateTo = formatDateStr(now);
-
-    if (activeRange === "lifetime") {
-      dateFrom = "1970-01-01";
-    } else if (activeRange === "yesterday") {
-      const y = new Date(now);
-      y.setDate(y.getDate() - 1);
-      dateFrom = formatDateStr(y);
-      dateTo = formatDateStr(y);
-    } else if (activeRange === "last7") {
-      const l7 = new Date(now);
-      l7.setDate(l7.getDate() - 6);
-      dateFrom = formatDateStr(l7);
-    } else if (activeRange === "last30") {
-      const l30 = new Date(now);
-      l30.setDate(l30.getDate() - 29);
-      dateFrom = formatDateStr(l30);
-    } else if (activeRange === "month") {
-      const m = new Date(now.getFullYear(), now.getMonth(), 1);
-      dateFrom = formatDateStr(m);
-    } else if (activeRange === "lastMonth") {
-      dateFrom = formatDateStr(
-        new Date(now.getFullYear(), now.getMonth() - 1, 1),
-      );
-      dateTo = formatDateStr(new Date(now.getFullYear(), now.getMonth(), 0));
-    } else if (activeRange === "custom" && date?.from) {
-      dateFrom = formatDateStr(date.from);
-      dateTo = date.to ? formatDateStr(date.to) : dateFrom;
-    }
-
-    let startTime: string | undefined = undefined;
-    let endTime: string | undefined = undefined;
-    let queryBusinessLine = businessLine;
-
-    if (selectedDayCloseSession) {
-      startTime = selectedDayCloseSession.period_start_at;
-      endTime = selectedDayCloseSession.period_end_at;
-      queryBusinessLine = selectedDayCloseSession.business_line;
-    } else if (
-      activeRange === "today" &&
-      !station &&
-      dayCloseAlignedTodaySession
-    ) {
-      startTime = dayCloseAlignedTodaySession.period_start_at;
-      endTime = dayCloseAlignedTodaySession.period_end_at;
-      queryBusinessLine =
-        dayCloseAlignedTodaySession.business_line ?? businessLine;
-    } else if (activeRange === "custom" && date?.from) {
-      startTime = date.from.toISOString();
-      endTime = date.to ? date.to.toISOString() : date.from.toISOString();
-    }
-
-    return {
-      dateFrom,
-      dateTo,
-      startTime,
-      endTime,
-      businessLine: queryBusinessLine,
-    };
-  }, [
-    activeRange,
-    date,
-    selectedDayCloseSession,
-    dayCloseAlignedTodaySession,
-    businessLine,
-    station,
-  ]);
+  const analyticsTimezone = restaurant?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const getActiveDates = useCallback(() => analyticsDateRange({
+    preset: activeRange, customRange: date, selectedSession: selectedDayCloseSession,
+    businessLine, timezone: analyticsTimezone,
+  }), [activeRange, date, selectedDayCloseSession, businessLine, analyticsTimezone]);
 
   // Fetch Menu Categories
   useEffect(() => {
@@ -395,7 +312,7 @@ export default function AnalyticsPage() {
           dateTo: dates.startTime ? undefined : dates.dateTo,
           startTime: dates.startTime,
           endTime: dates.endTime,
-          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          timezone: dates.timezone,
           page: menuPage,
           pageSize: menuPageSize,
           sortBy: menuSortBy as any,
@@ -441,7 +358,7 @@ export default function AnalyticsPage() {
           dateTo: dates.startTime ? undefined : dates.dateTo,
           startTime: dates.startTime,
           endTime: dates.endTime,
-          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          timezone: dates.timezone,
           page: staffPage,
           pageSize: staffPageSize,
           businessLine: dates.businessLine ?? "all",
@@ -479,7 +396,7 @@ export default function AnalyticsPage() {
           dateTo: dates.startTime ? undefined : dates.dateTo,
           startTime: dates.startTime,
           endTime: dates.endTime,
-          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          timezone: dates.timezone,
           businessLine: dates.businessLine ?? "all",
           skip: (ncOrdersPage - 1) * ncOrdersPageSize,
           limit: ncOrdersPageSize,
@@ -630,11 +547,6 @@ export default function AnalyticsPage() {
     if (selectedDayCloseSession) {
       const sessionLabel = formatSessionCoveredRange(selectedDayCloseSession);
       parts.push(sessionLabel || "Selected day-close session");
-    } else if (dayCloseAlignedToday && dayCloseAlignedTodaySession) {
-      const sessionLabel = formatSessionCoveredRange(
-        dayCloseAlignedTodaySession,
-      );
-      parts.push(sessionLabel || "Current day-close window");
     } else {
       const dateLabel =
         dates.dateFrom === dates.dateTo
@@ -652,8 +564,6 @@ export default function AnalyticsPage() {
   }, [
     getActiveDates,
     selectedDayCloseSession,
-    dayCloseAlignedToday,
-    dayCloseAlignedTodaySession,
     formatSessionCoveredRange,
     station,
     customFinanceStations,
@@ -682,22 +592,16 @@ export default function AnalyticsPage() {
         setCashControlSummary(null);
         setTrendsData([]);
         setCategoryData([]);
-        setDayCloseAlignedToday(false);
-        setDayCloseAlignedTodaySession(null);
-        setDayCloseNetSalesOverride(undefined);
         setLoading(false);
         return;
       }
       if (activeRange === "custom" && (!date?.from || !date?.to)) {
         setFastFinanceOverview(null);
-        setDayCloseAlignedToday(false);
-        setDayCloseAlignedTodaySession(null);
-        setDayCloseNetSalesOverride(undefined);
         return;
       }
 
-      const presetRange = getAnalyticsPresetRange(activeRange, date);
-      const validation = validateAnalyticsDateRange(presetRange, {
+      const dates = getActiveDates();
+      const validation = validateAnalyticsDateRange(dates.range, {
         role: primaryRole,
         effectivePlan: restaurant?.effective_plan,
         historyDays,
@@ -710,9 +614,6 @@ export default function AnalyticsPage() {
         setCashControlSummary(null);
         setTrendsData([]);
         setCategoryData([]);
-        setDayCloseAlignedToday(false);
-        setDayCloseAlignedTodaySession(null);
-        setDayCloseNetSalesOverride(undefined);
         setLoading(false);
         return;
       }
@@ -722,133 +623,7 @@ export default function AnalyticsPage() {
       setFetchError(null);
       setFastFinanceOverview(null);
       try {
-        const formatDate = (date: Date) => {
-          const year = date.getFullYear();
-          const month = String(date.getMonth() + 1).padStart(2, "0");
-          const day = String(date.getDate()).padStart(2, "0");
-          return `${year}-${month}-${day}`;
-        };
-        const now = new Date();
-        let dateFrom = formatDate(now);
-        let dateTo = formatDate(now);
-
-        if (activeRange === "lifetime") {
-          dateFrom = "1970-01-01";
-        } else if (activeRange === "yesterday") {
-          const y = new Date(now);
-          y.setDate(y.getDate() - 1);
-          dateFrom = formatDate(y);
-          dateTo = formatDate(y);
-        } else if (activeRange === "last7") {
-          const l7 = new Date(now);
-          l7.setDate(l7.getDate() - 6);
-          dateFrom = formatDate(l7);
-        } else if (activeRange === "last30") {
-          const l30 = new Date(now);
-          l30.setDate(l30.getDate() - 29);
-          dateFrom = formatDate(l30);
-        } else if (activeRange === "month") {
-          const m = new Date(now.getFullYear(), now.getMonth(), 1);
-          dateFrom = formatDate(m);
-        } else if (activeRange === "lastMonth") {
-          dateFrom = formatDate(
-            new Date(now.getFullYear(), now.getMonth() - 1, 1),
-          );
-          dateTo = formatDate(new Date(now.getFullYear(), now.getMonth(), 0));
-        } else if (activeRange === "custom" && date?.from) {
-          dateFrom = formatDate(date.from);
-          dateTo = date.to ? formatDate(date.to) : dateFrom;
-        }
-        let startTime: string | undefined = undefined;
-        let endTime: string | undefined = undefined;
-        let queryBusinessLine = businessLine;
-        let dayCloseAlignedTodayLocal = false;
-        let dayCloseAlignedTodaySessionLocal: any | null = null;
-        let dayCloseNetSalesOverrideLocal: number | undefined = undefined;
-
-        if (selectedDayCloseSession) {
-          startTime = selectedDayCloseSession.period_start_at;
-          endTime = selectedDayCloseSession.period_end_at;
-          queryBusinessLine = selectedDayCloseSession.business_line;
-          dayCloseAlignedTodayLocal = false;
-          dayCloseAlignedTodaySessionLocal = null;
-          dayCloseNetSalesOverrideLocal = undefined;
-        } else if (activeRange === "custom" && date?.from) {
-          startTime = date.from.toISOString();
-          endTime = date.to ? date.to.toISOString() : date.from.toISOString();
-          dayCloseAlignedTodayLocal = false;
-          dayCloseAlignedTodaySessionLocal = null;
-          dayCloseNetSalesOverrideLocal = undefined;
-        } else if (
-          activeRange === "today" &&
-          !selectedDayCloseSession &&
-          !station &&
-          (businessLine === "restaurant" || businessLine === "hotel")
-        ) {
-          dayCloseAlignedTodayLocal = false;
-          dayCloseAlignedTodaySessionLocal = null;
-          dayCloseNetSalesOverrideLocal = undefined;
-          try {
-            const [currentRes, snapshotRes] = await Promise.all([
-              apiClient.get(
-                DayCloseApis.current({
-                  restaurantId: user.restaurant_id,
-                  businessLine: businessLine as BusinessLine,
-                }),
-                { signal: controller.signal },
-              ),
-              apiClient.get(
-                DayCloseApis.generateSnapshot({
-                  restaurantId: user.restaurant_id,
-                  businessLine: businessLine as BusinessLine,
-                }),
-                { signal: controller.signal },
-              ),
-            ]);
-
-            const currentClose = unwrapApiData(
-              currentRes.data,
-              parseDayCloseCurrent,
-            );
-            const snapshotData = unwrapApiData(
-              snapshotRes.data,
-              parseDayCloseSnapshotData,
-            );
-            const alignedStart =
-              currentClose?.period_start_at ?? snapshotData?.period_start_at;
-            const alignedEnd =
-              currentClose?.period_end_at ?? snapshotData?.period_end_at;
-            if (alignedStart && alignedEnd) {
-              startTime = alignedStart;
-              endTime = alignedEnd;
-              queryBusinessLine =
-                currentClose?.business_line ??
-                snapshotData?.business_line?.toString() ??
-                businessLine;
-              dayCloseAlignedTodayLocal = true;
-              dayCloseAlignedTodaySessionLocal = {
-                period_start_at: alignedStart,
-                period_end_at: alignedEnd,
-                business_date:
-                  currentClose?.business_date ?? snapshotData?.business_date,
-                business_line: queryBusinessLine,
-              };
-              dayCloseNetSalesOverrideLocal =
-                snapshotData?.net_sales ?? undefined;
-            }
-          } catch {
-            if (!isCurrentRequest()) return;
-            dayCloseAlignedTodayLocal = false;
-            dayCloseAlignedTodaySessionLocal = null;
-            dayCloseNetSalesOverrideLocal = undefined;
-          }
-        }
-
-        if (!isCurrentRequest()) return;
-        const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-        setDayCloseAlignedToday(dayCloseAlignedTodayLocal);
-        setDayCloseAlignedTodaySession(dayCloseAlignedTodaySessionLocal);
-        setDayCloseNetSalesOverride(dayCloseNetSalesOverrideLocal);
+        const { dateFrom, dateTo, startTime, endTime, timezone, businessLine: queryBusinessLine } = dates;
 
         const stationParam = selectedDayCloseSession
           ? undefined
@@ -968,6 +743,7 @@ export default function AnalyticsPage() {
     historyDays,
     selectedDayCloseSession,
     customFinanceStations,
+    getActiveDates,
   ]);
 
   useEffect(() => {
@@ -1856,11 +1632,7 @@ export default function AnalyticsPage() {
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3 xl:grid-cols-5">
                 <BigMetricCard
                   label="Sales"
-                  value={
-                    dayCloseAlignedToday && dayCloseNetSalesOverride != null
-                      ? dayCloseNetSalesOverride
-                      : grossSalesVal
-                  }
+                  value={grossSalesVal}
                   icon={<DollarSign className="w-4.5 h-4.5" />}
                   color="text-orange-500"
                   trend={compIncomeDelta}

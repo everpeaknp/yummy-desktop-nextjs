@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
@@ -82,6 +82,7 @@ export default function InventoryPurchasesPage() {
   const user = useAuth((state) => state.user);
   const router = useRouter();
   const searchParams = useSearchParams();
+  const openedPurchaseId = useRef<number | null>(null);
   const canPostPurchase = hasPermission(user, "inventory.purchases.post");
   const canVoidPurchase = hasPermission(user, "inventory.purchases.void");
   const canCreatePurchaseReturn = hasPermission(
@@ -167,6 +168,20 @@ export default function InventoryPurchasesPage() {
     fetchPurchases();
   }, [fetchPurchases]);
 
+  useEffect(() => {
+    const id = Number(searchParams.get("purchase_id"));
+    if (!id || !user?.restaurant_id || openedPurchaseId.current === id) return;
+    const purchase = purchases.find((row) => row.id === id);
+    openedPurchaseId.current = id;
+    if (purchase) {
+      void openPurchaseDetail(purchase);
+    } else {
+      void apiClient.get(PurchaseApis.get(id, user.restaurant_id)).then((response) => {
+        if (response.data.data) void openPurchaseDetail(response.data.data);
+      }).catch(() => toast.error("Could not open this stock purchase."));
+    }
+  }, [searchParams, purchases, openPurchaseDetail, user?.restaurant_id]);
+
   const handleVoid = async () => {
     if (!voidPurchase || !user?.restaurant_id) return;
     if (voidReason.trim().length < 3) {
@@ -206,10 +221,11 @@ export default function InventoryPurchasesPage() {
   return (
     <AppPage width="wide" className="p-4 pb-24 sm:p-6">
       <PageHeader
-        title="Purchases"
+        title="Stock purchases"
         description="Receive supplier stock and keep inventory quantities accurate."
         actions={
     <div className="grid w-full grid-cols-2 gap-2 md:flex md:w-auto">
+            <Button variant="outline" className="h-11 rounded-xl" onClick={() => router.push("/finance/purchases")}>All purchases</Button>
             {canCreatePurchaseReturn ? <Button
               variant="outline"
               className="h-11 rounded-xl"

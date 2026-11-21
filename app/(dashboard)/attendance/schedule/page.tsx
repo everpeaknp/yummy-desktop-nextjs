@@ -1,5 +1,5 @@
 "use client";
-import { OptionSelect } from "@/components/ui/option-select";
+import { ShiftSlotPicker } from "@/components/attendance/shift-slot-picker";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { CalendarDays, Loader2, Plus, Trash2 } from "lucide-react";
@@ -13,7 +13,6 @@ import { Input } from "@/components/ui/input";
 import { attendanceApi } from "@/lib/attendance/api";
 import type { AttendanceScheduleAudit, AttendanceScheduleWeek, AttendanceShiftTemplate } from "@/lib/attendance/types";
 
-const DAY_OFF = "day_off";
 const weekDays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
 function monday(value: Date) {
@@ -56,7 +55,7 @@ export default function TeamSchedule() {
   const [templates, setTemplates] = useState<AttendanceShiftTemplate[]>([]);
   const [scheduleAudit, setScheduleAudit] = useState<AttendanceScheduleAudit[]>([]);
   const [selectedStaff, setSelectedStaff] = useState<number[]>([]);
-  const [assignments, setAssignments] = useState<string[]>(Array(7).fill(DAY_OFF));
+  const [assignments, setAssignments] = useState<number[][]>(() => Array.from({ length: 7 }, () => []));
   const [templateForm, setTemplateForm] = useState<TemplateForm>(emptyTemplate);
   const [showAllChanges, setShowAllChanges] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -92,6 +91,7 @@ export default function TeamSchedule() {
     return localDateKey(date);
   });
   const selectedAll = rows.length > 0 && selectedStaff.length === rows.length;
+  const maxShifts = rows.length > 0 && rows.every(row => row.multiple_shifts_supported) ? 8 : 1;
   const sortedChanges = useMemo(
     () => [...scheduleAudit].sort((a, b) => b.created_at.localeCompare(a.created_at)),
     [scheduleAudit],
@@ -113,8 +113,9 @@ export default function TeamSchedule() {
         effective_from: week,
         assignments: assignments.map((value, weekday) => ({
           weekday,
-          shift_template_id: value === DAY_OFF ? null : Number(value),
-          is_day_off: value === DAY_OFF,
+          shift_template_id: value[0] ?? null,
+          shift_template_ids: value,
+          is_day_off: value.length === 0,
         })),
       });
       toast.success(`Weekly roster applied to ${selectedStaff.length} staff member${selectedStaff.length === 1 ? "" : "s"}`);
@@ -126,20 +127,23 @@ export default function TeamSchedule() {
     }
   }
 
-  async function saveCell(staffId: number, weekday: number, effectiveFrom: string, value: string) {
+  async function saveCell(staffId: number, weekday: number, effectiveFrom: string, value: number[]) {
     setSaving(true);
     try {
       await attendanceApi.createSchedule({
         staff_id: staffId,
         weekday,
         effective_from: effectiveFrom,
-        shift_template_id: value === DAY_OFF ? null : Number(value),
-        is_day_off: value === DAY_OFF,
+        shift_template_id: value[0] ?? null,
+        shift_template_ids: value,
+        is_day_off: value.length === 0,
       });
       toast.success("Schedule updated");
       await load();
+      return null;
     } catch (error) {
       toast.error(errorMessage(error, "Failed to update schedule"));
+      return errorMessage(error, "Check the shift hours and try again.");
     } finally {
       setSaving(false);
     }
@@ -203,12 +207,10 @@ export default function TeamSchedule() {
         <Button variant="outline" className="mx-6 mb-4 min-h-11 md:hidden" aria-expanded={showRoster} onClick={() => setShowRoster(value => !value)}>{showRoster ? "Close bulk assignment" : "Assign a week to multiple staff"}</Button>
         <CardContent className={`space-y-4 ${showRoster ? "" : "hidden md:block"}`}>
           <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-7">
-            {weekDays.map((day, index) => <label key={day} className="space-y-1 text-sm font-medium">{day}
-              <OptionSelect aria-label="Weekly shift template" className="h-10 w-full" value={assignments[index]} onValueChange={(event) => setAssignments((current) => current.map((item, itemIndex) => itemIndex === index ? event : item))}>
-                <option value={DAY_OFF}>Day off</option>
-                {templates.map((template) => <option key={template.id} value={String(template.id)}>{template.name}</option>)}
-              </OptionSelect>
-            </label>)}
+            {weekDays.map((day, index) => <div key={day} className="space-y-1 text-sm font-medium"><p>{day}</p>
+              <ShiftSlotPicker label={day} templates={templates} disabled={saving || isPastWeek} value={assignments[index]} maxShifts={maxShifts}
+                onChange={value => setAssignments(current => current.map((item, position) => position === index ? value : item))} />
+            </div>)}
           </div>
           <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4">
             <p className="text-sm text-muted-foreground">{selectedStaff.length ? `${selectedStaff.length} staff selected` : "Select staff from the team table below."}</p>
@@ -217,13 +219,15 @@ export default function TeamSchedule() {
         </CardContent>
       </Card>
 
+      {!loading && rows.length > 0 && maxShifts === 1 && <p role="status" className="text-sm text-muted-foreground">This server supports one shift per day. Update the backend before assigning additional shifts.</p>}
+
       <section className="space-y-3 md:hidden" aria-label="Mobile team schedule">
         <div className="grid grid-cols-7 gap-1 rounded-lg border p-1" aria-label="Schedule day">{dates.map((date, index) => <button key={date} className="min-h-12 rounded px-1 text-center text-xs focus-visible:outline focus-visible:outline-2 aria-pressed:bg-primary/10 aria-pressed:font-semibold aria-pressed:text-primary" aria-pressed={mobileDay === index} onClick={() => setMobileDay(index)}><span className="block">{weekDays[index].slice(0, 3)}</span><span className="block text-sm tabular-nums">{date.slice(8)}</span></button>)}</div>
         <label className="block space-y-1 text-sm font-medium">View staff<select className="h-11 w-full rounded-md border bg-background px-3 text-foreground focus-visible:outline focus-visible:outline-2" value={mobileStaff} onChange={event => setMobileStaff(event.target.value)}><option value="all">All staff · selected day</option>{rows.map(row => <option key={row.staff_id} value={row.staff_id}>{row.staff_name} · full week</option>)}</select></label>
         <div className="flex min-h-11 items-center gap-2"><Checkbox aria-label="Select all staff for weekly assignment" checked={selectedAll} onCheckedChange={checked => setSelectedStaff(checked ? rows.map(row => row.staff_id) : [])} /><span className="text-sm">{selectedStaff.length} selected for weekly assignment</span></div>
         <div className="divide-y rounded-xl border">{loading ? <p role="status" className="p-4 text-sm text-muted-foreground">Loading schedule…</p> : rows.filter(row => mobileStaff === "all" || row.staff_id === Number(mobileStaff)).map(row => <div key={row.staff_id} className="space-y-3 p-3">
           <label className="flex min-h-11 items-center gap-3 text-sm font-semibold"><Checkbox checked={selectedStaff.includes(row.staff_id)} onCheckedChange={checked => selectStaff(row.staff_id, checked === true)} />{row.staff_name}</label>
-          {(mobileStaff === "all" ? [row.days[mobileDay]] : row.days).filter(Boolean).map(day => <div key={day.date} className="space-y-1"><p className="text-xs text-muted-foreground">{dateLabel(day.date)}</p><ScheduleCell day={day} templates={templates} disabled={saving} locked={day.date < today} onChange={value => void saveCell(row.staff_id, row.days.findIndex(item => item.date === day.date), day.date, value)} /></div>)}
+          {(mobileStaff === "all" ? [row.days[mobileDay]] : row.days).filter(Boolean).map(day => <div key={day.date} className="space-y-1"><p className="text-xs text-muted-foreground">{dateLabel(day.date)}</p><ScheduleCell day={day} templates={templates} disabled={saving} locked={day.date < today} maxShifts={maxShifts} onChange={value => saveCell(row.staff_id, row.days.findIndex(item => item.date === day.date), day.date, value)} /></div>)}
         </div>)}</div>
       </section>
       <section className="hidden overflow-x-auto rounded-xl border bg-card md:block">
@@ -233,7 +237,7 @@ export default function TeamSchedule() {
             {dates.map((day) => <th key={day} className="min-w-36 p-3 text-left font-medium">{dateLabel(day)}</th>)}</tr></thead>
           <tbody>{loading ? <tr><td colSpan={8} className="p-8 text-center text-muted-foreground"><Loader2 className="mr-2 inline h-4 w-4 animate-spin" />Loading team schedule…</td></tr> : rows.length ? rows.map((row) => <tr key={row.staff_id} className="border-b last:border-0">
             <td className="sticky left-0 z-10 bg-card p-3 font-medium"><div className="flex items-center gap-2"><Checkbox aria-label={`Select ${row.staff_name}`} checked={selectedStaff.includes(row.staff_id)} onCheckedChange={(checked) => selectStaff(row.staff_id, checked === true)} />{row.staff_name}</div></td>
-            {row.days.map((day, index) => <td key={day.date} className="p-2 align-top"><ScheduleCell day={day} templates={templates} disabled={saving} locked={day.date < today} onChange={(value) => void saveCell(row.staff_id, index, day.date, value)} /></td>)}
+            {row.days.map((day, index) => <td key={day.date} className="p-2 align-top"><ScheduleCell day={day} templates={templates} disabled={saving} locked={day.date < today} maxShifts={maxShifts} onChange={(value) => saveCell(row.staff_id, index, day.date, value)} /></td>)}
           </tr>) : <tr><td colSpan={8} className="p-8 text-center text-muted-foreground">No staff schedules are available.</td></tr>}</tbody>
         </table>
       </section>
@@ -267,24 +271,38 @@ export default function TeamSchedule() {
   );
 }
 
-function ScheduleCell({ day, templates, disabled, locked, onChange }: { day: AttendanceScheduleWeek["days"][number]; templates: AttendanceShiftTemplate[]; disabled: boolean; locked: boolean; onChange: (value: string) => void }) {
+function ScheduleCell({ day, templates, disabled, locked, onChange, maxShifts }: { day: AttendanceScheduleWeek["days"][number]; templates: AttendanceShiftTemplate[]; disabled: boolean; locked: boolean; maxShifts: number; onChange: (value: number[]) => Promise<string | null> }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState<number[]>([]);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const isOverride = day.kind === "leave" || day.kind === "holiday";
   const template = templates.find((item) => item.name === day.label);
   if (isOverride) return <div className={`rounded-md border p-2 ${day.kind === "leave" ? "border-amber-300 bg-amber-50 dark:bg-amber-950/20" : "border-emerald-300 bg-emerald-50 dark:bg-emerald-950/20"}`}><p className="font-medium">{day.label}</p><p className="mt-0.5 text-xs text-muted-foreground">{day.detail || "Protected override"}</p></div>;
   if (locked) {
     const outcome = day.attendance_outcome;
-    const tone = outcome === "present" ? "border-emerald-300 bg-emerald-50 dark:bg-emerald-950/20" : outcome === "absent" ? "border-rose-300 bg-rose-50 dark:bg-rose-950/20" : outcome === "review" ? "border-amber-300 bg-amber-50 dark:bg-amber-950/20" : "bg-muted/40";
-    const label = outcome === "present" ? "Present" : outcome === "absent" ? "Absent" : outcome === "review" ? "Pending review" : "No attendance recorded";
+    const tone = outcome === "present" ? "border-emerald-300 bg-emerald-50 dark:bg-emerald-950/20" : outcome === "absent" ? "border-rose-300 bg-rose-50 dark:bg-rose-950/20" : outcome === "review" || outcome === "partial" ? "border-amber-300 bg-amber-50 dark:bg-amber-950/20" : "bg-muted/40";
+    const label = outcome === "present" ? "Present" : outcome === "absent" ? "Absent" : outcome === "partial" ? "Shift missing" : outcome === "review" ? "Pending review" : "No attendance recorded";
     return <div className={`rounded-md border p-2 ${tone}`}><p className="font-medium">{day.label}</p><p className="mt-0.5 text-xs text-muted-foreground">{label}{day.detail ? ` · ${day.detail}` : ""}</p></div>;
   }
-  return <OptionSelect aria-label={`Schedule for ${day.date}`} className="min-h-16 w-full" disabled={disabled} value={day.kind === "day_off" ? DAY_OFF : template ? String(template.id) : DAY_OFF} onValueChange={(event) => onChange(event)}><option value={DAY_OFF}>Day off</option>{templates.map((item) => <option key={item.id} value={String(item.id)}>{item.name}</option>)}</OptionSelect>;
+  return <><Button variant="outline" className="h-auto min-h-16 w-full flex-col items-start whitespace-normal p-2 text-left"
+    aria-label={`Edit shifts for ${day.date}`} disabled={disabled} onClick={() => {
+      setDraft(day.shifts?.flatMap(slot => slot.shift_template_id ? [slot.shift_template_id] : []) ?? (template ? [template.id] : []));
+      setSaveError(null);
+      setEditing(true);
+    }}><span>{day.label}</span><span className="text-xs font-normal text-muted-foreground">{day.detail || "Edit shifts"}</span></Button>
+    <Dialog open={editing} onOpenChange={setEditing}><DialogContent className="max-h-[85dvh] w-[calc(100vw-2rem)] min-w-0 grid-cols-[minmax(0,1fr)] overflow-x-hidden overflow-y-auto overscroll-contain p-4 sm:p-6 [&>button:last-child]:right-2 [&>button:last-child]:top-2 [&>button:last-child]:flex [&>button:last-child]:h-11 [&>button:last-child]:w-11 [&>button:last-child]:items-center [&>button:last-child]:justify-center"><DialogHeader className="min-w-0 pr-9 text-left"><DialogTitle>Shifts · {dateLabel(day.date)}</DialogTitle>
+      <DialogDescription>Add separate shifts for this day. Remove all shifts to mark a day off. Overlapping hours are rejected.</DialogDescription></DialogHeader>
+      <ShiftSlotPicker label={day.date} templates={templates} value={draft} onChange={setDraft} disabled={disabled} maxShifts={maxShifts} />
+      {saveError && <p role="alert" className="text-sm text-destructive">{saveError}</p>}
+      <Button className="min-h-11" disabled={disabled} onClick={async () => { const error = await onChange(draft); setSaveError(error); if (!error) setEditing(false); }}>{disabled ? "Saving…" : "Save shifts"}</Button>
+    </DialogContent></Dialog></>;
 }
 
 function ScheduleChangeRows({ changes, templates, staffNames }: { changes: AttendanceScheduleAudit[]; templates: AttendanceShiftTemplate[]; staffNames: Map<number, string> }) {
   if (!changes.length) return <p className="text-sm text-muted-foreground">No schedule changes recorded.</p>;
   return <div className="space-y-3">{changes.map((item) => {
-    const value = (item.new_value || item.old_value || {}) as { staff_id?: number | null; shift_template_id?: number | null; weekday?: number; effective_from?: string; is_day_off?: boolean };
-    const shiftName = value.is_day_off ? "Day off" : templates.find((template) => template.id === value.shift_template_id)?.name || "Shift unavailable";
+    const value = (item.new_value || item.old_value || {}) as { staff_id?: number | null; shift_template_id?: number | null; shift_template_ids?: number[]; weekday?: number; effective_from?: string; is_day_off?: boolean };
+    const shiftName = value.is_day_off ? "Day off" : (value.shift_template_ids ?? [value.shift_template_id]).map(id => templates.find(template => template.id === id)?.name || "Shift unavailable").join(" + ");
     return <div key={item.id} className="border-b pb-3 text-sm last:border-0 last:pb-0"><p className="font-medium">{item.actor_name || "Unknown user"} {item.event === "deleted" ? "removed" : "scheduled"} {staffNames.get(value.staff_id || 0) || "Restaurant default"} · {value.weekday === undefined ? "Schedule" : weekDays[value.weekday]}</p><p className="mt-0.5">{shiftName}</p><p className="mt-0.5 text-xs text-muted-foreground">Starts {value.effective_from ? dateLabel(value.effective_from) : "—"} · recorded {dateLabel(item.created_at.slice(0, 10))}</p></div>;
   })}</div>;
 }

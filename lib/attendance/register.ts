@@ -1,10 +1,13 @@
-export type Presence = "working" | "completed" | "not_started" | "not_arrived" | "absent" | "leave" | "holiday" | "day_off" | "unassigned" | "not_employed";
+export type Presence = "working" | "completed" | "partial" | "not_started" | "not_arrived" | "absent" | "leave" | "holiday" | "day_off" | "unassigned" | "not_employed";
 export const presenceLabels: Record<Presence, string> = {
   working: "Working now", completed: "Attendance recorded", not_started: "Not started",
+  partial: "Shift missing",
   not_arrived: "Not arrived", absent: "Absent", leave: "On leave", holiday: "Holiday",
   day_off: "Day off", unassigned: "No schedule", not_employed: "Outside employment",
 };
 export type RegisterDay = {
+  shifts?: { shift_name: string; scheduled_start_at: string; scheduled_end_at: string; presence: Presence; entry_ids: number[] }[];
+  absent_shifts?: number;
   date: string; schedule_kind: "shift" | "day_off" | "unassigned";
   shift_name: string | null; scheduled_start_at: string | null; scheduled_end_at: string | null;
   presence: Presence; attended: boolean; carryover: boolean; employed: boolean;

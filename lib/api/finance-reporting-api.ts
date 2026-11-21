@@ -21,6 +21,7 @@ import {
   ManualJournalCreate,
   ManualJournalListRead,
   ManualJournalReverse,
+  FinanceReportingVatSummaryRead,
 } from "@/types/finance-reporting";
 
 export interface ApiResponse<T> {
@@ -29,6 +30,10 @@ export interface ApiResponse<T> {
 }
 
 export const financeReportingApi = {
+  getVatSummary: async (params?: { date_from?: string; date_to?: string; business_line?: string; station?: string }): Promise<FinanceReportingVatSummaryRead> => {
+    const res = await apiClient.get<ApiResponse<FinanceReportingVatSummaryRead>>("/finance-reports/vat-summary", { params });
+    return res.data.data;
+  },
   getTree: async (
     restaurantId: number,
   ): Promise<FinanceReportingTreeNode[]> => {

@@ -112,7 +112,7 @@ const MANAGE_ITEMS = [
   { title: "Sales", href: "/finance/sales", icon: Receipt, section: "Finance" },
   {
     title: "Purchases",
-    href: "/inventory/purchases",
+    href: "/finance/purchases",
     icon: ShoppingCart,
     section: "Finance",
   },
@@ -189,7 +189,7 @@ const MANAGE_ITEMS = [
     section: "Purchasing",
   },
   {
-    title: "Purchase documents",
+    title: "Stock purchase documents",
     href: "/inventory/purchases",
     icon: ShoppingCart,
     section: "Purchasing",
@@ -398,11 +398,6 @@ export function GlobalSearch({ open, onOpenChange }: GlobalSearchProps) {
       // renamed routes cannot leak back into navigation.
       if (item.section.startsWith("Settings /")) return;
       if (!isPathAccessible(item.href, user)) return;
-      if (
-        item.href.startsWith("/finance/accounting") &&
-        !isFinanceFeatureEnabled(restaurant, "accounting")
-      )
-        return;
       if (!items.has(item.href)) {
         items.set(item.href, item);
       }

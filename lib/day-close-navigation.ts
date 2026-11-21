@@ -35,5 +35,5 @@ export function getAccountingReviewUrlForDayClose(
 export function getAccountingDayCloseUrl(
   close: Required<Pick<DayCloseNavigationSource, "id">>,
 ): string {
-  return `/finance/accounting/day-closes?day_close_id=${encodeURIComponent(String(close.id))}`;
+  return `/day-close?detail=${encodeURIComponent(String(close.id))}`;
 }

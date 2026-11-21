@@ -76,7 +76,6 @@ function mobileAppBarBackHref(pathname: string) {
   if (pathname.startsWith("/finance/reports/")) return "/finance/reports";
   if (pathname.startsWith("/finance/sales/")) return "/finance/sales";
   if (pathname.startsWith("/finance/purchases/")) return "/finance/purchases";
-  if (pathname.startsWith("/finance/accounting/")) return "/finance/reports";
   if (pathname === "/finance/heads") return "/finance/setup";
   if (pathname === "/finance") return null;
   if (pathname.startsWith("/finance/")) return "/finance";

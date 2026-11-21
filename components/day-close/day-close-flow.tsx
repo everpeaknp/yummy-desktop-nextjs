@@ -269,10 +269,13 @@ function DayCloseSummary({
       moneyOrUnavailable(presentation.summary.expenses),
     ],
     [
-      DAY_CLOSE_TERMS.cashExpected,
+      presentation.cash.periodActivity ? "Net cash this period" : DAY_CLOSE_TERMS.cashExpected,
       moneyOrUnavailable(presentation.cash.expected),
     ],
-    [
+    ...(presentation.cash.periodActivity ? [
+      ["Cash received this period", moneyOrUnavailable(presentation.cash.receipts)],
+      ["Cash paid this period", moneyOrUnavailable(presentation.cash.payments)],
+    ] : [[
       DAY_CLOSE_TERMS.cashCounted,
       presentation.cash.counted == null
         ? "Not counted"
@@ -281,7 +284,7 @@ function DayCloseSummary({
     [
       DAY_CLOSE_TERMS.cashDifference,
       differenceLabel(presentation.cash.difference),
-    ],
+    ]]),
   ] as const;
   return (
     <section>
@@ -506,13 +509,14 @@ export function DayCloseFlow({
   const cashCount = useMemo(() => {
     const entered = manualCount.trim() === "" ? undefined : Number(manualCount);
     if (
+      !presentation.cash.periodActivity &&
       controlsEnabled === false &&
       entered != null &&
       Number.isFinite(entered)
     )
       return entered;
     return presentation.cash.counted;
-  }, [controlsEnabled, manualCount, presentation.cash.counted]);
+  }, [controlsEnabled, manualCount, presentation.cash.counted, presentation.cash.periodActivity]);
   const cashDifference =
     cashCount != null && presentation.cash.expected != null
       ? cashCount - presentation.cash.expected
@@ -520,7 +524,7 @@ export function DayCloseFlow({
   const drawerActionsRemain = presentation.cash.drawers.some(
     (drawer) => drawer.state !== "ready",
   );
-  const cashStepRequired = !(
+  const cashStepRequired = !presentation.cash.periodActivity && !(
     controlsEnabled === true &&
     presentation.cash.countSource === "drawer_evidence" &&
     !drawerActionsRemain
@@ -571,6 +575,7 @@ export function DayCloseFlow({
       const entered =
         manualCount.trim() === "" ? undefined : Number(manualCount);
       const usesManualCount =
+        latest.cash_basis !== "period_activity" &&
         controlsEnabled === false &&
         entered != null &&
         Number.isFinite(entered);
@@ -1013,7 +1018,12 @@ export function DayCloseFlow({
                 {moneyOrUnavailable(presentation.summary.expenses)}
               </dd>
             </div>
-            <div className="flex justify-between gap-4 py-3">
+            {presentation.cash.periodActivity ? (
+              <div className="flex justify-between gap-4 py-3">
+                <dt className="text-muted-foreground">Net cash this period</dt>
+                <dd className="font-semibold tabular-nums">{moneyOrUnavailable(presentation.cash.expected)}</dd>
+              </div>
+            ) : <><div className="flex justify-between gap-4 py-3">
               <dt className="text-muted-foreground">Cash counted</dt>
               <dd className="font-semibold tabular-nums">
                 {cashCount == null
@@ -1033,7 +1043,7 @@ export function DayCloseFlow({
               >
                 {differenceLabel(cashDifference)}
               </dd>
-            </div>
+            </div></>}
           </dl>
           <DayCloseIssueList
             title="Warnings retained"
@@ -1111,7 +1121,9 @@ export function DayCloseFlow({
                   completionPresentation.summary.paymentsCollected,
                 ),
               ],
-              [
+              ...(completionPresentation.cash.periodActivity ? [[
+                "Net cash this period", moneyOrUnavailable(completionPresentation.cash.expected),
+              ]] : [[
                 "Cash counted",
                 completionPresentation.cash.counted == null
                   ? "Not counted"
@@ -1120,7 +1132,7 @@ export function DayCloseFlow({
               [
                 "Cash difference",
                 differenceLabel(completionPresentation.cash.difference),
-              ],
+              ]]),
             ].map(([label, value]) => (
               <div
                 key={label}

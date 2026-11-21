@@ -926,11 +926,12 @@ export type BalanceSheetResponse = {
 };
 
 export type VatSummaryResponse = {
-  rows: FinancialStatementLine[];
-  taxable_sales: number;
-  tax_collected: number;
-  tax_reversed: number;
-  net_tax_payable: number;
+  rows: Array<{ account_id: number; account_code: string; account_name: string; amount: number }>;
+  output_vat: number;
+  input_vat: number;
+  net_vat_payable: number;
+  unclassified_purchase_count: number;
+  legacy_inventory_vat_count: number;
 };
 
 export type VatExportRequest = {

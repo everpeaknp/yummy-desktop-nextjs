@@ -47,6 +47,7 @@ export type AttendanceEntry = {
   staff_id: number;
   clock_in_at: string;
   clock_out_at: string | null;
+  superseded_at?: string | null;
   source: AttendanceSource;
   status: AttendanceStatus;
   device_id: number | null;
@@ -82,13 +83,14 @@ export type MyAttendanceStatus = {
 };
 
 export type AttendanceScheduleDay = {
+  shifts?: { shift_template_id: number | null; label: string; detail: string; scheduled_start_at: string; scheduled_end_at: string }[];
   date: string;
   kind: "shift" | "day_off" | "leave" | "holiday";
   label: string;
   detail: string | null;
-  attendance_outcome?: "present" | "absent" | "review" | null;
+  attendance_outcome?: "present" | "absent" | "partial" | "review" | null;
 };
-export type AttendanceScheduleWeek = { staff_id: number; staff_name: string; days: AttendanceScheduleDay[] };
+export type AttendanceScheduleWeek = { staff_id: number; staff_name: string; multiple_shifts_supported?: boolean; days: AttendanceScheduleDay[] };
 export type AttendanceStaffReport = { staff_id: number; staff_name: string; present_days: number; pending_entries: number; regular_minutes: number; overtime_minutes: number };
 export type AttendancePayrollPreview = {
   staff_id: number;
@@ -150,6 +152,7 @@ export type AttendanceQrSession = {
 };
 
 export type AttendanceDevice = {
+  automatic_in_out?: boolean;
   id: number;
   restaurant_id: number;
   name: string;
@@ -226,6 +229,7 @@ export type AttendanceSchedule = {
   restaurant_id: number;
   staff_id: number | null;
   shift_template_id: number | null;
+  shift_template_ids?: number[];
   weekday: number;
   effective_from: string;
   effective_to: string | null;

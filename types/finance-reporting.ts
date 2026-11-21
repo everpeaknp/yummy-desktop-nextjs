@@ -358,3 +358,12 @@ export interface FinanceReportingHeadActivityRead {
   closure: FinanceReportingClosureSummary;
   rows: FinanceReportingTrialBalanceRow[];
 }
+export interface FinanceReportingVatSummaryRead {
+  period: { date_from: string | null; date_to: string | null; business_line: string | null; station: string | null };
+  output_vat: FinanceReportingMoney;
+  input_vat: FinanceReportingMoney;
+  net_vat_payable: FinanceReportingMoney;
+  rows: Array<{ account_id: number; account_code: string; account_name: string; amount: FinanceReportingMoney }>;
+  unclassified_purchase_count: number;
+  legacy_inventory_vat_count: number;
+}

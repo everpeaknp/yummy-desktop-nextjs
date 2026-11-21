@@ -414,6 +414,15 @@ export function purchaseDocumentDetail(
         emptyText: "No received-item detail was returned for this purchase.",
       },
       {
+        title: "VAT on this bill",
+        fields: [
+          { label: "VAT shown", value: formatCurrency(value(purchase.tax_total)) },
+          { label: "Input VAT", value: purchase.claim_input_vat ? "Claimed after review" : "Not claimed" },
+          { label: "Tax invoice", value: purchase.tax_invoice_number || "Not recorded" },
+          { label: "Supplier VAT/PAN", value: purchase.supplier_vat_number || "Not recorded" },
+        ],
+      },
+      {
         title: "Settlement",
         description: "Payments recorded against this supplier bill.",
         fields: [

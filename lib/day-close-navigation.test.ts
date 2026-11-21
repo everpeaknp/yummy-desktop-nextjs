@@ -27,7 +27,7 @@ describe("day close navigation", () => {
 
   it("keeps the canonical accounting close destination centralized", () => {
     expect(getAccountingDayCloseUrl({ id: 27 })).toBe(
-      "/finance/accounting/day-closes?day_close_id=27",
+      "/day-close?detail=27",
     );
   });
 });

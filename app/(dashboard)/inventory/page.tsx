@@ -144,6 +144,7 @@ export default function InventoryPage() {
   const [detailsItem, setDetailsItem] = useState<any | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [purchaseItem, setPurchaseItem] = useState<any | null>(null);
+  const [purchaseOpen, setPurchaseOpen] = useState(false);
 
   // Advanced ops: ledger history
   const [opsOpen, setOpsOpen] = useState(false);
@@ -832,6 +833,7 @@ export default function InventoryPage() {
                   <Utensils className="mr-2 h-4 w-4" /> Consume
                 </Button>
               ) : null}
+              {inventoryView === "items" && canPostPurchase ? <Button variant="outline" className="h-11 rounded-xl" onClick={() => { setPurchaseItem(null); setPurchaseOpen(true); }}><Plus className="mr-2 h-4 w-4" /> Record stock purchase</Button> : null}
               {inventoryView === "items" && canManageItems ? (
                 <Button className="h-11 rounded-xl" onClick={openAdd}>
                   <Plus className="mr-2 h-4 w-4" /> Add Item
@@ -844,6 +846,7 @@ export default function InventoryPage() {
 
       {inventoryView === "items" ? (
         <div className="flex gap-2 lg:hidden">
+          {canPostPurchase ? <Button variant="outline" className="h-11 flex-1 rounded-xl" onClick={() => { setPurchaseItem(null); setPurchaseOpen(true); }}>Buy stock</Button> : null}
           {canConsumeInventory ? (
             <Button
               variant="outline"
@@ -1893,8 +1896,8 @@ export default function InventoryPage() {
       />
 
       {canPostPurchase && <RecordPurchaseDialog
-        open={purchaseItem != null}
-        onOpenChange={(open) => { if (!open) setPurchaseItem(null); }}
+        open={purchaseOpen || purchaseItem != null}
+        onOpenChange={(open) => { setPurchaseOpen(open); if (!open) setPurchaseItem(null); }}
         restaurantId={user?.restaurant_id || 0}
         initialItem={purchaseItem ? {
           id: purchaseItem.id,

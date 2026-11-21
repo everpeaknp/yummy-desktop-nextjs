@@ -106,6 +106,9 @@ export interface DayClosePresentation {
     expectedCash?: number;
   };
   cash: {
+    periodActivity?: boolean;
+    receipts?: number;
+    payments?: number;
     expected?: number;
     counted?: number;
     difference?: number;
@@ -460,6 +463,9 @@ export function buildDayClosePresentation(
     };
   }
   const status = String(detail?.status ?? "").toLowerCase();
+  if (snapshot?.cash_basis === "period_activity" || detail?.cash_basis === "period_activity") {
+    readiness.cash = { ...readiness.cash, label: "Cash activity", supportingText: "Receipts and payments for this period" };
+  }
   const confirmed = input.stage === "confirmed" || status === "confirmed";
   const hasDrawerAction = drawers.some((drawer) => drawer.state !== "ready");
   const canContinue =
@@ -538,6 +544,9 @@ export function buildDayClosePresentation(
       ),
     },
     cash: {
+      periodActivity: snapshot?.cash_basis === "period_activity" || detail?.cash_basis === "period_activity",
+      receipts: snapshot?.cash_activity?.receipts,
+      payments: snapshot?.cash_activity?.payments,
       expected: pickBackendAmount(
         snapshot?.drawer_control?.expected_cash,
         snapshot?.expected_cash,
@@ -598,7 +607,7 @@ export function presentDayCloseHistory(
     businessLine: String(item.business_line ?? "restaurant"),
     status: String(item.status),
     sales: item.net_sales,
-    cashDifference: pickBackendAmount(item.cash_discrepancy),
+    cashDifference: item.cash_basis === "period_activity" ? undefined : pickBackendAmount(item.cash_discrepancy),
     closedBy: options.closedBy,
     closedAt: options.closedAt,
     hasChanges:
