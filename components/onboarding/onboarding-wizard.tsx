@@ -941,6 +941,129 @@ export function OnboardingWizard({
     );
   }
 
+  const locationMapDialog = (
+    <Dialog
+      open={locationMapOpen}
+      onOpenChange={(open) => {
+        setLocationMapOpen(open);
+        if (!open) setLocationMapMaximized(false);
+      }}
+    >
+      <DialogContent
+        className={cn(
+          "gap-3 overflow-hidden overscroll-contain p-5",
+          locationMapMaximized
+            ? "flex h-[92vh] w-[96vw] max-w-[96vw] flex-col sm:max-w-[96vw]"
+            : "w-[min(100%,36rem)] max-w-none sm:max-w-xl",
+        )}
+      >
+        <div className="absolute right-11 top-3.5 z-[60] flex items-center gap-0.5">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 text-muted-foreground hover:text-foreground"
+            onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+            title={
+              theme === "dark"
+                ? "Switch to light mode"
+                : "Switch to dark mode"
+            }
+            aria-label={
+              theme === "dark"
+                ? "Switch to light mode"
+                : "Switch to dark mode"
+            }
+          >
+            {theme === "dark" ? (
+              <Sun className="h-4 w-4" />
+            ) : (
+              <Moon className="h-4 w-4" />
+            )}
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 text-muted-foreground hover:text-foreground"
+            onClick={() => setLocationMapMaximized((v) => !v)}
+            title={locationMapMaximized ? "Minimize map" : "Maximize map"}
+            aria-label={
+              locationMapMaximized ? "Minimize map" : "Maximize map"
+            }
+          >
+            {locationMapMaximized ? (
+              <Minimize2 className="h-4 w-4" />
+            ) : (
+              <Maximize2 className="h-4 w-4" />
+            )}
+          </Button>
+        </div>
+        <DialogHeader className="shrink-0 space-y-1 pr-28 text-left">
+          <DialogTitle className="flex items-center gap-2 text-base">
+            <Map className="h-4 w-4 text-primary" />
+            Set location
+          </DialogTitle>
+          <DialogDescription className="text-xs">
+            Tap the map or drag the pin. Address updates automatically.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="shrink-0 space-y-1.5">
+          <div className="flex items-center gap-1.5">
+            <Label htmlFor="map-address">Physical Address*</Label>
+            <FieldInfo>
+              Type an address or move the pin — both stay in sync. Format:
+              street, area, city, state, country.
+            </FieldInfo>
+          </div>
+          <Input
+            id="map-address"
+            value={draft.address}
+            onChange={(e) => handleAddressChange(e.target.value)}
+            placeholder="Street, area, city, state, country"
+          />
+          {resolvingAddress ? (
+            <p className="flex items-center gap-2 text-[11px] text-muted-foreground">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              Syncing address and map…
+            </p>
+          ) : null}
+        </div>
+        <div
+          className={cn(
+            "overflow-hidden rounded-xl border bg-muted p-2.5",
+            locationMapMaximized ? "flex min-h-0 flex-1 flex-col" : "",
+          )}
+        >
+          {locationMapOpen ? (
+            <LocationPicker
+              key={locationMapMaximized ? "map-max" : "map-norm"}
+              latitude={draft.latitude}
+              longitude={draft.longitude}
+              onChange={handleLocationChange}
+              height={locationMapMaximized ? undefined : 220}
+              className={
+                locationMapMaximized
+                  ? "h-full min-h-[280px] flex-1"
+                  : undefined
+              }
+            />
+          ) : null}
+        </div>
+        <DialogFooter className="shrink-0 items-center gap-3 sm:justify-between">
+          <p className="text-[11px] text-muted-foreground sm:text-left">
+            {draft.latitude && draft.longitude
+              ? `${draft.latitude}, ${draft.longitude}`
+              : "No coordinates yet"}
+          </p>
+          <Button type="button" onClick={() => setLocationMapOpen(false)}>
+            Done
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+
   // Simplified single-step form for regular onboarding (not replay)
   if (!replay) {
     const isFormComplete = draft.restaurantName.trim() && 
@@ -1303,6 +1426,8 @@ export function OnboardingWizard({
             </div>
           </div>
         </div>
+
+        {locationMapDialog}
 
         <Dialog
           open={phoneVerificationOpen}
@@ -2301,126 +2426,7 @@ export function OnboardingWizard({
         </div>
       </div>
 
-      <Dialog
-        open={locationMapOpen}
-        onOpenChange={(open) => {
-          setLocationMapOpen(open);
-          if (!open) setLocationMapMaximized(false);
-        }}
-      >
-        <DialogContent
-          className={cn(
-            "gap-3 overflow-hidden p-5",
-            locationMapMaximized
-              ? "flex h-[92vh] w-[96vw] max-w-[96vw] flex-col sm:max-w-[96vw]"
-              : "w-[min(100%,36rem)] max-w-none sm:max-w-xl",
-          )}
-        >
-          <div className="absolute right-11 top-3.5 z-[60] flex items-center gap-0.5">
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 text-muted-foreground hover:text-foreground"
-              onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-              title={
-                theme === "dark"
-                  ? "Switch to light mode"
-                  : "Switch to dark mode"
-              }
-              aria-label={
-                theme === "dark"
-                  ? "Switch to light mode"
-                  : "Switch to dark mode"
-              }
-            >
-              {theme === "dark" ? (
-                <Sun className="h-4 w-4" />
-              ) : (
-                <Moon className="h-4 w-4" />
-              )}
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 text-muted-foreground hover:text-foreground"
-              onClick={() => setLocationMapMaximized((v) => !v)}
-              title={locationMapMaximized ? "Minimize map" : "Maximize map"}
-              aria-label={
-                locationMapMaximized ? "Minimize map" : "Maximize map"
-              }
-            >
-              {locationMapMaximized ? (
-                <Minimize2 className="h-4 w-4" />
-              ) : (
-                <Maximize2 className="h-4 w-4" />
-              )}
-            </Button>
-          </div>
-          <DialogHeader className="shrink-0 space-y-1 pr-28 text-left">
-            <DialogTitle className="flex items-center gap-2 text-base">
-              <Map className="h-4 w-4 text-primary" />
-              Set location
-            </DialogTitle>
-            <DialogDescription className="text-xs">
-              Tap the map or drag the pin. Address updates automatically.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="shrink-0 space-y-1.5">
-            <div className="flex items-center gap-1.5">
-              <Label htmlFor="map-address">Physical Address*</Label>
-              <FieldInfo>
-                Type an address or move the pin — both stay in sync. Format:
-                street, area, city, state, country.
-              </FieldInfo>
-            </div>
-            <Input
-              id="map-address"
-              value={draft.address}
-              onChange={(e) => handleAddressChange(e.target.value)}
-              placeholder="Street, area, city, state, country"
-            />
-            {resolvingAddress ? (
-              <p className="flex items-center gap-2 text-[11px] text-muted-foreground">
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                Syncing address and map…
-              </p>
-            ) : null}
-          </div>
-          <div
-            className={cn(
-              "overflow-hidden rounded-xl border bg-muted p-2.5",
-              locationMapMaximized ? "flex min-h-0 flex-1 flex-col" : "",
-            )}
-          >
-            {locationMapOpen ? (
-              <LocationPicker
-                key={locationMapMaximized ? "map-max" : "map-norm"}
-                latitude={draft.latitude}
-                longitude={draft.longitude}
-                onChange={handleLocationChange}
-                height={locationMapMaximized ? undefined : 220}
-                className={
-                  locationMapMaximized
-                    ? "h-full min-h-[280px] flex-1"
-                    : undefined
-                }
-              />
-            ) : null}
-          </div>
-          <DialogFooter className="shrink-0 items-center gap-3 sm:justify-between">
-            <p className="text-[11px] text-muted-foreground sm:text-left">
-              {draft.latitude && draft.longitude
-                ? `${draft.latitude}, ${draft.longitude}`
-                : "No coordinates yet"}
-            </p>
-            <Button type="button" onClick={() => setLocationMapOpen(false)}>
-              Done
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {locationMapDialog}
     </div>
   );
 }
