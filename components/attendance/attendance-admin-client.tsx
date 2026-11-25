@@ -4,6 +4,9 @@ import { MobileReportControls } from "@/components/attendance/mobile-report-cont
 
 import { AttendanceMobileNavigation } from "@/components/attendance/attendance-mobile-navigation";
 import { PayrollPeriodReview } from "@/components/attendance/payroll-period-review";
+import { AttendanceReviewQueue, AttendanceDeviceDiagnostics, AttendanceLeaveTools } from "./attendance-operations";
+import { PagedTimesheets } from "./paged-timesheets";
+import { LeaveCategorySelect } from "./leave-category-select";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
@@ -163,13 +166,17 @@ type AttendanceSettingsForm = {
   required_location_accuracy_meters: string;
   early_clock_in_tolerance_minutes: string;
   late_clock_out_tolerance_minutes: string;
+  salary_late_arrival_grace_minutes: string;
+  salary_early_departure_grace_minutes: string;
+  salary_grace_supported: boolean;
+  recorded_breaks_paid: boolean;
+  prevent_self_approval: boolean;
+  operations_supported: boolean;
   rapid_repeat_window_seconds: string;
   automatic_break_after_minutes: string;
   automatic_break_duration_minutes: string;
   missing_checkout_review_after_minutes: string;
   overtime_rate_multiplier: string;
-  full_day_minimum_percent: string;
-  half_day_minimum_percent: string;
   mobile_clocking_enabled: boolean;
   device_clocking_enabled: boolean;
 };
@@ -253,6 +260,13 @@ function settingsToForm(settings: AttendanceSettings): AttendanceSettingsForm {
     late_clock_out_tolerance_minutes: String(
       settings.late_clock_out_tolerance_minutes ?? 15,
     ),
+    salary_late_arrival_grace_minutes: String(settings.salary_late_arrival_grace_minutes ?? 15),
+    recorded_breaks_paid: settings.recorded_breaks_paid ?? false,
+    prevent_self_approval: settings.prevent_self_approval ?? false,
+    operations_supported: typeof settings.prevent_self_approval === "boolean",
+    salary_early_departure_grace_minutes: String(settings.salary_early_departure_grace_minutes ?? 15),
+    salary_grace_supported: typeof settings.salary_late_arrival_grace_minutes === "number"
+      && typeof settings.salary_early_departure_grace_minutes === "number",
     rapid_repeat_window_seconds: String(
       settings.rapid_repeat_window_seconds ?? 30,
     ),
@@ -266,8 +280,6 @@ function settingsToForm(settings: AttendanceSettings): AttendanceSettingsForm {
       settings.missing_checkout_review_after_minutes ?? 240,
     ),
     overtime_rate_multiplier: String(settings.overtime_rate_multiplier ?? 1),
-    full_day_minimum_percent: String(settings.full_day_minimum_percent ?? 75),
-    half_day_minimum_percent: String(settings.half_day_minimum_percent ?? 50),
     mobile_clocking_enabled: settings.mobile_clocking_enabled,
     device_clocking_enabled: settings.device_clocking_enabled,
   };
@@ -360,6 +372,9 @@ export function AttendanceAdminClient() {
     initialTab,
   } = attendanceAccess;
   const canManageStaff = hasPermission(user, "admin.staff.view");
+  const canApproveAttendance = hasPermission(user, "attendance.approve");
+  const canCorrectAttendance = hasPermission(user, "attendance.correct");
+  const canScheduleAttendance = hasPermission(user, "attendance.schedule.manage");
   const searchParams = useSearchParams();
   const canManageQrExpiry = hasPermission(user, "attendance.qr.expiry.manage");
   const canFinalizePayroll = hasPermission(user, "attendance.payroll.export");
@@ -372,7 +387,8 @@ export function AttendanceAdminClient() {
       if (current === "payroll-export") {
         return canPayrollExport ? current : initialTab;
       }
-      if (["schedules", "qr", "settings"].includes(current)) {
+      if (current === "schedules") return canScheduleAttendance ? current : initialTab;
+      if (["qr", "settings"].includes(current)) {
         return canManageAttendance ? current : initialTab;
       }
       if (current === "leave") {
@@ -386,6 +402,7 @@ export function AttendanceAdminClient() {
   }, [
     canManageAttendance,
     canManageDevices,
+    canScheduleAttendance,
     canPayrollExport,
     canViewAttendance,
     initialTab,
@@ -463,6 +480,7 @@ export function AttendanceAdminClient() {
     date_from: todayIso(),
     date_to: todayIso(),
     leave_type: "paid" as "paid" | "unpaid",
+    category_id: "",
     day_fraction: "1",
     reason: "",
   });
@@ -487,16 +505,21 @@ export function AttendanceAdminClient() {
     required_location_accuracy_meters: "100",
     early_clock_in_tolerance_minutes: "15",
     late_clock_out_tolerance_minutes: "15",
+    salary_late_arrival_grace_minutes: "15",
+    recorded_breaks_paid: false,
+    prevent_self_approval: false,
+    operations_supported: false,
+    salary_early_departure_grace_minutes: "15",
+    salary_grace_supported: false,
     rapid_repeat_window_seconds: "30",
     automatic_break_after_minutes: "360",
     automatic_break_duration_minutes: "30",
     missing_checkout_review_after_minutes: "240",
     overtime_rate_multiplier: "1",
-    full_day_minimum_percent: "75",
-    half_day_minimum_percent: "50",
     mobile_clocking_enabled: true,
     device_clocking_enabled: true,
   });
+  const [salaryGraceError, setSalaryGraceError] = useState<string | null>(null);
   const [resolvingAddress, setResolvingAddress] = useState(false);
   const reverseGeocodeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
@@ -820,18 +843,15 @@ export function AttendanceAdminClient() {
 
   async function saveSettings() {
     if (!canManageAttendance) return;
-    const fullDay = Number(settingsForm.full_day_minimum_percent);
-    const halfDay = Number(settingsForm.half_day_minimum_percent);
-    if (
-      !Number.isFinite(fullDay) ||
-      !Number.isFinite(halfDay) ||
-      halfDay >= fullDay ||
-      fullDay > 100 ||
-      halfDay <= 0
-    ) {
-      return toast.error(
-        "Half-day threshold must be above 0 and below the full-day threshold",
-      );
+    setSalaryGraceError(null);
+    if (settingsForm.salary_grace_supported) {
+      for (const [id, value] of [["salary-late-grace", settingsForm.salary_late_arrival_grace_minutes], ["salary-early-grace", settingsForm.salary_early_departure_grace_minutes]]) {
+        if (!value.trim() || !Number.isInteger(Number(value)) || Number(value) < 0 || Number(value) > 240) {
+          setSalaryGraceError("Enter salary grace as whole minutes from 0 to 240. Zero means no grace.");
+          document.getElementById(id)?.focus();
+          return;
+        }
+      }
     }
     const lat = settingsForm.latitude.trim();
     const lng = settingsForm.longitude.trim();
@@ -853,6 +873,7 @@ export function AttendanceAdminClient() {
     setBusy(true);
     try {
       const updated = await attendanceApi.updateSettings({
+        ...(settingsForm.operations_supported ? { recorded_breaks_paid: settingsForm.recorded_breaks_paid, prevent_self_approval: settingsForm.prevent_self_approval } : {}),
         timezone: settingsForm.timezone.trim() || "Asia/Kathmandu",
         address: settingsForm.address.trim() || undefined,
         ...(hasLocation
@@ -869,6 +890,10 @@ export function AttendanceAdminClient() {
         late_clock_out_tolerance_minutes:
           Number.parseInt(settingsForm.late_clock_out_tolerance_minutes, 10) ||
           0,
+        ...(settingsForm.salary_grace_supported ? {
+          salary_late_arrival_grace_minutes: Number(settingsForm.salary_late_arrival_grace_minutes),
+          salary_early_departure_grace_minutes: Number(settingsForm.salary_early_departure_grace_minutes),
+        } : {}),
         rapid_repeat_window_seconds:
           Number.parseInt(settingsForm.rapid_repeat_window_seconds, 10) || 30,
         automatic_break_after_minutes:
@@ -883,10 +908,6 @@ export function AttendanceAdminClient() {
           ) || 0,
         overtime_rate_multiplier:
           Number.parseFloat(settingsForm.overtime_rate_multiplier) || 1,
-        full_day_minimum_percent:
-          Number.parseFloat(settingsForm.full_day_minimum_percent) || 75,
-        half_day_minimum_percent:
-          Number.parseFloat(settingsForm.half_day_minimum_percent) || 50,
         mobile_clocking_enabled: settingsForm.mobile_clocking_enabled,
         device_clocking_enabled: settingsForm.device_clocking_enabled,
       });
@@ -919,7 +940,7 @@ export function AttendanceAdminClient() {
   }
 
   async function approveEntry(entry: AttendanceEntry) {
-    if (!canManageAttendance) return;
+    if (!canApproveAttendance) return;
     const approved = Number.parseInt(
       window.prompt(
         "Approved overtime minutes",
@@ -951,7 +972,7 @@ export function AttendanceAdminClient() {
   }
 
   async function rejectEntry(entry: AttendanceEntry) {
-    if (!canManageAttendance) return;
+    if (!canApproveAttendance) return;
     const reason = window.prompt("Rejection reason");
     if (!reason) return;
     setBusy(true);
@@ -976,7 +997,7 @@ export function AttendanceAdminClient() {
   }
 
   async function saveCorrection() {
-    if (!canManageAttendance) return;
+    if (!canCorrectAttendance) return;
     if (!correctionEntry) return;
     const clockIn = new Date(correctionForm.clockIn);
     const clockOut = new Date(correctionForm.clockOut);
@@ -1052,22 +1073,28 @@ export function AttendanceAdminClient() {
   async function finalizePayrollPeriod() {
     if (
       !window.confirm(
-        `Finalize approved attendance from ${dateFrom} to ${dateTo}? Finalized records are locked and cannot be edited.`,
+        `Finalize payroll from ${dateFrom} to ${dateTo} for all staff? This saves daily earnings, including calendar-day salary, and locks the associated approved attendance. Later changes require an audited adjustment.`,
       )
     ) {
       return;
     }
     setBusy(true);
     try {
+      const preview = await attendanceApi.payrollPreview(dateFrom, dateTo);
+      const hasLegacyEstimates = preview.some(row => row.warnings.includes("salary_history_incomplete"));
+      if (hasLegacyEstimates && !window.confirm("Some days have incomplete historical salary agreements. Continue only after reviewing their daily calculations and confirming those legacy estimates are correct.")) return;
       const result = await attendanceApi.finalizePayrollExport(
         dateFrom,
         dateTo,
+        hasLegacyEstimates,
       );
       await loadAll();
       toast.success(
-        result.locked_entries
+        result.frozen_days
+          ? `${result.frozen_days} daily earnings results finalized; ${result.locked_entries} attendance records locked`
+          : result.locked_entries
           ? `${result.locked_entries} attendance record${result.locked_entries === 1 ? "" : "s"} finalized for payroll`
-          : "No approved attendance records to finalize",
+          : "No new earnings or approved attendance records to finalize",
       );
     } catch (error) {
       toast.error(
@@ -1207,6 +1234,7 @@ export function AttendanceAdminClient() {
         date_from: leaveForm.date_from,
         date_to: leaveForm.date_to,
         leave_type: leaveForm.leave_type,
+        category_id: leaveForm.category_id ? Number(leaveForm.category_id) : null,
         day_fraction: Number(leaveForm.day_fraction),
         reason: leaveForm.reason.trim(),
       });
@@ -1527,6 +1555,7 @@ export function AttendanceAdminClient() {
           canPayrollExport={canPayrollExport}
           canManageAttendance={canManageAttendance}
           canManageDevices={canManageDevices}
+          canScheduleAttendance={canScheduleAttendance}
         />
         <TabsList className="hidden h-auto w-full justify-start gap-1 overflow-x-auto rounded-none border-b bg-transparent p-0 2xl:flex">
           {canViewAttendance ? (
@@ -1548,7 +1577,7 @@ export function AttendanceAdminClient() {
               Payroll review
             </TabsTrigger>
           ) : null}
-          {canManageAttendance ? (
+          {canScheduleAttendance ? (
             <TabsTrigger value="schedules" className="min-w-max gap-2">
               <CalendarDays className="h-4 w-4" />
               Schedule
@@ -1586,7 +1615,8 @@ export function AttendanceAdminClient() {
 
         {canViewAttendance ? <TabsContent value="reports"><AttendanceRegister canExport={canExportAttendance} /></TabsContent> : null}
         {canViewAttendance ? (
-          <TabsContent value="timesheets">
+          <TabsContent value="timesheets" className="space-y-5">
+            {canManageAttendance && <AttendanceReviewQueue from={dateFrom} to={dateTo} canDevices={canManageDevices} />}
             <WorkforceSection
               title="Timesheets"
               description="Check recorded hours, resolve exceptions and approve time for payroll."
@@ -1607,7 +1637,7 @@ export function AttendanceAdminClient() {
                       disabled={busy}
                       onClick={() => void finalizePayrollPeriod()}
                     >
-                      Lock approved attendance
+                      Finalize daily payroll
                     </Button>
                   ) : null}
                 </div>
@@ -1626,22 +1656,24 @@ export function AttendanceAdminClient() {
                   </div>
                 </div>
                 {timesheetStaffId && <div className="flex items-center justify-between gap-3 border-b bg-muted/30 px-3 py-2 text-sm"><div className="min-w-0"><p className="text-xs text-muted-foreground">Staff member</p><p className="break-words font-medium">{staffLabel(staffProfiles.find(profile => profile.id === timesheetStaffId), usersById)}</p></div><Button asChild variant="ghost" className="min-h-11 shrink-0 text-primary"><Link href={`/attendance?tab=timesheets&from=${dateFrom}&to=${dateTo}`}>All staff</Link></Button></div>}
-                <TimesheetTable
-                  entries={entries.filter(entry => !searchParams.get("staff_id") || entry.staff_id === Number(searchParams.get("staff_id")))}
+                <PagedTimesheets from={dateFrom} to={dateTo} staffId={timesheetStaffId || undefined} version={entries}>{pageEntries => <TimesheetTable
+                  entries={pageEntries}
                   staffProfiles={staffProfiles}
                   usersById={usersById}
                   onApprove={approveEntry}
                   onReject={rejectEntry}
                   onReopen={reopenEntry}
                   onCorrect={openCorrection}
-                  canManage={canManageAttendance}
-                />
+                  canManage={canApproveAttendance || canCorrectAttendance}
+                  canApprove={canApproveAttendance}
+                  canCorrect={canCorrectAttendance}
+                />}</PagedTimesheets>
               </div>
             </WorkforceSection>
           </TabsContent>
         ) : null}
 
-        {canPayrollExport ? <TabsContent value="payroll-export"><PayrollPeriodReview canExport canViewAttendance={canViewAttendance} canOpenStaff={canManageStaff} /></TabsContent> : null}
+        {canPayrollExport ? <TabsContent value="payroll-export"><PayrollPeriodReview canExport canAdjust={canFinalizePayroll && hasPermission(user, "admin.staff.credit.manage")} canViewAttendance={canViewAttendance} canOpenStaff={canManageStaff} /></TabsContent> : null}
 
         <TabsContent
           value="settings"
@@ -1789,6 +1821,10 @@ export function AttendanceAdminClient() {
                   />
                 </div>
               </div>
+              <div className="divide-y rounded-lg border">
+                <label className="flex min-h-14 items-center justify-between gap-3 p-3 text-sm"><span>Prevent approving your own attendance</span><Switch checked={settingsForm.prevent_self_approval} disabled={!settingsForm.operations_supported} onCheckedChange={checked => setSettingsForm(current => ({ ...current, prevent_self_approval: checked }))} /></label>
+                <label className="flex min-h-14 items-center justify-between gap-3 p-3 text-sm"><span>Pay recorded breaks by default<span className="block text-xs text-muted-foreground">Templates can override this. Fixed unpaid allowances remain separate.</span></span><Switch checked={settingsForm.recorded_breaks_paid} disabled={!settingsForm.operations_supported} onCheckedChange={checked => setSettingsForm(current => ({ ...current, recorded_breaks_paid: checked }))} /></label>
+              </div>
               <Field label="Timezone">
                 <TimezoneSelect
                   value={settingsForm.timezone}
@@ -1833,6 +1869,28 @@ export function AttendanceAdminClient() {
                     }
                   />
                 </Field>
+                <Field label="Late-arrival salary grace (minutes)" htmlFor="salary-late-grace">
+                  <Input id="salary-late-grace" name="salary_late_arrival_grace_minutes" autoComplete="off" inputMode="numeric" type="number" min={0} max={240}
+                    aria-invalid={salaryGraceError ? true : undefined} aria-describedby={salaryGraceError ? "salary-grace-error" : undefined}
+                    disabled={busy || !settingsForm.salary_grace_supported}
+                    className="min-h-11 focus-visible:ring-2 focus-visible:ring-ring"
+                    value={settingsForm.salary_late_arrival_grace_minutes}
+                    onChange={event => setSettingsForm(current => ({ ...current, salary_late_arrival_grace_minutes: event.target.value }))} />
+                </Field>
+                <Field label="Early-departure salary grace (minutes)" htmlFor="salary-early-grace">
+                  <Input id="salary-early-grace" name="salary_early_departure_grace_minutes" autoComplete="off" inputMode="numeric" type="number" min={0} max={240}
+                    aria-invalid={salaryGraceError ? true : undefined} aria-describedby={salaryGraceError ? "salary-grace-error" : undefined}
+                    disabled={busy || !settingsForm.salary_grace_supported}
+                    className="min-h-11 focus-visible:ring-2 focus-visible:ring-ring"
+                    value={settingsForm.salary_early_departure_grace_minutes}
+                    onChange={event => setSettingsForm(current => ({ ...current, salary_early_departure_grace_minutes: event.target.value }))} />
+                </Field>
+                {salaryGraceError && <p id="salary-grace-error" role="alert" className="text-xs text-destructive sm:col-span-2 xl:col-span-1">{salaryGraceError}</p>}
+                <p className="text-xs text-muted-foreground sm:col-span-2 xl:col-span-1">
+                  {settingsForm.salary_grace_supported
+                    ? "Salary grace credits missed minutes only at shift edges. Zero means no grace. Device matching and overtime windows remain separate."
+                    : "Update the backend to configure salary grace separately from device matching windows."}
+                </p>
                 <Field label="Duplicate punch window (seconds)">
                   <Input
                     type="number"
@@ -1905,36 +1963,10 @@ export function AttendanceAdminClient() {
                     }
                   />
                 </Field>
-                <Field label="Full-day threshold (%)">
-                  <Input
-                    type="number"
-                    min={1}
-                    max={100}
-                    step={0.01}
-                    value={settingsForm.full_day_minimum_percent}
-                    onChange={(event) =>
-                      setSettingsForm((current) => ({
-                        ...current,
-                        full_day_minimum_percent: event.target.value,
-                      }))
-                    }
-                  />
-                </Field>
-                <Field label="Half-day threshold (%)">
-                  <Input
-                    type="number"
-                    min={1}
-                    max={100}
-                    step={0.01}
-                    value={settingsForm.half_day_minimum_percent}
-                    onChange={(event) =>
-                      setSettingsForm((current) => ({
-                        ...current,
-                        half_day_minimum_percent: event.target.value,
-                      }))
-                    }
-                  />
-                </Field>
+                <p className="text-xs text-muted-foreground sm:col-span-2 xl:col-span-1">
+                  Attendance-prorated salary uses approved work intervals, not full-day or half-day percentage thresholds.
+                  Restaurant fallback breaks apply to unscheduled attendance; scheduled shifts use their template break allowance.
+                </p>
               </div>
               <Button onClick={saveSettings} disabled={busy} className="w-full">
                 {busy ? (
@@ -2341,6 +2373,7 @@ export function AttendanceAdminClient() {
 
         {canManageAttendance && canViewAttendance ? (
           <TabsContent value="leave" className="space-y-5">
+            <AttendanceLeaveTools staffOptions={staffProfiles.map(profile => ({ id: profile.id, label: staffLabel(profile, usersById) }))} />
             <div>
               <h2 className="text-xl font-semibold tracking-tight">
                 Leave and holiday policy
@@ -2434,6 +2467,7 @@ export function AttendanceAdminClient() {
                     </Field>
                   </div>
                   <div className="grid gap-3 sm:grid-cols-2">
+                    <LeaveCategorySelect value={leaveForm.category_id} type={leaveForm.leave_type} onChange={id => setLeaveForm(current => ({ ...current, category_id: id }))} />
                     <Field label="Leave type">
                       <Select
                         value={leaveForm.leave_type}
@@ -2441,6 +2475,7 @@ export function AttendanceAdminClient() {
                           setLeaveForm((current) => ({
                             ...current,
                             leave_type: value,
+                            category_id: "",
                           }))
                         }
                       >
@@ -2700,6 +2735,7 @@ export function AttendanceAdminClient() {
         </TabsContent>
 
         <TabsContent value="devices" className="space-y-5">
+          {canManageDevices && <AttendanceDeviceDiagnostics />}
           {canManageDevices ? (
             <EntitlementGate
               entitlement="attendance.biometric.enabled"
@@ -3028,14 +3064,16 @@ export function AttendanceAdminClient() {
 
 function Field({
   label,
+  htmlFor,
   children,
 }: {
   label: string;
+  htmlFor?: string;
   children: React.ReactNode;
 }) {
   return (
     <div className="space-y-2">
-      <Label>{label}</Label>
+      <Label htmlFor={htmlFor}>{label}</Label>
       {children}
     </div>
   );
@@ -3254,6 +3292,8 @@ function TimesheetTable({
   onReopen,
   onCorrect,
   canManage,
+  canApprove,
+  canCorrect,
 }: {
   entries: AttendanceEntry[];
   staffProfiles: StaffProfile[];
@@ -3263,6 +3303,8 @@ function TimesheetTable({
   onReopen: (entry: AttendanceEntry) => void;
   onCorrect: (entry: AttendanceEntry) => void;
   canManage: boolean;
+  canApprove: boolean;
+  canCorrect: boolean;
 }) {
   return (
     <>
@@ -3311,6 +3353,7 @@ function TimesheetTable({
                   Late {minutesLabel(entry.late_arrival_minutes)} / early
                   departure {minutesLabel(entry.early_departure_minutes)} /
                   rejected OT {minutesLabel(entry.rejected_excess_minutes)}
+                  {Number(entry.paid_break_minutes) > 0 && <span className="block">Paid recorded break {minutesLabel(entry.paid_break_minutes || 0)} (included in time)</span>}
                 </p></details>
                 {entry.scheduled_start_at ? (
                   <p className="mt-1 text-xs text-muted-foreground">
@@ -3325,7 +3368,7 @@ function TimesheetTable({
                 ) : null}
                 {canManage ? (
                   <details className="mt-3"><summary className="min-h-11 cursor-pointer py-3 text-sm font-medium">Manage entry</summary><div className="mt-3 flex flex-wrap gap-2 [&_button]:min-h-11">
-                    {entry.approval_status === "approved" ? (
+                    {canApprove && entry.approval_status === "approved" ? (
                       <Button
                         size="sm"
                         variant="outline"
@@ -3335,7 +3378,7 @@ function TimesheetTable({
                         Review
                       </Button>
                     ) : null}
-                    {entry.approval_status !== "payroll_exported" ? (
+                    {canCorrect && entry.approval_status !== "payroll_exported" ? (
                       <Button
                         size="sm"
                         variant="outline"
@@ -3345,13 +3388,13 @@ function TimesheetTable({
                         Correct
                       </Button>
                     ) : null}
-                    {entry.approval_status === "pending" ? (
+                    {canApprove && entry.approval_status === "pending" ? (
                       <Button size="sm" onClick={() => onApprove(entry)}>
                         <Check className="mr-1 h-3 w-3" />
                         Approve
                       </Button>
                     ) : null}
-                    {["pending", "needs_correction", "approved"].includes(
+                    {canApprove && ["pending", "needs_correction", "approved"].includes(
                       entry.approval_status,
                     ) ? (
                       <Button
@@ -3416,6 +3459,7 @@ function TimesheetTable({
                         Late {minutesLabel(entry.late_arrival_minutes)} / early{" "}
                         {minutesLabel(entry.early_departure_minutes)} / rejected
                         OT {minutesLabel(entry.rejected_excess_minutes)}
+                        {Number(entry.paid_break_minutes) > 0 && <span className="block">Paid break {minutesLabel(entry.paid_break_minutes || 0)} (included)</span>}
                       </div>
                     </TableCell>
                     <TableCell className="min-w-[180px]">
@@ -3440,7 +3484,7 @@ function TimesheetTable({
                     <TableCell className="min-w-[260px] text-right">
                       {canManage ? (
                         <div className="flex justify-end gap-2">
-                          {entry.approval_status === "approved" ? (
+                          {canApprove && entry.approval_status === "approved" ? (
                             <Button
                               size="sm"
                               variant="outline"
@@ -3450,7 +3494,7 @@ function TimesheetTable({
                               Review
                             </Button>
                           ) : null}
-                          {entry.approval_status !== "payroll_exported" ? (
+                          {canCorrect && entry.approval_status !== "payroll_exported" ? (
                             <Button
                               size="sm"
                               variant="outline"
@@ -3460,13 +3504,13 @@ function TimesheetTable({
                               Correct
                             </Button>
                           ) : null}
-                          {entry.approval_status === "pending" ? (
+                          {canApprove && entry.approval_status === "pending" ? (
                             <Button size="sm" onClick={() => onApprove(entry)}>
                               <Check className="mr-1 h-3 w-3" />
                               Approve
                             </Button>
                           ) : null}
-                          {["pending", "needs_correction", "approved"].includes(
+                          {canApprove && ["pending", "needs_correction", "approved"].includes(
                             entry.approval_status,
                           ) ? (
                             <Button

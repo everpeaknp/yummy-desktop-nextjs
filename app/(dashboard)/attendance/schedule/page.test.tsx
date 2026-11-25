@@ -6,6 +6,7 @@ import { attendanceApi } from "@/lib/attendance/api";
 vi.mock("@/lib/attendance/api", () => ({ attendanceApi: {
   teamSchedule: vi.fn(), listShiftTemplates: vi.fn(), listScheduleAudit: vi.fn(),
   createSchedule: vi.fn(), createWeeklySchedules: vi.fn(),
+  rosterDrafts: vi.fn(), saveRosterDraft: vi.fn(), publishRosterDraft: vi.fn(),
 } }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
@@ -17,6 +18,8 @@ beforeEach(() => {
     { id: 2, name: "Dinner", start_local_time: "18:00", end_local_time: "22:00", unpaid_break_minutes: 0, is_active: true },
   ] as Awaited<ReturnType<typeof attendanceApi.listShiftTemplates>>);
   vi.mocked(attendanceApi.listScheduleAudit).mockResolvedValue([]);
+  vi.mocked(attendanceApi.rosterDrafts).mockResolvedValue([]);
+  vi.mocked(attendanceApi.saveRosterDraft).mockResolvedValue({ id: 1 });
   vi.mocked(attendanceApi.teamSchedule).mockResolvedValue([{ staff_id: 7, staff_name: "Test staff", multiple_shifts_supported: true, days: Array.from({ length: 7 }, (_, index) => ({
     date: `2026-11-${23 + index}`, kind: "shift", label: "Breakfast + Dinner", detail: "07:00–11:00 · 18:00–22:00",
     shifts: [{ shift_template_id: 1, label: "Breakfast", detail: "07:00–11:00", scheduled_start_at: "2026-11-23T07:00:00Z", scheduled_end_at: "2026-11-23T11:00:00Z" },
@@ -54,8 +57,8 @@ it("submits multiple slots in a weekly assignment and explicit empty day-off lis
   fireEvent.click(screen.getByRole("button", { name: "Add shift for Monday" }));
   fireEvent.click(screen.getByRole("button", { name: "Add shift for Monday" }));
   fireEvent.click(await screen.findByRole("checkbox", { name: "Select Test staff" }));
-  fireEvent.click(screen.getByRole("button", { name: "Apply weekly schedule" }));
-  await waitFor(() => expect(attendanceApi.createWeeklySchedules).toHaveBeenCalledWith(expect.objectContaining({
+  fireEvent.click(screen.getByRole("button", { name: "Save roster draft" }));
+  await waitFor(() => expect(attendanceApi.saveRosterDraft).toHaveBeenCalledWith(expect.objectContaining({
     staff_ids: [7], assignments: [
       { weekday: 0, shift_template_id: 1, shift_template_ids: [1, 2], is_day_off: false },
       ...Array.from({ length: 6 }, (_, index) => ({ weekday: index + 1, shift_template_id: null, shift_template_ids: [], is_day_off: true })),

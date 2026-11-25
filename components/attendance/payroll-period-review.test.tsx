@@ -8,6 +8,17 @@ vi.mock("@/lib/attendance/api", () => ({ attendanceApi: { payrollPeriod: vi.fn()
 beforeEach(() => { vi.mocked(attendanceApi.payrollPeriod).mockReset().mockResolvedValue([payrollReviewFixture]); });
 
 describe("PayrollPeriodReview", () => {
+  it("shows finalized base earnings and retained adjustments", async () => {
+    vi.mocked(attendanceApi.payrollPeriod).mockResolvedValue([{ ...payrollReviewFixture, days: [
+      { ...payrollReviewFixture.days[0], payroll_finalized: true, finalized_base_amount: "1650",
+        adjustments: [{ id: 91, amount: "150", reason: "Approved additional work", reversal_of_id: null }] },
+      ...payrollReviewFixture.days.slice(1),
+    ] }]);
+    render(<PayrollPeriodReview own />);
+    expect(await screen.findByText("Finalized daily results and adjustments")).toBeInTheDocument();
+    expect(screen.getByText(/Approved additional work/)).toBeInTheDocument();
+    expect(screen.getByText(/Saved base earnings:/)).toBeInTheDocument();
+  });
   it("keeps the daily calculation collapsed until requested", async () => {
     render(<PayrollPeriodReview own />);
     const button = await screen.findByRole("button", { name: /View daily calculation/ });

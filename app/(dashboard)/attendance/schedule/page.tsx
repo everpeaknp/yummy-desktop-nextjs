@@ -1,5 +1,6 @@
 "use client";
 import { ShiftSlotPicker } from "@/components/attendance/shift-slot-picker";
+import type { RosterDraft } from "@/lib/attendance/operations-types";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { CalendarDays, Loader2, Plus, Trash2 } from "lucide-react";
@@ -43,14 +44,16 @@ async function loadPart<T>(name: string, request: Promise<T>): Promise<T> {
   }
 }
 
-type TemplateForm = { id: number | null; name: string; start_local_time: string; end_local_time: string; unpaid_break_minutes: string };
-const emptyTemplate = (): TemplateForm => ({ id: null, name: "", start_local_time: "09:00", end_local_time: "17:00", unpaid_break_minutes: "0" });
+type TemplateForm = { id: number | null; name: string; start_local_time: string; end_local_time: string; unpaid_break_minutes: string; recorded_breaks_paid?: boolean };
+const emptyTemplate = (): TemplateForm => ({ id: null, name: "", start_local_time: "09:00", end_local_time: "17:00", unpaid_break_minutes: "0", recorded_breaks_paid: false });
 
 export default function TeamSchedule() {
   const [selectedDate, setSelectedDate] = useState(() => localDateKey(new Date()));
   const [mobileDay, setMobileDay] = useState(() => (new Date().getDay() + 6) % 7);
   const [mobileStaff, setMobileStaff] = useState("all");
   const [showRoster, setShowRoster] = useState(false);
+  const [drafts, setDrafts] = useState<RosterDraft[]>([]);
+  const [draftError, setDraftError] = useState("");
   const [rows, setRows] = useState<AttendanceScheduleWeek[]>([]);
   const [templates, setTemplates] = useState<AttendanceShiftTemplate[]>([]);
   const [scheduleAudit, setScheduleAudit] = useState<AttendanceScheduleAudit[]>([]);
@@ -75,6 +78,7 @@ export default function TeamSchedule() {
       setRows(team);
       setTemplates(shifts.filter((item) => item.is_active));
       setScheduleAudit(audit);
+      try { setDrafts(await attendanceApi.rosterDrafts()); setDraftError(""); } catch (e) { setDraftError(errorMessage(e, "Roster drafts could not be loaded. Update the backend before publishing.")); }
     } catch (error) {
       toast.error(errorMessage(error, "Failed to load team schedule"));
     } finally {
@@ -108,7 +112,7 @@ export default function TeamSchedule() {
     if (!selectedStaff.length) return toast.error("Select at least one staff member");
     setSaving(true);
     try {
-      await attendanceApi.createWeeklySchedules({
+      await attendanceApi.saveRosterDraft({
         staff_ids: selectedStaff,
         effective_from: week,
         assignments: assignments.map((value, weekday) => ({
@@ -118,7 +122,7 @@ export default function TeamSchedule() {
           is_day_off: value.length === 0,
         })),
       });
-      toast.success(`Weekly roster applied to ${selectedStaff.length} staff member${selectedStaff.length === 1 ? "" : "s"}`);
+      toast.success("Roster draft saved. Review and publish it to update schedules and notify staff.");
       await load();
     } catch (error) {
       toast.error(errorMessage(error, "Failed to save weekly roster"));
@@ -159,6 +163,7 @@ export default function TeamSchedule() {
         end_local_time: templateForm.end_local_time,
         unpaid_break_minutes: Number(templateForm.unpaid_break_minutes) || 0,
         is_active: true,
+        recorded_breaks_paid: templateForm.recorded_breaks_paid ?? templates.find(t => t.id === templateForm.id)?.recorded_breaks_paid ?? false,
       };
       if (templateForm.id) await attendanceApi.updateShiftTemplate(templateForm.id, payload);
       else await attendanceApi.createShiftTemplate(payload);
@@ -186,8 +191,17 @@ export default function TeamSchedule() {
     }
   }
 
+  async function publishDraft(draft: RosterDraft) {
+    if (!window.confirm(`Publish roster #${draft.id} for ${draft.payload.staff_ids.length} staff from ${draft.effective_from}? Live schedules will change and staff will receive an in-app notification.`)) return;
+    setSaving(true);
+    try { const result = await attendanceApi.publishRosterDraft(draft.id); toast.success(`Roster published; ${result.notified_staff} staff notified`); await load(); }
+    catch (e) { toast.error(errorMessage(e, "Publishing failed")); }
+    finally { setSaving(false); }
+  }
+
   return (
     <div className="mx-auto w-full max-w-[1500px] space-y-5 pb-10">
+      <section className="space-y-3 rounded-xl border p-4" aria-labelledby="roster-publication"><h2 id="roster-publication" className="font-semibold">Roster publication</h2><p className="text-sm text-muted-foreground">Bulk assignments are drafts until published. Individual day edits below remain immediate, audited corrections. The latest 100 drafts are listed.</p>{draftError && <p role="alert" className="text-sm text-destructive">{draftError}</p>}<div className="divide-y">{drafts.filter(d => d.effective_from === week).map(d => <details key={d.id} className="py-2 text-sm"><summary className="min-h-11 cursor-pointer">Draft #{d.id} · {d.effective_from} · {d.payload.staff_ids.length} staff · {d.status}</summary><p className="mb-2 break-words">Staff: {d.payload.staff_ids.map(id => staffNames.get(id) || `#${id}`).join(", ")}</p><ul className="mb-3 space-y-1">{d.payload.assignments.map(a => <li key={a.weekday}>{weekDays[a.weekday]}: {a.is_day_off ? "Day off" : a.shift_template_ids.map(id => templates.find(t => t.id === id)?.name || `Template #${id}`).join(", ")}</li>)}</ul>{d.status === "draft" && <Button disabled={saving || d.effective_from < today} onClick={() => void publishDraft(d)}>Publish and notify staff</Button>}</details>)}</div></section>
       <header className="flex flex-col gap-3 border-b pb-5 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="text-sm text-muted-foreground">Attendance</p>
@@ -214,7 +228,7 @@ export default function TeamSchedule() {
           </div>
           <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4">
             <p className="text-sm text-muted-foreground">{selectedStaff.length ? `${selectedStaff.length} staff selected` : "Select staff from the team table below."}</p>
-            <Button onClick={() => void saveWeeklyRoster()} disabled={saving || isPastWeek || !selectedStaff.length}><CalendarDays className="mr-2 h-4 w-4" />Apply weekly schedule</Button>
+            <Button onClick={() => void saveWeeklyRoster()} disabled={saving || isPastWeek || !selectedStaff.length}><CalendarDays className="mr-2 h-4 w-4" />Save roster draft</Button>
           </div>
         </CardContent>
       </Card>
@@ -252,6 +266,7 @@ export default function TeamSchedule() {
               <Input type="time" aria-label="Shift end" name="shift-end" value={templateForm.end_local_time} onChange={(event) => setTemplateForm((current) => ({ ...current, end_local_time: event.target.value }))} />
               <Input type="number" min="0" inputMode="numeric" aria-label="Unpaid break minutes" name="unpaid-break-minutes" autoComplete="off" placeholder="Unpaid break (min)…" value={templateForm.unpaid_break_minutes} onChange={(event) => setTemplateForm((current) => ({ ...current, unpaid_break_minutes: event.target.value }))} />
             </div>
+            <label className="flex min-h-11 items-center gap-3 text-sm"><input type="checkbox" checked={templateForm.recorded_breaks_paid ?? templates.find(t => t.id === templateForm.id)?.recorded_breaks_paid ?? false} onChange={e => setTemplateForm(current => ({ ...current, recorded_breaks_paid: e.target.checked }))} />Pay recorded breaks for this template (fixed unpaid allowance remains separate)</label>
             <div className="flex flex-wrap gap-2"><Button onClick={() => void saveTemplate()} disabled={saving}><Plus className="mr-2 h-4 w-4" />{templateForm.id ? "Save template" : "Add template"}</Button>{templateForm.id ? <Button variant="outline" onClick={() => setTemplateForm(emptyTemplate())}>Cancel</Button> : null}</div>
             <div className="divide-y rounded-lg border">{templates.length ? templates.map((template) => <div key={template.id} className="flex items-center justify-between gap-3 p-3"><button type="button" className="min-w-0 text-left" onClick={() => setTemplateForm({ id: template.id, name: template.name, start_local_time: template.start_local_time.slice(0, 5), end_local_time: template.end_local_time.slice(0, 5), unpaid_break_minutes: String(template.unpaid_break_minutes) })}><p className="font-medium">{template.name}</p><p className="text-xs text-muted-foreground">{template.start_local_time.slice(0, 5)}–{template.end_local_time.slice(0, 5)} · {template.unpaid_break_minutes} min break</p></button><Button size="icon" variant="ghost" aria-label={`Delete ${template.name}`} disabled={saving} onClick={() => void deleteTemplate(template)}><Trash2 className="h-4 w-4" /></Button></div>) : <p className="p-4 text-sm text-muted-foreground">Create a template before assigning a working shift.</p>}</div>
           </CardContent>

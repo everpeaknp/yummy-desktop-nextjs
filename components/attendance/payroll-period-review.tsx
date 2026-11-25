@@ -1,5 +1,6 @@
 "use client";
 import { MobileReportControls, mobileDetailClass } from "./mobile-report-controls";
+import { PayrollAdjustmentControls } from "./payroll-adjustment-controls";
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
@@ -15,10 +16,10 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { WorkforceMetricStrip, WorkforceSection } from "@/components/workforce/workforce-presentation";
 
-type Props = { staffId?: number; own?: boolean; canExport?: boolean; canViewAttendance?: boolean; canOpenStaff?: boolean };
+type Props = { staffId?: number; own?: boolean; canExport?: boolean; canViewAttendance?: boolean; canOpenStaff?: boolean; canAdjust?: boolean };
 const dateLabel = (date: string) => new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }).format(new Date(`${date}T12:00:00Z`));
 
-export function PayrollPeriodReview({ staffId, own = false, canExport = false, canViewAttendance = false, canOpenStaff = false }: Props) {
+export function PayrollPeriodReview({ staffId, own = false, canExport = false, canViewAttendance = false, canOpenStaff = false, canAdjust = false }: Props) {
   const today = localDate();
   const [from, setFrom] = useState(`${today.slice(0, 7)}-01`);
   const [to, setTo] = useState(today);
@@ -107,7 +108,8 @@ export function PayrollPeriodReview({ staffId, own = false, canExport = false, c
         </>}
       </>}
     </div>
-    <Dialog open={!!detail} onOpenChange={open => !open && setDetail(null)}><DialogContent className={`max-h-[85dvh] overflow-y-auto overscroll-contain sm:max-w-3xl ${mobileDetailClass}`}><DialogHeader><DialogTitle>{detail?.staff_name || "Earnings calculation"}</DialogTitle><DialogDescription>How the selected period estimate was calculated.</DialogDescription></DialogHeader>{detail && <><PayCalculation row={detail} own={own} canViewAttendance={canViewAttendance} />{canOpenStaff && detail.user_id && <Button asChild variant="outline"><Link href={`/staff/${detail.user_id}?tab=financials`}>Open salary account</Link></Button>}</>}</DialogContent></Dialog>
+    {individual && !own && canAdjust && filtered[0] && <PayrollAdjustmentControls row={filtered[0]} onSaved={() => setReload(n => n + 1)} />}
+    <Dialog open={!!detail} onOpenChange={open => !open && setDetail(null)}><DialogContent className={`max-h-[85dvh] overflow-y-auto overscroll-contain sm:max-w-3xl ${mobileDetailClass}`}><DialogHeader><DialogTitle>{detail?.staff_name || "Earnings calculation"}</DialogTitle><DialogDescription>How the selected period estimate was calculated.</DialogDescription></DialogHeader>{detail && <><PayCalculation row={detail} own={own} canViewAttendance={canViewAttendance} />{canAdjust && !own && <PayrollAdjustmentControls row={detail} onSaved={() => setReload(n => n + 1)} />}{canOpenStaff && detail.user_id && <Button asChild variant="outline"><Link href={`/staff/${detail.user_id}?tab=financials`}>Open salary account</Link></Button>}</>}</DialogContent></Dialog>
   </WorkforceSection>;
 }
 
@@ -122,9 +124,32 @@ function PayCalculation({ row, own, canViewAttendance }: { row: AttendancePayrol
     <details className="rounded-lg border p-3" open={row.warnings.some(code => code !== "current_agreement")}><summary className="cursor-pointer text-sm font-medium focus-visible:outline focus-visible:outline-2">Calculation notes</summary><ul className="mt-2 list-disc space-y-2 pl-5 text-sm text-muted-foreground">{row.warnings.map(code => <li key={code}>{payrollWarnings[code] || code}</li>)}{row.review_count > 0 && <li>{row.review_count} completed attendance entries still need review. Their time is excluded from this estimate.</li>}<li>Payments and salary deductions are recorded against the cumulative salary account; they are not allocated to these dates.</li></ul></details>
     {canViewAttendance && !own && <Button asChild variant="outline"><Link href={`/attendance?tab=timesheets&staff_id=${row.staff_id}&from=${row.date_from}&to=${row.date_to}`}>Review attendance for these dates</Link></Button>}
     <Button variant="outline" className="min-h-11 w-full justify-between" onClick={() => setDailyOpen(true)}>View daily calculation<span className="text-muted-foreground">{row.days.length} days</span></Button>
+    {row.days.some(day => day.payroll_finalized) && (
+      <details className="border-t" open={row.days.some(day => day.adjustments?.length)}>
+        <summary className="flex min-h-11 cursor-pointer items-center text-sm font-medium focus-visible:outline focus-visible:outline-2">
+          Finalized daily results and adjustments
+        </summary>
+        <div className="divide-y">
+          {row.days.filter(day => day.payroll_finalized).map(day => (
+            <div key={day.date} className="space-y-2 py-3 text-sm">
+              <div className="flex flex-wrap justify-between gap-2">
+                <span>{dateLabel(day.date)} · Finalized</span>
+                <span className="font-semibold tabular-nums">{formatCurrency(day.amount)}</span>
+              </div>
+              <p className="text-xs text-muted-foreground">Saved base earnings: {formatCurrency(day.finalized_base_amount ?? day.amount)}. Adjustments change earnings, not payments already made.</p>
+              {day.adjustments?.map(change => (
+                <p key={change.id} className="break-words text-xs text-muted-foreground">
+                  {change.reversal_of_id ? "Reversal" : "Adjustment"} #{change.id}: {formatCurrency(change.amount)} — {change.reason}
+                </p>
+              ))}
+            </div>
+          ))}
+        </div>
+      </details>
+    )}
     <Dialog open={dailyOpen} onOpenChange={setDailyOpen}><DialogContent aria-labelledby={undefined} aria-label="Daily earnings calculation" className={`max-h-[85dvh] overflow-y-auto overscroll-contain sm:max-w-3xl ${mobileDetailClass}`}><DialogHeader><DialogTitle>Daily earnings calculation</DialogTitle><DialogDescription>{dateLabel(row.date_from)} – {dateLabel(row.date_to)} · {row.staff_name}. Estimated earnings before payments and deductions.</DialogDescription></DialogHeader><div className="divide-y border-t md:hidden">{row.days.map(day => <details key={day.date} className="p-3"><summary className="flex min-h-11 cursor-pointer items-start justify-between gap-3 focus-visible:outline focus-visible:outline-2"><span className="min-w-0"><span className="block text-sm font-medium">{dateLabel(day.date)}</span><span className="mt-1 block text-xs text-muted-foreground">{payrollReasons[day.reason] || day.reason}</span></span><span className="shrink-0 text-sm font-semibold tabular-nums">{formatCurrency(day.amount)}</span></summary><div className="space-y-2 border-t pt-3 text-sm"><p>{calculationUnits(day, type)} × {formatCurrency(day.rate)}{payrollNumber(day.multiplier) !== 1 ? ` × ${day.multiplier}` : ""}</p>{payrollNumber(day.overtime_amount) !== 0 && <p>Overtime: {formatCurrency(day.overtime_amount)}</p>}<p className="text-xs text-muted-foreground">{day.entry_ids.length} approved entries</p></div></details>)}<div className="flex justify-between gap-3 p-3 text-sm font-semibold"><span>Period total</span><span className="tabular-nums">{formatCurrency(row.estimated_payable)}</span></div></div>
     {row.days.length ? <div className="hidden max-h-[26rem] overflow-auto rounded-lg border md:block"><table className="w-full min-w-[560px] text-left text-sm"><caption className="sr-only">Day-by-day earnings calculation</caption><thead className="border-b bg-muted/40 text-xs text-muted-foreground"><tr>{["Date", "Pay rule", "Calculation", "Earnings"].map(title => <th scope="col" key={title} className="px-3 py-3 font-medium">{title}</th>)}</tr></thead><tbody className="divide-y">{row.days.map(day => <tr key={day.date}><td className="whitespace-nowrap px-3 py-3">{dateLabel(day.date)}</td><td className="max-w-48 px-3 py-3">{payrollReasons[day.reason] || day.reason}{day.entry_ids.length > 0 && <p className="text-xs text-muted-foreground">{day.entry_ids.length} approved entries</p>}</td><td className="px-3 py-3 text-xs tabular-nums">{calculationUnits(day, type)} × {formatCurrency(day.rate)}{payrollNumber(day.multiplier) !== 1 ? ` × ${day.multiplier}` : ""}{payrollNumber(day.overtime_amount) !== 0 && <span className="block">+ {formatCurrency(day.overtime_amount)} overtime</span>}</td><td className="px-3 py-3 font-medium tabular-nums">{formatCurrency(day.amount)}</td></tr>)}</tbody><tfoot className="border-t font-semibold"><tr><td colSpan={3} className="px-3 py-3">Period total</td><td className="px-3 py-3 tabular-nums">{formatCurrency(row.estimated_payable)}</td></tr></tfoot></table></div> : <p className="rounded-lg border p-4 text-sm text-muted-foreground">No earnings days were calculated for this range. Check the accrual start date and hourly salary settings.</p>}
     </DialogContent></Dialog>
-    <p className="text-xs text-muted-foreground">Daily amounts include cumulative rounding to two decimals. This is an estimate using current pay rules. A locked attendance record does not freeze the earnings calculation.</p>
+    <p className="text-xs text-muted-foreground">Daily amounts include cumulative rounding to two decimals. The pay agreement above is the current agreement; daily calculations use each date’s agreement when supplied by the backend. {row.days.filter(day => day.payroll_finalized).length} days have finalized earnings protected from later rate changes. Other days remain estimates; legacy entry locks alone do not freeze money.</p>
   </div>;
 }

@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { payrollReviewFixture } from "@/components/attendance/payroll-review.fixture";
-import { payrollEstimateCsv, payrollTotal, validatePayrollRows } from "./payroll-review";
+import { calculationUnits, payrollEstimateCsv, payrollTotal, payrollWarnings, validatePayrollRows } from "./payroll-review";
 
 describe("earnings review", () => {
+  it("uses the day's historical pay basis instead of today's hourly agreement", () => {
+    expect(calculationUnits({ ...payrollReviewFixture.days[0], salary_type: "monthly", units: 1 }, "hourly")).toBe("1 days");
+    expect(payrollWarnings.salary_history_incomplete).toContain("earliest known agreement");
+  });
   it("exports the displayed period estimate and its calculation notes", () => {
     const csv = payrollEstimateCsv([{ ...payrollReviewFixture, staff_name: '=HYPERLINK("bad")' }]);
     expect(csv).toContain("Estimated earnings"); expect(csv).toContain("3300");

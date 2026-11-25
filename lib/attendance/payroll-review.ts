@@ -6,11 +6,13 @@ export const payrollReasons: Record<string, string> = {
   paid_holiday: "Paid holiday", paid_leave: "Paid leave", unpaid_leave: "Unpaid leave",
   no_approved_time: "No approved completed attendance", hourly_work: "Approved hours and paid leave",
   salaried_work: "Attendance-adjusted daily pay", invalid_shift: "Invalid shift duration",
+  not_employed: "Outside employment period", hourly_without_attendance: "Hourly attendance disabled",
 };
 export const payrollWarnings: Record<string, string> = {
   current_agreement: "This estimate uses the current pay agreement. Earlier salary and attendance-mode changes are not applied to historical dates.",
+  salary_history_incomplete: "Some dates have incomplete salary-rate or attendance-mode history. Those days use the earliest known agreement or a legacy mode baseline and require review before payroll finalization.",
   future_dates: "The selected dates include future days. The estimate includes projected pay for those dates.",
-  unassigned: "Some dates have no schedule. The current calculation adds the daily rate on those dates; hourly staff have a zero daily rate, even if they worked.",
+  unassigned: "Some dates have no assigned schedule. Confirm a working shift or an explicit day off before finalizing payroll. Check the daily calculation for the amount returned by your backend.",
   hourly_without_attendance: "Hourly earnings are zero while attendance-based salary is off.",
   hourly_overtime_included: "Hourly overtime is included in these earnings. Check any separate overtime payments before paying the balance.",
 };
@@ -44,5 +46,5 @@ export function payrollEstimateCsv(rows: AttendancePayrollPreview[]) {
 }
 export function calculationUnits(day: PayrollCalculationDay, salaryType: string | null) {
   const number = payrollNumber(day.units);
-  return `${new Intl.NumberFormat(undefined, { maximumFractionDigits: 4 }).format(number)} ${salaryType === "hourly" && !["day_off", "unassigned"].includes(day.reason) ? "hours" : "days"}`;
+  return `${new Intl.NumberFormat(undefined, { maximumFractionDigits: 4 }).format(number)} ${(day.salary_type ?? salaryType) === "hourly" && !["day_off", "unassigned", "not_employed"].includes(day.reason) ? "hours" : "days"}`;
 }

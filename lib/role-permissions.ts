@@ -271,6 +271,9 @@ export type PermissionKey =
   | "attendance.view"
   | "attendance.clock"
   | "attendance.manage"
+  | "attendance.approve"
+  | "attendance.correct"
+  | "attendance.schedule.manage"
   | "attendance.qr.generate"
   | "attendance.qr.expiry.manage"
   | "attendance.device.manage"
@@ -416,6 +419,7 @@ const KNOWN_PERMISSION_KEYS = new Set<PermissionKey>([
   "finance.payroll.view", "finance.payroll.manage", "finance.reports.sales.view", "finance.reports.invoices.view",
   "finance.reports.payments.view", "finance.reports.tax.view", "admin.staff.credit.manage", "attendance.clock",
   "attendance.view", "attendance.manage", "attendance.device.manage", "attendance.payroll.export",
+  "attendance.approve", "attendance.correct", "attendance.schedule.manage",
   "admin.staff.view", "admin.staff.manage", "admin.roles.manage", "admin.settings.manage",
   "settings.manage_restaurant", "qr.manage", "qr.print", "station.kitchen.view", "station.bar.view",
   "station.cafe.view", "platform.restaurants.view", "platform.restaurants.manage", "platform.leads.view",
@@ -512,6 +516,7 @@ export function hasPermission(
     return effectivePlatform.has(permission);
   }
   if (permission.startsWith("attendance.qr.") && permissions.includes("attendance.manage")) return true;
+  if (["attendance.approve", "attendance.correct", "attendance.schedule.manage"].includes(permission) && permissions.includes("attendance.manage")) return true;
   if (permission.startsWith("hotel.") && permissions.includes("hotel.manage")) return true;
   if (roles.includes("admin"))
     return true;
@@ -554,6 +559,7 @@ export function getAttendanceUiAccess(user: {
 } | null) {
   const canView = hasPermission(user, "attendance.view");
   const canManage = hasPermission(user, "attendance.manage");
+  const canSchedule = hasPermission(user, "attendance.schedule.manage");
   const canManageDevices = hasPermission(user, "attendance.device.manage");
   const canPayrollExport = hasPermission(user, "attendance.payroll.export");
 
@@ -566,7 +572,7 @@ export function getAttendanceUiAccess(user: {
     canPayrollExport,
     initialTab: canView
       ? "overview"
-      : canManage
+      : canManage || canSchedule
         ? "schedules"
         : canManageDevices
           ? "devices"
@@ -1057,7 +1063,7 @@ export const ROUTE_ANY_PERMISSIONS: Record<string, PermissionKey[]> = {
     "finance.expenses.view",
   ],
   "/day-close": ["reports.daily.view", "reports.dayclose.view"],
-  "/attendance": ["attendance.manage", "attendance.device.manage", "attendance.payroll.export"],
+  "/attendance": ["attendance.manage", "attendance.device.manage", "attendance.payroll.export", "attendance.schedule.manage"],
   "/cash-drawers": [
     "day_close.drawer.open",
     "finance.drawer.open.own",

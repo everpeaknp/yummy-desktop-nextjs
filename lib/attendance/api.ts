@@ -1,4 +1,5 @@
 import apiClient from "@/lib/api-client";
+import type { Page, ExceptionItem, Diagnostics, RawPunch, RosterDraft, LeaveCategory, LeaveBalance } from "./operations-types";
 import { AttendanceApis, StaffSalaryApis } from "@/lib/api/endpoints";
 import type {
   AttendanceAudit,
@@ -35,6 +36,44 @@ function query(params: Record<string, string | number | undefined | null>) {
 }
 
 export const attendanceApi = {
+  async operationsPage<P extends "exceptions" | "entries/page">(path: P, params: { date_from: string; date_to: string; offset: number; limit?: number; staff_id?: number; approval?: string }) {
+    return unwrap<Page<P extends "exceptions" ? ExceptionItem : AttendanceEntry>>(await apiClient.get(`/attendance/${path}${query(params)}`));
+  },
+  async diagnostics() { return unwrap<Diagnostics>(await apiClient.get("/attendance/devices/diagnostics")); },
+  async rawPunches(deviceId: number, pin?: string, offset = 0) {
+    return unwrap<RawPunch[]>(await apiClient.get(`/attendance/devices/${deviceId}/punches${query({ device_user_id: pin, limit: 100, offset })}`));
+  },
+  async recoverPunches(deviceId: number, payload: Record<string, unknown>) {
+    return unwrap<AttendanceEntry>(await apiClient.post(`/attendance/devices/${deviceId}/recover`, payload));
+  },
+  async dismissPunch(deviceId: number, rawId: number, reason: string) {
+    return unwrap<unknown>(await apiClient.post(`/attendance/devices/${deviceId}/punches/${rawId}/dismiss`, { reason }));
+  },
+  async issueDeviceTransfer(deviceId: number) {
+    return unwrap<{ token: string; expires_at: string }>(await apiClient.post(`/attendance/devices/${deviceId}/transfer`));
+  },
+  async acceptDeviceTransfer(token: string) { return unwrap<{ message: string }>(await apiClient.post("/attendance/device-transfers/accept", { token })); },
+  async adjustPayroll(payload: { staff_id: number; work_date: string; amount: string; reason: string }) {
+    return unwrap<unknown>(await apiClient.post("/attendance/payroll-adjustments", payload));
+  },
+  async reversePayrollAdjustment(id: number, reason: string) {
+    return unwrap<unknown>(await apiClient.post(`/attendance/payroll-adjustments/${id}/reverse`, { reason }));
+  },
+  async rosterDrafts() { return unwrap<RosterDraft[]>(await apiClient.get("/attendance/roster-drafts")); },
+  async saveRosterDraft(payload: Record<string, unknown>) { return unwrap<{ id: number }>(await apiClient.post("/attendance/roster-drafts", payload)); },
+  async publishRosterDraft(id: number) { return unwrap<{ notified_staff: number }>(await apiClient.post(`/attendance/roster-drafts/${id}/publish`)); },
+  async leaveCategories() { return unwrap<LeaveCategory[]>(await apiClient.get("/attendance/leave-categories")); },
+  async saveLeaveCategory(payload: Record<string, unknown>, id?: number) {
+    return unwrap<{ id: number }>(id ? await apiClient.patch(`/attendance/leave-categories/${id}`, payload) : await apiClient.post("/attendance/leave-categories", payload));
+  },
+  async leaveBalances(staffId: number, year: number) {
+    return unwrap<LeaveBalance[]>(await apiClient.get(`/attendance/leave-balances${query({ staff_id: staffId, year })}`));
+  },
+  async myLeaveBalances(year: number) { return unwrap<LeaveBalance[]>(await apiClient.get(`/attendance/me/leave-balances${query({ year })}`)); },
+  async requestMyLeave(payload: Omit<Pick<AttendanceLeave, "staff_id" | "date_from" | "date_to" | "leave_type" | "day_fraction" | "reason" | "category_id">, "staff_id">) {
+    return unwrap<AttendanceLeave>(await apiClient.post("/attendance/leaves/me", payload));
+  },
+  async adjustLeaveBalance(payload: Record<string, unknown>) { return unwrap<unknown>(await apiClient.post("/attendance/leave-balance-adjustments", payload)); },
   async register(params: { dateFrom: string; dateTo: string; staffId?: number; own?: boolean }) {
     return unwrap<import("./register").AttendanceRegister>(await apiClient.get(
       (params.own ? AttendanceApis.myRegister : AttendanceApis.register) + query({
@@ -136,7 +175,7 @@ export const attendanceApi = {
       ),
     );
   },
-  async createLeave(payload: Pick<AttendanceLeave, "staff_id" | "date_from" | "date_to" | "leave_type" | "day_fraction" | "reason">) {
+  async createLeave(payload: Pick<AttendanceLeave, "staff_id" | "date_from" | "date_to" | "leave_type" | "day_fraction" | "reason" | "category_id">) {
     return unwrap<AttendanceLeave>(await apiClient.post(AttendanceApis.leaves, payload));
   },
   async decideLeave(id: number, action: "approve" | "reject" | "cancel", decisionNote?: string) {
@@ -228,11 +267,12 @@ export const attendanceApi = {
       await apiClient.get(AttendanceApis.payrollPreview(dateFrom, dateTo)),
     );
   },
-  async finalizePayrollExport(dateFrom: string, dateTo: string) {
-    return unwrap<{ date_from: string; date_to: string; locked_entries: number }>(
+  async finalizePayrollExport(dateFrom: string, dateTo: string, confirmLegacyEstimates = false) {
+    return unwrap<{ date_from: string; date_to: string; locked_entries: number; frozen_days?: number; run_id?: string }>(
       await apiClient.post(AttendanceApis.finalizePayrollExport, {
         date_from: dateFrom,
         date_to: dateTo,
+        confirm_legacy_estimates: confirmLegacyEstimates,
       }),
     );
   },

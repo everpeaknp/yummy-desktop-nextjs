@@ -23,6 +23,12 @@ beforeEach(() => {
 });
 
 describe("attendanceApi", () => {
+  it("requires an explicit opt-in to confirm legacy payroll estimates", async () => {
+    await attendanceApi.finalizePayrollExport("2026-11-01", "2026-11-02", true);
+    expect(mocked.post).toHaveBeenLastCalledWith("/attendance/payroll-export/finalize", {
+      date_from: "2026-11-01", date_to: "2026-11-02", confirm_legacy_estimates: true,
+    });
+  });
   it("scopes earnings detail to self or an explicit staff profile", async () => {
     await attendanceApi.payrollPeriod("2026-10-01", "2026-10-20", { own: true, staffId: 99 });
     expect(mocked.get).toHaveBeenLastCalledWith("/attendance/me/payroll-period?date_from=2026-10-01&date_to=2026-10-20");
@@ -88,6 +94,7 @@ describe("attendanceApi", () => {
     expect(mocked.post).toHaveBeenCalledWith("/attendance/payroll-export/finalize", {
       date_from: "2026-06-23",
       date_to: "2026-06-24",
+      confirm_legacy_estimates: false,
     });
     expect(attendanceApi.exportCsvUrl("2026-06-23", "2026-06-24")).toBe("/attendance/export.csv?date_from=2026-06-23&date_to=2026-06-24");
 

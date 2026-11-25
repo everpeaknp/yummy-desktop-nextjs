@@ -13,6 +13,7 @@ type Props = {
   canPayrollExport: boolean;
   canManageAttendance: boolean;
   canManageDevices: boolean;
+  canScheduleAttendance?: boolean;
 };
 
 export function AttendanceMobileNavigation(props: Props) {
@@ -25,7 +26,7 @@ export function AttendanceMobileNavigation(props: Props) {
     { value: "reports", label: "Reports", icon: ChartNoAxesCombined, visible: props.canViewAttendance },
     { value: "timesheets", label: "Timesheets", icon: ClipboardCheck, visible: props.canViewAttendance },
     { value: "payroll-export", label: "Payroll", icon: Wallet, visible: props.canPayrollExport },
-    { value: "schedules", label: "Schedule", icon: CalendarDays, visible: props.canManageAttendance },
+    { value: "schedules", label: "Schedule", icon: CalendarDays, visible: props.canScheduleAttendance ?? props.canManageAttendance },
     { value: "leave", label: "Leave & holidays", icon: CalendarOff, visible: props.canManageAttendance && props.canViewAttendance },
   ].filter((section) => section.visible);
   const setup = [

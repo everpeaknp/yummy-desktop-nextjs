@@ -17,6 +17,8 @@ export type AttendanceDeviceType = "zkteco_lan" | "zkteco_cloud" | "generic_impo
 export type AttendanceMobileDeviceStatus = "pending" | "approved" | "rejected" | "revoked";
 
 export type AttendanceSettings = {
+  prevent_self_approval?: boolean;
+  recorded_breaks_paid?: boolean;
   id: number;
   restaurant_id: number;
   timezone: string;
@@ -27,6 +29,8 @@ export type AttendanceSettings = {
   required_location_accuracy_meters: number;
   early_clock_in_tolerance_minutes: number;
   late_clock_out_tolerance_minutes: number;
+  salary_late_arrival_grace_minutes?: number;
+  salary_early_departure_grace_minutes?: number;
   rapid_repeat_window_seconds: number;
   automatic_break_after_minutes: number;
   automatic_break_duration_minutes: number;
@@ -42,6 +46,7 @@ export type AttendanceSettings = {
 };
 
 export type AttendanceEntry = {
+  paid_break_minutes?: number;
   id: number;
   restaurant_id: number;
   staff_id: number;
@@ -115,6 +120,12 @@ export type AttendancePayrollPreview = {
 export type PayrollCalculationDay = {
   date: string; reason: string; units: number | string; rate: number | string;
   multiplier: number | string; overtime_amount: number | string; amount: number | string; entry_ids: number[];
+  salary_type?: string;
+  payroll_finalized?: boolean;
+  payroll_run_id?: string;
+  finalized_base_amount?: number | string;
+  adjustments?: { id: number; amount: number | string; reason: string; reversal_of_id: number | null }[];
+  legacy_agreement_estimate?: boolean;
 };
 
 export type AttendanceOverview = {
@@ -212,6 +223,7 @@ export type AttendanceConnectorPair = {
 };
 
 export type AttendanceShiftTemplate = {
+  recorded_breaks_paid?: boolean;
   id: number;
   restaurant_id: number;
   name: string;
@@ -251,6 +263,7 @@ export type AttendanceScheduleAudit = {
 };
 
 export type AttendanceLeave = {
+  category_id?: number | null;
   id: number;
   restaurant_id: number;
   staff_id: number;

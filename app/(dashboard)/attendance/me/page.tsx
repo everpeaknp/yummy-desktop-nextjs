@@ -1,6 +1,7 @@
 "use client";
 import { AttendanceRegister } from "@/components/attendance/attendance-register";
 import { PayrollPeriodReview } from "@/components/attendance/payroll-period-review";
+import { PersonalLeave } from "@/components/attendance/personal-leave";
 
 import { CalendarDays, Clock3, Landmark, MapPin } from "lucide-react";
 import jsQR from "jsqr";
@@ -85,6 +86,7 @@ export default function MyAttendancePage() {
     <div className={mobileSection === "schedule" ? "" : "hidden md:block"}><section className="rounded-xl border bg-card p-4"><div className="flex flex-wrap items-end justify-between gap-3"><div><h2 className="font-semibold">My schedule</h2><p className="mt-1 text-sm text-muted-foreground">Select any date to view the week containing it. Leave and holidays replace your normal shift.</p></div><label className="text-sm font-medium">Week containing<Input aria-label="Schedule week" type="date" value={scheduleDate} onChange={(event) => setScheduleDate(event.target.value)} /></label></div><div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-7">{!loading && schedule?.days.map((day) => <div key={day.date} className="rounded-lg border p-2"><p className="text-xs text-muted-foreground">{new Intl.DateTimeFormat(undefined, { weekday: "short", day: "numeric" }).format(new Date(`${day.date}T00:00:00`))}</p><p className="mt-1 text-sm font-medium">{day.label}</p>{day.detail ? <p className="text-xs text-muted-foreground">{day.detail}</p> : null}</div>) || <p className="text-sm text-muted-foreground">{loading ? "Loading schedule…" : "Your weekly schedule is unavailable."}</p>}</div></section>
 
     </div>
+    <div className={mobileSection === "leave" ? "" : "hidden md:block"}><PersonalLeave onSaved={() => { void load(); }} /></div>
     <div className={mobileSection === "records" ? "" : "hidden md:block"}><AttendanceRegister key={reportVersion} own /></div>
     <div className={mobileSection === "pay" ? "" : "hidden md:block"}><div className="mb-4 rounded-lg border p-3 md:hidden"><p className="text-xs text-muted-foreground">Outstanding salary · all dates</p><p className="mt-1 text-lg font-semibold tabular-nums">{!loading && payroll ? money(payroll.balance) : "—"}</p></div><PayrollPeriodReview key={`earnings-${reportVersion}`} own /></div>
 
